@@ -215,6 +215,14 @@ class ThemeManager {
   }
 
   /**
+   * Format dim/muted text
+   */
+  formatDim(text) {
+    const theme = this.getTheme();
+    return `${theme.colors.muted || '\x1b[2m'}${text}${theme.colors.reset}`;
+  }
+
+  /**
    * Strip ANSI codes from text
    */
   stripAnsiCodes(text) {

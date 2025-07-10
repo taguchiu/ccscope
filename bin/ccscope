@@ -15,7 +15,8 @@ function parseArguments() {
     debug: false,
     theme: 'default',
     language: 'en',
-    help: false
+    help: false,
+    daily: false
   };
   
   for (let i = 0; i < args.length; i++) {
@@ -37,6 +38,9 @@ function parseArguments() {
       case '--help':
       case '-h':
         options.help = true;
+        break;
+      case '--daily':
+        options.daily = true;
         break;
       case '--version':
       case '-v':
@@ -61,6 +65,7 @@ Options:
   -d, --debug              Enable debug mode
   -t, --theme <theme>      Set theme (default, dark, light, minimal)
   -l, --language <lang>    Set language (en, ja)
+  --daily                  Show daily conversation statistics
   -h, --help              Show this help message
   -v, --version           Show version information
 
@@ -69,6 +74,7 @@ Examples:
   ccscope --debug
   ccscope --theme dark
   ccscope --language ja
+  ccscope --daily
 
 Navigation:
   ↑/↓ or k/j    Navigate up/down
@@ -107,6 +113,12 @@ async function main() {
     
     if (options.language !== 'en') {
       app.stateManager.setLanguage(options.language);
+    }
+    
+    // Check for daily statistics mode
+    if (options.daily) {
+      await app.showDailyStatistics();
+      return;
     }
     
     // Start the application

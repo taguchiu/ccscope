@@ -1411,6 +1411,75 @@ class ViewRenderer {
   clearCache() {
     this.layoutCache.clear();
   }
+
+  /**
+   * Render daily statistics
+   */
+  renderDailyStatistics(dailyStats) {
+    this.clearScreen();
+    
+    // Header
+    const title = this.theme.formatHeader('🔍 Claude Code Scope - Daily Statistics');
+    console.log(title);
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log('');
+    
+    // Calculate totals
+    const totals = {
+      conversationCount: 0,
+      totalDuration: 0,
+      sessionCount: new Set()
+    };
+    
+    dailyStats.forEach(day => {
+      totals.conversationCount += day.conversationCount;
+      totals.totalDuration += day.totalDuration;
+      day.sessionCount && Array.from({ length: day.sessionCount }).forEach((_, i) => totals.sessionCount.add(`${day.date}-${i}`));
+    });
+    
+    // Summary
+    console.log(this.theme.formatHeader('Summary'));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log(`📊 Total Days: ${this.theme.formatHeader(dailyStats.length.toString())}`);
+    console.log(`💼 Total Sessions: ${this.theme.formatHeader(totals.sessionCount.size.toString())}`);
+    console.log(`💬 Total Conversations: ${this.theme.formatHeader(totals.conversationCount.toString())}`);
+    console.log(`⏱️  Total Duration: ${this.theme.formatHeader(this.theme.formatDuration(totals.totalDuration))}`);
+    console.log('');
+    
+    // Table header
+    console.log(this.theme.formatHeader('Daily Breakdown'));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    
+    const headers = ['Date', 'Sessions', 'Conversations', 'Duration', 'Avg Duration', 'Tools'];
+    const colWidths = [12, 10, 15, 12, 15, 10];
+    
+    // Print headers
+    let headerLine = '';
+    headers.forEach((header, i) => {
+      headerLine += this.theme.formatDim(header.padEnd(colWidths[i]));
+    });
+    console.log(headerLine);
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    
+    // Print daily data
+    dailyStats.forEach(day => {
+      const avgDuration = day.conversationCount > 0 ? day.totalDuration / day.conversationCount : 0;
+      
+      let line = '';
+      line += this.theme.formatHeader(day.date.padEnd(colWidths[0]));
+      line += (day.sessionCount || 0).toString().padEnd(colWidths[1]);
+      line += day.conversationCount.toString().padEnd(colWidths[2]);
+      line += this.theme.formatDuration(day.totalDuration).padEnd(colWidths[3]);
+      line += this.theme.formatDuration(avgDuration).padEnd(colWidths[4]);
+      line += (day.toolUsageCount || 0).toString().padEnd(colWidths[5]);
+      
+      console.log(line);
+    });
+    
+    console.log('');
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log(this.theme.formatDim('Press Ctrl+C to exit'));
+  }
 }
 
 module.exports = ViewRenderer;

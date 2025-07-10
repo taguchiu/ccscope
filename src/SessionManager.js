@@ -951,6 +951,72 @@ class SessionManager {
       lastScanTime: this.lastScanTime
     };
   }
+
+  /**
+   * Get daily statistics
+   */
+  getDailyStatistics() {
+    const dailyStats = new Map();
+    
+    // Aggregate conversations by date
+    for (const session of this.sessions) {
+      // Use conversationPairs which is the actual property name
+      const conversations = session.conversationPairs || session.conversations || [];
+      
+      if (!Array.isArray(conversations)) {
+        continue;
+      }
+      
+      for (const conversation of conversations) {
+        // Use userTime or startTime
+        const timestamp = conversation.userTime || conversation.startTime || conversation.timestamp;
+        
+        // Skip conversations without valid timestamp
+        if (!timestamp) continue;
+        
+        const date = new Date(timestamp);
+        
+        // Skip invalid dates
+        if (isNaN(date.getTime())) continue;
+        
+        const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+        
+        if (!dailyStats.has(dateKey)) {
+          dailyStats.set(dateKey, {
+            date: dateKey,
+            sessions: new Set(),
+            conversationCount: 0,
+            totalDuration: 0,
+            toolUsageCount: 0,
+            thinkingTime: 0
+          });
+        }
+        
+        const dayStats = dailyStats.get(dateKey);
+        dayStats.sessions.add(session.sessionId);
+        dayStats.conversationCount++;
+        // Use responseTime (in seconds) and convert to milliseconds for consistency
+        const durationInSeconds = conversation.responseTime || conversation.duration || 0;
+        const durationInMs = durationInSeconds * 1000;
+        dayStats.totalDuration += durationInMs;
+        dayStats.toolUsageCount += conversation.toolCount || 0;
+        
+        // Calculate thinking time from thinking rate
+        if (conversation.thinkingRate && durationInMs) {
+          dayStats.thinkingTime += (durationInMs * conversation.thinkingRate / 100);
+        }
+      }
+    }
+    
+    // Convert to array and sort by date
+    const statsArray = Array.from(dailyStats.values()).map(stats => ({
+      ...stats,
+      sessionCount: stats.sessions.size,
+      sessions: undefined // Remove the Set from output
+    }));
+    
+    return statsArray.sort((a, b) => a.date.localeCompare(b.date));
+  }
 }
 
 module.exports = SessionManager;

@@ -228,6 +228,25 @@ class CCLensApplication {
       console.error(this.themeManager.formatError('❌ Failed to reload configuration:'), error);
     }
   }
+
+  /**
+   * Show daily statistics
+   */
+  async showDailyStatistics() {
+    try {
+      // Initialize session manager
+      await this.sessionManager.discoverSessions();
+      
+      // Get daily statistics
+      const dailyStats = this.sessionManager.getDailyStatistics();
+      
+      // Render daily statistics view
+      this.viewRenderer.renderDailyStatistics(dailyStats);
+      
+    } catch (error) {
+      console.error(this.themeManager.formatError('❌ Failed to show daily statistics:'), error);
+    }
+  }
 }
 
 /**
