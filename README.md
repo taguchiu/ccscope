@@ -2,7 +2,8 @@
 
 Claude Code Scope - Interactive terminal browser for Claude Code conversation transcripts
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+[![npm version](https://badge.fury.io/js/ccscope.svg)](https://badge.fury.io/js/ccscope)
+[![Downloads](https://img.shields.io/npm/dm/ccscope.svg)](https://npmjs.org/package/ccscope)
 ![Node](https://img.shields.io/badge/node-%3E%3D14.0.0-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
@@ -180,6 +181,20 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 npm install -g ccscope
 ```
 
+Once installed, you can run `ccscope` from anywhere in your terminal.
+
+## Quick Start
+
+```bash
+# Install globally
+npm install -g ccscope
+
+# Run CCScope
+ccscope
+
+# That's it! CCScope will automatically find your Claude Code transcripts
+```
+
 ### Local Installation
 
 ```bash
@@ -187,6 +202,19 @@ git clone https://github.com/taguchiu/ccscope.git
 cd ccscope
 npm install
 npm link
+```
+
+### Alternative Installation Methods
+
+```bash
+# Install from GitHub directly
+npm install -g git+https://github.com/taguchiu/ccscope.git
+
+# Install specific version
+npm install -g ccscope@1.0.0
+
+# Install locally for development
+npm install ccscope
 ```
 
 ## Usage
@@ -346,7 +374,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 🐛 [Report Issues](https://github.com/taguchiu/ccscope/issues)
 - 💬 [Discussions](https://github.com/taguchiu/ccscope/discussions)
-- 📧 Email: your.email@example.com
+- 📦 [npm Package](https://www.npmjs.com/package/ccscope)
 
 ## Acknowledgments
 
