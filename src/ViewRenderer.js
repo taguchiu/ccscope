@@ -1514,7 +1514,7 @@ class ViewRenderer {
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
     const headers = ['Project', 'Sessions', 'Conversations', 'Duration', 'Avg Think%', 'Tools'];
-    const colWidths = [40, 10, 15, 12, 12, 10];
+    const colWidths = [70, 10, 15, 12, 12, 10];
     
     // Print headers
     let headerLine = '';
