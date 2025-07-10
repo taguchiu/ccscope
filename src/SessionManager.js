@@ -1077,59 +1077,6 @@ class SessionManager {
     return statsArray.sort((a, b) => b.conversationCount - a.conversationCount);
   }
 
-  /**
-   * Get session statistics
-   */
-  getSessionStatistics() {
-    return this.sessions.map(session => {
-      // Calculate tool breakdown
-      const toolBreakdown = new Map();
-      const conversations = session.conversationPairs || session.conversations || [];
-      
-      for (const conversation of conversations) {
-        if (conversation.toolUses) {
-          for (const tool of conversation.toolUses) {
-            const toolName = tool.toolName || 'Unknown';
-            toolBreakdown.set(toolName, (toolBreakdown.get(toolName) || 0) + 1);
-          }
-        }
-      }
-      
-      return {
-        sessionId: session.sessionId,
-        project: session.projectName,
-        conversationCount: session.totalConversations,
-        duration: session.duration,
-        thinkingRate: session.thinkingRate,
-        avgResponseTime: session.avgResponseTime,
-        totalTools: session.totalTools,
-        toolBreakdown: Object.fromEntries(toolBreakdown),
-        startTime: session.startTime,
-        endTime: session.endTime
-      };
-    }).sort((a, b) => b.conversationCount - a.conversationCount);
-  }
-
-  /**
-   * Get ultrathink sessions (thinking rate > 50%)
-   */
-  getUltrathinkSessions() {
-    return this.sessions
-      .filter(session => session.thinkingRate >= 0.5)
-      .map(session => ({
-        sessionId: session.sessionId,
-        project: session.projectName,
-        conversationCount: session.totalConversations,
-        duration: session.duration,
-        thinkingRate: session.thinkingRate,
-        avgResponseTime: session.avgResponseTime,
-        totalTools: session.totalTools,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        summary: session.summary
-      }))
-      .sort((a, b) => b.thinkingRate - a.thinkingRate);
-  }
 }
 
 module.exports = SessionManager;

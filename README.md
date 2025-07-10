@@ -15,10 +15,8 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 
 - 🔍 **Interactive Browsing**: Navigate through sessions and conversations with vim-like keybindings
 - 📊 **Rich Analytics**: Analyze thinking rates, response times, and tool usage statistics
-- 🎨 **Multiple Themes**: Choose from default, dark, light, or minimal themes
 - 🔎 **Search & Filter**: Find specific conversations or filter by project
 - 📱 **Responsive Design**: Adapts to your terminal size with wide and compact layouts
-- 🌐 **Multi-language**: Support for English and Japanese
 - ⚡ **Performance**: Virtual scrolling and caching for large datasets
 - 🔧 **Tool Analysis**: Detailed breakdown of tool usage and execution flow
 - 💭 **Thinking Process**: View and analyze Claude's thinking patterns
@@ -126,17 +124,13 @@ npx ccscope
 # Show statistics commands
 ccscope daily            # Daily conversation statistics
 ccscope project          # Project-grouped statistics
-ccscope session          # Session details
-ccscope ultrathink       # High thinking rate sessions (≥50%)
 
 # Options
 ccscope --help           # Show help
 ccscope --debug          # Enable debug mode
-ccscope --theme dark     # Use dark theme
-ccscope --language ja    # Use Japanese language
 
 # Combine commands with options
-ccscope daily --theme dark
+ccscope daily --debug
 ccscope project --debug
 ```
 
@@ -189,20 +183,6 @@ CCScope automatically discovers Claude Code transcripts in these directories:
 ### Supported Formats
 
 CCScope reads Claude Code transcript files in JSONL format (`.jsonl` extension).
-
-### Themes
-
-Available themes:
-- `default`: Standard terminal colors
-- `dark`: Dark theme with blue accents
-- `light`: Light theme with subdued colors
-- `minimal`: Minimalist black and white
-
-### Languages
-
-Supported languages:
-- `en`: English (default)
-- `ja`: Japanese
 
 ## Development
 

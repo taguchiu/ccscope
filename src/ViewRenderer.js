@@ -1513,8 +1513,8 @@ class ViewRenderer {
     console.log(this.theme.formatHeader('Project Breakdown'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
-    const headers = ['Project', 'Sessions', 'Conversations', 'Duration', 'Avg Think%', 'Tools'];
-    const colWidths = [70, 10, 15, 12, 12, 10];
+    const headers = ['Project', 'Sessions', 'Conversations', 'Duration', 'Avg Duration', 'Tools'];
+    const colWidths = [70, 10, 15, 12, 14, 10];
     
     // Print headers
     let headerLine = '';
@@ -1537,7 +1537,11 @@ class ViewRenderer {
       line += project.sessionCount.toString().padEnd(colWidths[1]);
       line += project.conversationCount.toString().padEnd(colWidths[2]);
       line += this.theme.formatDuration(project.totalDuration).padEnd(colWidths[3]);
-      line += this.theme.formatThinkingRate(project.avgThinkingRate).padEnd(colWidths[4]);
+      
+      // Calculate average duration
+      const avgDuration = project.conversationCount > 0 ? project.totalDuration / project.conversationCount : 0;
+      line += this.theme.formatDuration(avgDuration).padEnd(colWidths[4]);
+      
       line += (project.toolUsageCount || 0).toString().padEnd(colWidths[5]);
       
       console.log(line);
@@ -1548,148 +1552,6 @@ class ViewRenderer {
     console.log(this.theme.formatDim('Press Ctrl+C to exit'));
   }
 
-  /**
-   * Render session statistics
-   */
-  renderSessionStatistics(sessionStats) {
-    this.clearScreen();
-    
-    // Header
-    const title = this.theme.formatHeader('🔍 Claude Code Scope - Session Statistics');
-    console.log(title);
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    console.log('');
-    
-    // Summary
-    console.log(this.theme.formatHeader('Session Details'));
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    console.log(`📊 Total Sessions: ${this.theme.formatHeader(sessionStats.length.toString())}`);
-    console.log('');
-    
-    // Table header
-    const headers = ['Session ID', 'Project', 'Convos', 'Duration', 'Think%', 'Avg Time', 'Tools'];
-    const colWidths = [12, 30, 8, 10, 8, 10, 8];
-    
-    // Print headers
-    let headerLine = '';
-    headers.forEach((header, i) => {
-      headerLine += this.theme.formatDim(header.padEnd(colWidths[i]));
-    });
-    console.log(headerLine);
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    
-    // Print session data
-    sessionStats.forEach((session, index) => {
-      // Limit to top 30 sessions for display
-      if (index >= 30) return;
-      
-      let line = '';
-      
-      line += this.theme.formatHeader(session.sessionId.substring(0, 8).padEnd(colWidths[0]));
-      
-      // Truncate project name if too long
-      const projectName = (session.project || 'Unknown').length > colWidths[1] - 2
-        ? (session.project || 'Unknown').substring(0, colWidths[1] - 5) + '...'
-        : (session.project || 'Unknown');
-      line += projectName.padEnd(colWidths[1]);
-      
-      line += session.conversationCount.toString().padEnd(colWidths[2]);
-      line += this.theme.formatDuration(session.duration || 0).padEnd(colWidths[3]);
-      line += this.theme.formatThinkingRate(session.thinkingRate || 0).padEnd(colWidths[4]);
-      line += this.theme.formatDuration((session.avgResponseTime || 0) * 1000).padEnd(colWidths[5]);
-      line += (session.totalTools || 0).toString().padEnd(colWidths[6]);
-      
-      console.log(line);
-    });
-    
-    if (sessionStats.length > 30) {
-      console.log(this.theme.formatDim(`... and ${sessionStats.length - 30} more sessions`));
-    }
-    
-    console.log('');
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    console.log(this.theme.formatDim('Press Ctrl+C to exit'));
-  }
-
-  /**
-   * Render ultrathink sessions
-   */
-  renderUltrathinkSessions(sessions) {
-    this.clearScreen();
-    
-    // Header
-    const title = this.theme.formatHeader('🔍 Claude Code Scope - Ultrathink Sessions');
-    console.log(title);
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    console.log('');
-    
-    // Summary
-    console.log(this.theme.formatHeader('High Thinking Rate Sessions (>50%)'));
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    console.log(`🧠 Ultrathink Sessions: ${this.theme.formatHeader(sessions.length.toString())}`);
-    console.log(this.theme.formatDim('Sessions with high thinking rates typically involve complex problem solving,'));
-    console.log(this.theme.formatDim('architecture decisions, creative implementations, and optimization work.'));
-    console.log('');
-    
-    if (sessions.length === 0) {
-      console.log(this.theme.formatDim('No sessions found with thinking rate > 50%'));
-      console.log('');
-      console.log(this.theme.formatSeparator(this.terminalWidth));
-      console.log(this.theme.formatDim('Press Ctrl+C to exit'));
-      return;
-    }
-    
-    // Table header
-    const headers = ['Think%', 'Session', 'Project', 'Convos', 'Duration', 'Avg Time'];
-    const colWidths = [8, 10, 35, 8, 10, 10];
-    
-    // Print headers
-    let headerLine = '';
-    headers.forEach((header, i) => {
-      headerLine += this.theme.formatDim(header.padEnd(colWidths[i]));
-    });
-    console.log(headerLine);
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    
-    // Print session data
-    sessions.forEach((session, index) => {
-      let line = '';
-      
-      // Color code thinking rate
-      let thinkRateStr = `${session.thinkingRate.toFixed(1)}%`.padEnd(colWidths[0]);
-      if (session.thinkingRate >= 70) {
-        line += this.theme.formatError(thinkRateStr); // Red for very high
-      } else if (session.thinkingRate >= 60) {
-        line += this.theme.formatWarning(thinkRateStr); // Yellow for high
-      } else {
-        line += this.theme.formatSuccess(thinkRateStr); // Green for moderate
-      }
-      
-      line += session.sessionId.substring(0, 8).padEnd(colWidths[1]);
-      
-      // Truncate project name if too long
-      const projectName = (session.project || 'Unknown').length > colWidths[2] - 2
-        ? (session.project || 'Unknown').substring(0, colWidths[2] - 5) + '...'
-        : (session.project || 'Unknown');
-      line += projectName.padEnd(colWidths[2]);
-      
-      line += session.conversationCount.toString().padEnd(colWidths[3]);
-      line += this.theme.formatDuration(session.duration || 0).padEnd(colWidths[4]);
-      line += this.theme.formatDuration((session.avgResponseTime || 0) * 1000).padEnd(colWidths[5]);
-      
-      console.log(line);
-      
-      // Show summary preview for top sessions
-      if (index < 5 && session.summary && session.summary.length > 0) {
-        const preview = this.theme.formatDim(`  └─ ${session.summary[0]}`);
-        console.log(preview);
-      }
-    });
-    
-    console.log('');
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    console.log(this.theme.formatDim('Press Ctrl+C to exit'));
-  }
 }
 
 module.exports = ViewRenderer;

@@ -26,13 +26,11 @@ function parseArguments() {
   const options = {
     command: null,
     debug: false,
-    theme: 'default',
-    language: 'en',
     help: false
   };
   
   // Check if first argument is a command
-  const commands = ['daily', 'project', 'session', 'ultrathink'];
+  const commands = ['daily', 'project'];
   if (args.length > 0 && commands.includes(args[0])) {
     options.command = args[0];
     args.shift(); // Remove command from args
@@ -46,14 +44,6 @@ function parseArguments() {
       case '--debug':
       case '-d':
         options.debug = true;
-        break;
-      case '--theme':
-      case '-t':
-        options.theme = args[++i] || 'default';
-        break;
-      case '--language':
-      case '-l':
-        options.language = args[++i] || 'en';
         break;
       case '--help':
       case '-h':
@@ -77,30 +67,20 @@ USAGE:
 COMMANDS:
   daily            Show usage report grouped by date
   project          Show usage report grouped by project
-  session          Show usage report grouped by session
-  ultrathink       Show sessions with high thinking rates (>50%)
 
 OPTIONS:
   -d, --debug              Enable debug mode
-  -t, --theme <theme>      Set theme (default, dark, light, minimal)
-  -l, --language <lang>    Set language (en, ja)
   -h, --help              Show this help message
   -v, --version           Show version information
 
 For more info, run any command with the --help flag:
   ccscope daily --help
   ccscope project --help
-  ccscope session --help
-  ccscope ultrathink --help
 
 EXAMPLES:
   ccscope                  # Interactive browser mode
   ccscope daily            # Show daily statistics
   ccscope project          # Show project statistics
-  ccscope session          # Show session statistics
-  ccscope ultrathink       # Show high thinking rate sessions
-  ccscope --theme dark     # Use dark theme
-  ccscope --language ja    # Use Japanese language
 
 INTERACTIVE MODE NAVIGATION:
   ↑/↓ or k/j    Navigate up/down
@@ -135,12 +115,11 @@ DESCRIPTION:
 
 OPTIONS:
   -d, --debug              Enable debug mode
-  -t, --theme <theme>      Set theme (default, dark, light, minimal)
   -h, --help              Show this help message
 
 EXAMPLES:
   ccscope daily
-  ccscope daily --theme dark
+  ccscope daily --debug
       `);
       break;
       
@@ -160,64 +139,11 @@ DESCRIPTION:
 
 OPTIONS:
   -d, --debug              Enable debug mode
-  -t, --theme <theme>      Set theme (default, dark, light, minimal)
   -h, --help              Show this help message
 
 EXAMPLES:
   ccscope project
-  ccscope project --theme dark
-      `);
-      break;
-      
-    case 'session':
-      console.log(`
-🔍 CCScope session - Show session statistics
-
-USAGE:
-  ccscope session [OPTIONS]
-
-DESCRIPTION:
-  Displays detailed statistics for each session, including:
-  - Session ID and project
-  - Number of conversations
-  - Total duration
-  - Thinking rate
-  - Tool usage breakdown
-
-OPTIONS:
-  -d, --debug              Enable debug mode
-  -t, --theme <theme>      Set theme (default, dark, light, minimal)
-  -h, --help              Show this help message
-
-EXAMPLES:
-  ccscope session
-  ccscope session --theme dark
-      `);
-      break;
-      
-    case 'ultrathink':
-      console.log(`
-🔍 CCScope ultrathink - Show high thinking rate sessions
-
-USAGE:
-  ccscope ultrathink [OPTIONS]
-
-DESCRIPTION:
-  Displays sessions with thinking rates above 50%, sorted by thinking rate.
-  These sessions typically involve:
-  - Complex problem solving
-  - Architecture and design decisions
-  - Creative implementations
-  - User experience optimization
-
-OPTIONS:
-  -d, --debug              Enable debug mode
-  -t, --theme <theme>      Set theme (default, dark, light, minimal)
-  -h, --help              Show this help message
-
-EXAMPLES:
-  ccscope ultrathink
-  ccscope ultrathink --theme dark
+  ccscope project --debug
       `);
       break;
   }
@@ -245,14 +171,6 @@ async function main() {
       app.enableDebug();
     }
     
-    if (options.theme !== 'default') {
-      app.themeManager.setTheme(options.theme);
-    }
-    
-    if (options.language !== 'en') {
-      app.stateManager.setLanguage(options.language);
-    }
-    
     // Execute command or start interactive mode
     switch (options.command) {
       case 'daily':
@@ -261,14 +179,6 @@ async function main() {
         
       case 'project':
         await app.showProjectStatistics();
-        break;
-        
-      case 'session':
-        await app.showSessionStatistics();
-        break;
-        
-      case 'ultrathink':
-        await app.showUltrathinkSessions();
         break;
         
       default:
