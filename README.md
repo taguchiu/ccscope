@@ -117,14 +117,27 @@ npm install ccscope
 ### Basic Usage
 
 ```bash
-# Start CCScope
+# Interactive browser mode
 ccscope
 
 # Run with npx (no installation required)
 npx ccscope
 
-# Show help
-ccscope --help
+# Show statistics commands
+ccscope daily            # Daily conversation statistics
+ccscope project          # Project-grouped statistics
+ccscope session          # Session details
+ccscope ultrathink       # High thinking rate sessions (≥50%)
+
+# Options
+ccscope --help           # Show help
+ccscope --debug          # Enable debug mode
+ccscope --theme dark     # Use dark theme
+ccscope --language ja    # Use Japanese language
+
+# Combine commands with options
+ccscope daily --theme dark
+ccscope project --debug
 ```
 
 ### Navigation

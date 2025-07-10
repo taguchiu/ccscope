@@ -1017,6 +1017,119 @@ class SessionManager {
     
     return statsArray.sort((a, b) => a.date.localeCompare(b.date));
   }
+
+  /**
+   * Get project statistics
+   */
+  getProjectStatistics() {
+    const projectStats = new Map();
+    
+    // Aggregate sessions by project
+    for (const session of this.sessions) {
+      const projectKey = session.projectName || 'Unknown';
+      
+      if (!projectStats.has(projectKey)) {
+        projectStats.set(projectKey, {
+          project: projectKey,
+          sessions: new Set(),
+          conversationCount: 0,
+          totalDuration: 0,
+          toolUsageCount: 0,
+          thinkingTime: 0,
+          thinkingRates: []
+        });
+      }
+      
+      const projectStat = projectStats.get(projectKey);
+      projectStat.sessions.add(session.sessionId);
+      projectStat.conversationCount += session.totalConversations || 0;
+      projectStat.totalDuration += session.duration || 0;
+      
+      // Add thinking rate for average calculation
+      if (session.thinkingRate !== undefined) {
+        projectStat.thinkingRates.push(session.thinkingRate);
+      }
+      
+      // Calculate total tools and thinking time from conversations
+      const conversations = session.conversationPairs || session.conversations || [];
+      for (const conversation of conversations) {
+        projectStat.toolUsageCount += conversation.toolCount || 0;
+        
+        const duration = conversation.responseTime || conversation.duration || 0;
+        if (conversation.thinkingRate && duration) {
+          projectStat.thinkingTime += (duration * 1000 * conversation.thinkingRate / 100);
+        }
+      }
+    }
+    
+    // Convert to array and calculate averages
+    const statsArray = Array.from(projectStats.values()).map(stats => ({
+      ...stats,
+      sessionCount: stats.sessions.size,
+      avgThinkingRate: stats.thinkingRates.length > 0 
+        ? stats.thinkingRates.reduce((a, b) => a + b, 0) / stats.thinkingRates.length
+        : 0,
+      sessions: undefined, // Remove the Set from output
+      thinkingRates: undefined // Remove array from output
+    }));
+    
+    // Sort by conversation count descending
+    return statsArray.sort((a, b) => b.conversationCount - a.conversationCount);
+  }
+
+  /**
+   * Get session statistics
+   */
+  getSessionStatistics() {
+    return this.sessions.map(session => {
+      // Calculate tool breakdown
+      const toolBreakdown = new Map();
+      const conversations = session.conversationPairs || session.conversations || [];
+      
+      for (const conversation of conversations) {
+        if (conversation.toolUses) {
+          for (const tool of conversation.toolUses) {
+            const toolName = tool.toolName || 'Unknown';
+            toolBreakdown.set(toolName, (toolBreakdown.get(toolName) || 0) + 1);
+          }
+        }
+      }
+      
+      return {
+        sessionId: session.sessionId,
+        project: session.projectName,
+        conversationCount: session.totalConversations,
+        duration: session.duration,
+        thinkingRate: session.thinkingRate,
+        avgResponseTime: session.avgResponseTime,
+        totalTools: session.totalTools,
+        toolBreakdown: Object.fromEntries(toolBreakdown),
+        startTime: session.startTime,
+        endTime: session.endTime
+      };
+    }).sort((a, b) => b.conversationCount - a.conversationCount);
+  }
+
+  /**
+   * Get ultrathink sessions (thinking rate > 50%)
+   */
+  getUltrathinkSessions() {
+    return this.sessions
+      .filter(session => session.thinkingRate >= 0.5)
+      .map(session => ({
+        sessionId: session.sessionId,
+        project: session.projectName,
+        conversationCount: session.totalConversations,
+        duration: session.duration,
+        thinkingRate: session.thinkingRate,
+        avgResponseTime: session.avgResponseTime,
+        totalTools: session.totalTools,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        summary: session.summary
+      }))
+      .sort((a, b) => b.thinkingRate - a.thinkingRate);
+  }
 }
 
 module.exports = SessionManager;

@@ -247,6 +247,63 @@ class CCLensApplication {
       console.error(this.themeManager.formatError('❌ Failed to show daily statistics:'), error);
     }
   }
+
+  /**
+   * Show project statistics
+   */
+  async showProjectStatistics() {
+    try {
+      // Initialize session manager
+      await this.sessionManager.discoverSessions();
+      
+      // Get project statistics
+      const projectStats = this.sessionManager.getProjectStatistics();
+      
+      // Render project statistics view
+      this.viewRenderer.renderProjectStatistics(projectStats);
+      
+    } catch (error) {
+      console.error(this.themeManager.formatError('❌ Failed to show project statistics:'), error);
+    }
+  }
+
+  /**
+   * Show session statistics
+   */
+  async showSessionStatistics() {
+    try {
+      // Initialize session manager
+      await this.sessionManager.discoverSessions();
+      
+      // Get session statistics
+      const sessionStats = this.sessionManager.getSessionStatistics();
+      
+      // Render session statistics view
+      this.viewRenderer.renderSessionStatistics(sessionStats);
+      
+    } catch (error) {
+      console.error(this.themeManager.formatError('❌ Failed to show session statistics:'), error);
+    }
+  }
+
+  /**
+   * Show ultrathink sessions
+   */
+  async showUltrathinkSessions() {
+    try {
+      // Initialize session manager
+      await this.sessionManager.discoverSessions();
+      
+      // Get ultrathink sessions
+      const ultrathinkSessions = this.sessionManager.getUltrathinkSessions();
+      
+      // Render ultrathink sessions view
+      this.viewRenderer.renderUltrathinkSessions(ultrathinkSessions);
+      
+    } catch (error) {
+      console.error(this.themeManager.formatError('❌ Failed to show ultrathink sessions:'), error);
+    }
+  }
 }
 
 /**
