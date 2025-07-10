@@ -22,30 +22,25 @@
     "transcript",
     "analysis"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "taguchiu",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-username/ccscope.git"
+    "url": "git+https://github.com/taguchiu/ccscope.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/ccscope/issues"
+    "url": "https://github.com/taguchiu/ccscope/issues"
   },
-  "homepage": "https://github.com/your-username/ccscope#readme",
+  "homepage": "https://github.com/taguchiu/ccscope#readme",
   "engines": {
     "node": ">=14.0.0"
   },
   "files": [
     "src/",
     "bin/",
-    "docs/",
     "README.md",
     "LICENSE"
   ],
-  "directories": {
-    "bin": "bin",
-    "doc": "docs"
-  },
   "preferGlobal": true,
   "os": [
     "darwin",
