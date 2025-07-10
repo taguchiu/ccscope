@@ -1008,6 +1008,12 @@ class SessionManager {
       }
     }
     
+    // Calculate total unique sessions
+    const allSessions = new Set();
+    dailyStats.forEach(stats => {
+      stats.sessions.forEach(sessionId => allSessions.add(sessionId));
+    });
+    
     // Convert to array and sort by date
     const statsArray = Array.from(dailyStats.values()).map(stats => ({
       ...stats,
@@ -1015,7 +1021,11 @@ class SessionManager {
       sessions: undefined // Remove the Set from output
     }));
     
-    return statsArray.sort((a, b) => a.date.localeCompare(b.date));
+    // Add total sessions count to the result
+    return {
+      dailyStats: statsArray.sort((a, b) => a.date.localeCompare(b.date)),
+      totalSessions: allSessions.size
+    };
   }
 
   /**

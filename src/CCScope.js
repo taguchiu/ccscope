@@ -238,10 +238,10 @@ class CCLensApplication {
       await this.sessionManager.discoverSessions();
       
       // Get daily statistics
-      const dailyStats = this.sessionManager.getDailyStatistics();
+      const dailyStatsResult = this.sessionManager.getDailyStatistics();
       
       // Render daily statistics view
-      this.viewRenderer.renderDailyStatistics(dailyStats);
+      this.viewRenderer.renderDailyStatistics(dailyStatsResult);
       
     } catch (error) {
       console.error(this.themeManager.formatError('❌ Failed to show daily statistics:'), error);

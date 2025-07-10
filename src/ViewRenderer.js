@@ -1415,8 +1415,12 @@ class ViewRenderer {
   /**
    * Render daily statistics
    */
-  renderDailyStatistics(dailyStats) {
+  renderDailyStatistics(dailyStatsResult) {
     this.clearScreen();
+    
+    // Extract data
+    const dailyStats = dailyStatsResult.dailyStats || dailyStatsResult;
+    const totalSessions = dailyStatsResult.totalSessions || 0;
     
     // Header
     const title = this.theme.formatHeader('🔍 Claude Code Scope - Daily Statistics');
@@ -1427,21 +1431,19 @@ class ViewRenderer {
     // Calculate totals
     const totals = {
       conversationCount: 0,
-      totalDuration: 0,
-      sessionCount: new Set()
+      totalDuration: 0
     };
     
     dailyStats.forEach(day => {
       totals.conversationCount += day.conversationCount;
       totals.totalDuration += day.totalDuration;
-      day.sessionCount && Array.from({ length: day.sessionCount }).forEach((_, i) => totals.sessionCount.add(`${day.date}-${i}`));
     });
     
     // Summary
     console.log(this.theme.formatHeader('Summary'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log(`📊 Total Days: ${this.theme.formatHeader(dailyStats.length.toString())}`);
-    console.log(`💼 Total Sessions: ${this.theme.formatHeader(totals.sessionCount.size.toString())}`);
+    console.log(`💼 Total Sessions: ${this.theme.formatHeader(totalSessions.toString())}`);
     console.log(`💬 Total Conversations: ${this.theme.formatHeader(totals.conversationCount.toString())}`);
     console.log(`⏱️  Total Duration: ${this.theme.formatHeader(this.theme.formatDuration(totals.totalDuration))}`);
     console.log('');
