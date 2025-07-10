@@ -216,7 +216,7 @@ CCScope follows a modular architecture:
 - **StateManager**: Manages application state and navigation
 - **ViewRenderer**: Handles UI rendering and display logic
 - **InputHandler**: Processes keyboard input and key bindings
-- **ThemeManager**: Manages visual themes and styling
+- **ThemeManager**: Manages color themes and text formatting
 
 ### Building from Source
 
