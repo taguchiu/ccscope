@@ -1,0 +1,55 @@
+{
+  "name": "ccscope",
+  "version": "1.0.0",
+  "description": "Claude Code Scope - Interactive terminal browser for Claude Code conversation transcripts",
+  "main": "src/CCScope.js",
+  "bin": {
+    "ccscope": "./bin/ccscope"
+  },
+  "scripts": {
+    "start": "node bin/ccscope",
+    "dev": "node bin/ccscope --debug",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "claude",
+    "code",
+    "conversation",
+    "browser",
+    "terminal",
+    "tui",
+    "interactive",
+    "transcript",
+    "analysis"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/ccscope.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/ccscope/issues"
+  },
+  "homepage": "https://github.com/your-username/ccscope#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "directories": {
+    "bin": "bin",
+    "doc": "docs"
+  },
+  "preferGlobal": true,
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}
