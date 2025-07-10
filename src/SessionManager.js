@@ -711,7 +711,9 @@ class SessionManager {
     
     const startTime = conversationPairs[0].userTime;
     const endTime = conversationPairs[conversationPairs.length - 1].assistantTime;
-    const duration = new Date(endTime) - new Date(startTime);
+    
+    // Calculate total duration as sum of all response times (in milliseconds)
+    const duration = responseTimes.reduce((sum, time) => sum + (time * 1000), 0);
     
     const avgResponseTime = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
     
@@ -721,7 +723,7 @@ class SessionManager {
     const thinkingRate = totalResponse > 0 ? totalThinking / totalResponse : 0;
     
     return {
-      duration: Math.max(0, duration), // Keep in milliseconds, ensure non-negative
+      duration: Math.max(0, duration), // Total response time in milliseconds
       avgResponseTime,
       thinkingRate,
       totalTools,

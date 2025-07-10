@@ -147,7 +147,7 @@ class ViewRenderer {
     const sessions = this.theme.formatHeader(`${stats.totalSessions}`);
     const conversations = this.theme.formatHeader(`${stats.totalConversations}`);
     const duration = this.theme.formatHeader(this.theme.formatDuration(stats.totalDuration || 0));
-    let line = `📊 ${sessions} Sessions | 💬 ${conversations} Convos | ⏱️ ${duration}`;
+    let line = `📊 ${sessions} Sessions | 💬 ${conversations} Convos | ⏱️  ${duration}`;
     
     return line;
   }
@@ -158,7 +158,7 @@ class ViewRenderer {
   formatSessionStatsLine(stats) {
     const conversations = this.theme.formatHeader(`${stats.totalConversations}`);
     const duration = this.theme.formatHeader(this.theme.formatDuration(stats.totalDuration || 0));
-    let line = `💬 ${conversations} Convos | ⏱️ ${duration}`;
+    let line = `💬 ${conversations} Convos | ⏱️  ${duration}`;
     
     return line;
   }
@@ -254,7 +254,7 @@ class ViewRenderer {
       'ID'.padEnd(16),
       'Project'.padEnd(config.layout.projectNameLength),
       'Conversations'.padEnd(13),
-      'Duration'.padEnd(10),
+      'Duration'.padEnd(12),
       'Started'.padEnd(12),
       'Last Updated'.padEnd(12)
     ];
@@ -286,24 +286,37 @@ class ViewRenderer {
       const minutes = Math.floor(seconds / 60);
       const hours = Math.floor(minutes / 60);
       let durationStr;
-      if (hours > 0) {
+      const days = Math.floor(hours / 24);
+      if (days > 0) {
+        const remainingHours = hours % 24;
+        const remainingMinutes = minutes % 60;
+        if (remainingHours > 0 && remainingMinutes > 0) {
+          durationStr = `${days}d ${remainingHours}h ${remainingMinutes}m`;
+        } else if (remainingHours > 0) {
+          durationStr = `${days}d ${remainingHours}h`;
+        } else if (remainingMinutes > 0) {
+          durationStr = `${days}d ${remainingMinutes}m`;
+        } else {
+          durationStr = `${days}d`;
+        }
+      } else if (hours > 0) {
         const remainingMinutes = minutes % 60;
         if (remainingMinutes > 0) {
-          durationStr = `${hours}h${remainingMinutes}min`;
+          durationStr = `${hours}h ${remainingMinutes}m`;
         } else {
           durationStr = `${hours}h`;
         }
       } else if (minutes > 0) {
         const remainingSeconds = seconds % 60;
         if (remainingSeconds > 0) {
-          durationStr = `${minutes}min${remainingSeconds}s`;
+          durationStr = `${minutes}m ${remainingSeconds}s`;
         } else {
-          durationStr = `${minutes}min`;
+          durationStr = `${minutes}m`;
         }
       } else {
         durationStr = `${seconds}s`;
       }
-      const duration = durationStr.padEnd(10);
+      const duration = durationStr.padEnd(12);
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
@@ -329,7 +342,8 @@ class ViewRenderer {
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
       const conversations = session.totalConversations.toString().padEnd(13);
-      const duration = this.theme.formatDuration(session.duration).padEnd(10);
+      const durationText = this.theme.formatDuration(session.duration);
+      const duration = durationText + ' '.repeat(Math.max(0, 12 - this.theme.getDisplayWidth(durationText)));
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
@@ -1047,7 +1061,7 @@ class ViewRenderer {
     // Timestamp and metadata
     lines.push('');
     lines.push(this.theme.formatInfo('📅 ' + this.theme.formatDateTime(conversation.timestamp)));
-    lines.push(this.theme.formatInfo(`⏱️ Response Time: ${this.theme.formatResponseTime(conversation.responseTime)}`));
+    lines.push(this.theme.formatInfo(`⏱️  Response Time: ${this.theme.formatResponseTime(conversation.responseTime)}`));
     
     if (conversation.thinkingRate && conversation.thinkingRate > 0) {
       lines.push(this.theme.formatInfo(`🧠 Thinking Rate: ${(conversation.thinkingRate * 100).toFixed(1)}%`));

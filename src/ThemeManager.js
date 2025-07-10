@@ -384,20 +384,33 @@ class ThemeManager {
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
     
-    if (hours > 0) {
+    if (days > 0) {
+      const remainingHours = hours % 24;
+      const remainingMinutes = minutes % 60;
+      if (remainingHours > 0 && remainingMinutes > 0) {
+        return `${days}d ${remainingHours}h ${remainingMinutes}m`;
+      } else if (remainingHours > 0) {
+        return `${days}d ${remainingHours}h`;
+      } else if (remainingMinutes > 0) {
+        return `${days}d ${remainingMinutes}m`;
+      } else {
+        return `${days}d`;
+      }
+    } else if (hours > 0) {
       const remainingMinutes = minutes % 60;
       if (remainingMinutes > 0) {
-        return `${hours}h${remainingMinutes}min`;
+        return `${hours}h ${remainingMinutes}m`;
       } else {
         return `${hours}h`;
       }
     } else if (minutes > 0) {
       const remainingSeconds = seconds % 60;
       if (remainingSeconds > 0) {
-        return `${minutes}min${remainingSeconds}s`;
+        return `${minutes}m ${remainingSeconds}s`;
       } else {
-        return `${minutes}min`;
+        return `${minutes}m`;
       }
     } else {
       return `${seconds}s`;
