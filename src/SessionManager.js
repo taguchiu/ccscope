@@ -1090,13 +1090,10 @@ class SessionManager {
   /**
    * Search conversations by query
    * @param {string} query - Search query
-   * @param {Object} options - Search options
-   * @param {boolean} options.thinkingOnly - Only search in thinking content
-   * @param {number} options.minThinkingRate - Minimum thinking rate (0-1)
+   * @param {Object} options - Search options (for future use)
    * @returns {Array} Search results
    */
   searchConversations(query, options = {}) {
-    const { thinkingOnly = false, minThinkingRate = null } = options;
     const results = [];
     const searchQuery = query.toLowerCase();
     
@@ -1107,65 +1104,42 @@ class SessionManager {
       for (let i = 0; i < conversations.length; i++) {
         const conversation = conversations[i];
         
-        // Apply thinking rate filter if specified
-        if (minThinkingRate !== null && conversation.thinkingRate < minThinkingRate) {
-          continue;
-        }
-        
         let matchFound = false;
         let matchContext = '';
         let matchType = '';
         
-        if (thinkingOnly) {
-          // Search only in thinking content
-          if (conversation.thinkingContent && Array.isArray(conversation.thinkingContent)) {
-            for (const thinking of conversation.thinkingContent) {
-              if (thinking.text && thinking.text.toLowerCase().includes(searchQuery)) {
-                matchFound = true;
-                matchType = 'thinking';
-                // Extract context around the match
-                const matchIndex = thinking.text.toLowerCase().indexOf(searchQuery);
-                const contextStart = Math.max(0, matchIndex - 50);
-                const contextEnd = Math.min(thinking.text.length, matchIndex + searchQuery.length + 50);
-                matchContext = thinking.text.substring(contextStart, contextEnd);
-                break;
-              }
-            }
-          }
-        } else {
-          // Search in all content
-          // Search in user content
-          if (conversation.userContent && conversation.userContent.toLowerCase().includes(searchQuery)) {
-            matchFound = true;
-            matchType = 'user';
-            const matchIndex = conversation.userContent.toLowerCase().indexOf(searchQuery);
-            const contextStart = Math.max(0, matchIndex - 50);
-            const contextEnd = Math.min(conversation.userContent.length, matchIndex + searchQuery.length + 50);
-            matchContext = conversation.userContent.substring(contextStart, contextEnd);
-          }
-          
-          // Search in assistant content
-          if (!matchFound && conversation.assistantContent && conversation.assistantContent.toLowerCase().includes(searchQuery)) {
-            matchFound = true;
-            matchType = 'assistant';
-            const matchIndex = conversation.assistantContent.toLowerCase().indexOf(searchQuery);
-            const contextStart = Math.max(0, matchIndex - 50);
-            const contextEnd = Math.min(conversation.assistantContent.length, matchIndex + searchQuery.length + 50);
-            matchContext = conversation.assistantContent.substring(contextStart, contextEnd);
-          }
-          
-          // Search in thinking content
-          if (!matchFound && conversation.thinkingContent && Array.isArray(conversation.thinkingContent)) {
-            for (const thinking of conversation.thinkingContent) {
-              if (thinking.text && thinking.text.toLowerCase().includes(searchQuery)) {
-                matchFound = true;
-                matchType = 'thinking';
-                const matchIndex = thinking.text.toLowerCase().indexOf(searchQuery);
-                const contextStart = Math.max(0, matchIndex - 50);
-                const contextEnd = Math.min(thinking.text.length, matchIndex + searchQuery.length + 50);
-                matchContext = thinking.text.substring(contextStart, contextEnd);
-                break;
-              }
+        // Search in all content
+        // Search in user content
+        if (conversation.userContent && conversation.userContent.toLowerCase().includes(searchQuery)) {
+          matchFound = true;
+          matchType = 'user';
+          const matchIndex = conversation.userContent.toLowerCase().indexOf(searchQuery);
+          const contextStart = Math.max(0, matchIndex - 50);
+          const contextEnd = Math.min(conversation.userContent.length, matchIndex + searchQuery.length + 50);
+          matchContext = conversation.userContent.substring(contextStart, contextEnd);
+        }
+        
+        // Search in assistant content
+        if (!matchFound && conversation.assistantContent && conversation.assistantContent.toLowerCase().includes(searchQuery)) {
+          matchFound = true;
+          matchType = 'assistant';
+          const matchIndex = conversation.assistantContent.toLowerCase().indexOf(searchQuery);
+          const contextStart = Math.max(0, matchIndex - 50);
+          const contextEnd = Math.min(conversation.assistantContent.length, matchIndex + searchQuery.length + 50);
+          matchContext = conversation.assistantContent.substring(contextStart, contextEnd);
+        }
+        
+        // Search in thinking content
+        if (!matchFound && conversation.thinkingContent && Array.isArray(conversation.thinkingContent)) {
+          for (const thinking of conversation.thinkingContent) {
+            if (thinking.text && thinking.text.toLowerCase().includes(searchQuery)) {
+              matchFound = true;
+              matchType = 'thinking';
+              const matchIndex = thinking.text.toLowerCase().indexOf(searchQuery);
+              const contextStart = Math.max(0, matchIndex - 50);
+              const contextEnd = Math.min(thinking.text.length, matchIndex + searchQuery.length + 50);
+              matchContext = thinking.text.substring(contextStart, contextEnd);
+              break;
             }
           }
         }

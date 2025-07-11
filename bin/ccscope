@@ -27,9 +27,7 @@ function parseArguments() {
     command: null,
     debug: false,
     help: false,
-    query: null,
-    thinkingOnly: false,
-    minThinkingRate: null
+    query: null
   };
   
   // Check if first argument is a command
@@ -57,14 +55,6 @@ function parseArguments() {
           case '--help':
           case '-h':
             options.help = true;
-            break;
-          case '--thinking-only':
-            options.thinkingOnly = true;
-            break;
-          case '--min-thinking-rate':
-            if (i + 1 < args.length) {
-              options.minThinkingRate = parseFloat(args[++i]);
-            }
             break;
         }
       } else {
@@ -204,16 +194,14 @@ DESCRIPTION:
   Shows matching conversations with context and metadata.
 
 OPTIONS:
-  --thinking-only          Search only in thinking content
-  --min-thinking-rate <n>  Only show results with thinking rate >= n (0-1)
   -d, --debug              Enable debug mode
   -h, --help              Show this help message
 
 EXAMPLES:
   ccscope search "error handling"
-  ccscope search "function" --thinking-only
-  ccscope search "design" --min-thinking-rate 0.5
-  ccscope search "async await" --thinking-only --min-thinking-rate 0.3
+  ccscope search "function"
+  ccscope search "design"
+  ccscope search "async await"
       `);
       break;
   }
@@ -257,10 +245,7 @@ async function main() {
           showCommandHelp('search');
           process.exit(1);
         }
-        await app.showSearchResults(options.query, {
-          thinkingOnly: options.thinkingOnly,
-          minThinkingRate: options.minThinkingRate
-        });
+        await app.showSearchResults(options.query, {});
         break;
         
       default:

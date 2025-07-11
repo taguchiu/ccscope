@@ -1,5 +1,7 @@
 # CCScope 🔍
 
+[English](README.md) | [日本語](README.ja.md)
+
 Claude Code Scope - Interactive terminal browser for Claude Code conversation transcripts
 
 [![npm version](https://badge.fury.io/js/ccscope.svg)](https://badge.fury.io/js/ccscope)
@@ -14,12 +16,13 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 ## Features
 
 - 🔍 **Interactive Browsing**: Navigate through sessions and conversations with vim-like keybindings
-- 📊 **Rich Analytics**: Analyze thinking rates, response times, and tool usage statistics
+- 📊 **Rich Analytics**: View response times and tool usage statistics
+- 🔎 **Full-text Search**: Search across all conversations with highlighting
 - 🔎 **Search & Filter**: Find specific conversations or filter by project
 - 📱 **Responsive Design**: Adapts to your terminal size with wide and compact layouts
 - ⚡ **Performance**: Virtual scrolling and caching for large datasets
 - 🔧 **Tool Analysis**: Detailed breakdown of tool usage and execution flow
-- 💭 **Thinking Process**: View and analyze Claude's thinking patterns
+- 💭 **Thinking Process**: View Claude's thinking patterns
 - 📈 **Session Metrics**: Track conversation duration, response times, and productivity
 
 ## Screenshots
@@ -124,10 +127,15 @@ npx ccscope
 # Show statistics commands
 ccscope daily            # Daily conversation statistics
 ccscope project          # Project-grouped statistics
+ccscope search "query"   # Search across all conversations
 
 # Options
 ccscope --help           # Show help
 ccscope --debug          # Enable debug mode
+
+# Search examples
+ccscope search "error handling"
+ccscope search "async await"
 
 # Combine commands with options
 ccscope daily --debug
@@ -158,6 +166,11 @@ ccscope project --debug
 - `g/G`: Jump to top/bottom
 - `←/→`: Previous/next conversation
 - `Esc`: Back to conversation list
+
+#### Search Results View
+- `↑/↓`: Navigate search results
+- `Enter`: View conversation detail
+- `Esc`: Exit application
 
 ### Keyboard Shortcuts
 
