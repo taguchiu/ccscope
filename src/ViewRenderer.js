@@ -82,6 +82,9 @@ class ViewRenderer {
       case 'filter':
         this.renderFilter(viewData);
         break;
+      case 'search_results':
+        this.renderSearchResultsInteractive(viewData);
+        break;
       case 'help':
         this.renderHelp();
         break;
@@ -874,21 +877,38 @@ class ViewRenderer {
   renderConversationPreview(conversation) {
     console.log(this.theme.formatSeparator(this.terminalWidth, '─'));
     
+    // Check if we need to highlight search terms
+    const highlightQuery = this.state.highlightQuery;
+    
     // User message (truncate to fit one line considering display width)
     const userPrefix = '👤 ';
     const userPrefixWidth = this.theme.getDisplayWidth(userPrefix);
     const maxUserWidth = this.terminalWidth - userPrefixWidth;
     const userMessage = conversation.userMessage.replace(/\n/g, ' ').trim();
-    const truncatedUser = this.truncateWithWidth(userMessage, maxUserWidth);
-    console.log(`${userPrefix}${truncatedUser}`);
+    
+    if (highlightQuery && userMessage.toLowerCase().includes(highlightQuery.toLowerCase())) {
+      const highlighted = this.highlightText(userMessage, highlightQuery);
+      const truncatedUser = this.truncateWithWidth(highlighted, maxUserWidth);
+      console.log(`${userPrefix}${truncatedUser}`);
+    } else {
+      const truncatedUser = this.truncateWithWidth(userMessage, maxUserWidth);
+      console.log(`${userPrefix}${truncatedUser}`);
+    }
     
     // Assistant response (truncate to fit one line considering display width)
     const assistantPrefix = '🤖 ';
     const assistantPrefixWidth = this.theme.getDisplayWidth(assistantPrefix);
     const maxAssistantWidth = this.terminalWidth - assistantPrefixWidth;
     const assistantMessage = conversation.assistantResponse.replace(/\n/g, ' ').trim();
-    const truncatedAssistant = this.truncateWithWidth(assistantMessage, maxAssistantWidth);
-    console.log(`${assistantPrefix}${truncatedAssistant}`);
+    
+    if (highlightQuery && assistantMessage.toLowerCase().includes(highlightQuery.toLowerCase())) {
+      const highlighted = this.highlightText(assistantMessage, highlightQuery);
+      const truncatedAssistant = this.truncateWithWidth(highlighted, maxAssistantWidth);
+      console.log(`${assistantPrefix}${truncatedAssistant}`);
+    } else {
+      const truncatedAssistant = this.truncateWithWidth(assistantMessage, maxAssistantWidth);
+      console.log(`${assistantPrefix}${truncatedAssistant}`);
+    }
     
     // Tools used (always show line, even if empty)
     if (conversation.toolsUsed.length > 0) {
@@ -912,6 +932,31 @@ class ViewRenderer {
       console.log('');
     }
     
+    // Show thinking content preview if there's a search match in thinking
+    if (highlightQuery && conversation.thinkingContent && conversation.thinkingContent.length > 0) {
+      for (const thinking of conversation.thinkingContent) {
+        if (thinking.text && thinking.text.toLowerCase().includes(highlightQuery.toLowerCase())) {
+          const thinkingPrefix = '💭 ';
+          const thinkingPrefixWidth = this.theme.getDisplayWidth(thinkingPrefix);
+          const maxThinkingWidth = this.terminalWidth - thinkingPrefixWidth;
+          const thinkingText = thinking.text.replace(/\n/g, ' ').trim();
+          const highlighted = this.highlightText(thinkingText, highlightQuery);
+          const truncatedThinking = this.truncateWithWidth(highlighted, maxThinkingWidth);
+          console.log(`${thinkingPrefix}${this.theme.formatDim(truncatedThinking)}`);
+          break; // Only show first matching thinking
+        }
+      }
+    }
+  }
+
+  /**
+   * Highlight text with search query
+   */
+  highlightText(text, query) {
+    if (!query) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(regex, (match) => this.theme.formatHighlight(match));
   }
 
   /**
@@ -1015,6 +1060,17 @@ class ViewRenderer {
       this.state.scrollToEnd = false; // Reset flag after initial positioning
     }
     
+    // If we need to scroll to search match
+    if (this.state.scrollToSearchMatch && this.state.highlightQuery) {
+      const matchLine = this.findFirstMatchLine(lines, this.state.highlightQuery);
+      if (matchLine !== -1) {
+        // Center the match in the viewport if possible
+        scrollOffset = Math.max(0, Math.min(matchLine - Math.floor(contentHeight / 2), maxScrollOffset));
+        this.state.scrollOffset = scrollOffset;
+      }
+      this.state.scrollToSearchMatch = false; // Reset flag
+    }
+    
     // Display scrollable content
     const visibleStart = scrollOffset;
     const visibleEnd = Math.min(visibleStart + contentHeight, lines.length);
@@ -1058,6 +1114,9 @@ class ViewRenderer {
       return lines;
     }
     
+    // Check if we need to highlight search terms
+    const highlightQuery = this.state.highlightQuery;
+    
     // Timestamp and metadata
     lines.push('');
     lines.push(this.theme.formatInfo('📅 ' + this.theme.formatDateTime(conversation.timestamp)));
@@ -1072,7 +1131,8 @@ class ViewRenderer {
     // User message
     lines.push(this.theme.formatAccent('👤 USER MESSAGE:'));
     lines.push(this.theme.formatSeparator(this.terminalWidth, '-'));
-    const userLines = this.wrapText(conversation.userMessage, this.terminalWidth - 2);
+    const userMessage = highlightQuery ? this.highlightText(conversation.userMessage, highlightQuery) : conversation.userMessage;
+    const userLines = this.wrapText(userMessage, this.terminalWidth - 2);
     userLines.forEach(line => lines.push(line));
     lines.push('');
     
@@ -1086,7 +1146,8 @@ class ViewRenderer {
         lines.push(this.theme.formatMuted(`[Thinking ${index + 1}]`));
         // Show first 1000 characters of each thinking block
         const preview = thinking.text.substring(0, 1000);
-        const thinkingLines = this.wrapText(preview, this.terminalWidth - 2);
+        const thinkingText = highlightQuery ? this.highlightText(preview, highlightQuery) : preview;
+        const thinkingLines = this.wrapText(thinkingText, this.terminalWidth - 2);
         thinkingLines.forEach(line => lines.push(line));
         if (thinking.text.length > 1000) {
           lines.push(this.theme.formatMuted(`... (${thinking.text.length - 1000} more characters)`));
@@ -1204,7 +1265,8 @@ class ViewRenderer {
       ? conversation.assistantResponse.substring(0, maxResponseLength)
       : conversation.assistantResponse;
     
-    const responseLines = this.wrapText(responseToShow, this.terminalWidth - 2);
+    const assistantMessage = highlightQuery ? this.highlightText(responseToShow, highlightQuery) : responseToShow;
+    const responseLines = this.wrapText(assistantMessage, this.terminalWidth - 2);
     responseLines.forEach(line => lines.push(line));
     
     if (conversation.assistantResponse.length > maxResponseLength) {
@@ -1552,6 +1614,298 @@ class ViewRenderer {
     console.log('');
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log(this.theme.formatDim('Press Ctrl+C to exit'));
+  }
+
+  /**
+   * Render search results interactively
+   */
+  renderSearchResultsInteractive(viewData) {
+    this.clearScreen();
+    
+    const { searchResults, selectedIndex, searchQuery, searchOptions, scrollOffset } = viewData;
+    
+    // Header
+    const title = this.theme.formatHeader('🔍 Claude Code Scope - Search Results');
+    console.log(title);
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    
+    // Search info
+    console.log(this.theme.formatInfo(`Query: "${searchQuery}"`));
+    if (searchOptions.thinkingOnly) {
+      console.log(this.theme.formatWarning('Searching only in thinking content'));
+    }
+    if (searchOptions.minThinkingRate !== null && searchOptions.minThinkingRate !== undefined) {
+      console.log(this.theme.formatWarning(`Minimum thinking rate: ${(searchOptions.minThinkingRate * 100).toFixed(0)}%`));
+    }
+    
+    // Results summary and controls
+    console.log(this.theme.formatHeader(`Found ${searchResults.length} matches`));
+    console.log(this.theme.formatDim('↑/↓: Navigate • Enter: View Detail • Esc: Back'));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    
+    if (searchResults.length === 0) {
+      console.log(this.theme.formatMuted('No matches found.'));
+      return;
+    }
+    
+    // Calculate visible range
+    const headerLines = 7; // Lines used by header
+    const footerLines = 2; // Lines for footer
+    const resultLines = 5; // Lines per result
+    const availableHeight = this.terminalHeight - headerLines - footerLines;
+    const maxVisibleResults = Math.floor(availableHeight / resultLines);
+    
+    // Ensure selected result is visible
+    const startIndex = Math.max(0, Math.min(selectedIndex - Math.floor(maxVisibleResults / 2), searchResults.length - maxVisibleResults));
+    const endIndex = Math.min(searchResults.length, startIndex + maxVisibleResults);
+    
+    // Display results
+    for (let i = startIndex; i < endIndex; i++) {
+      const result = searchResults[i];
+      const isSelected = i === selectedIndex;
+      
+      // Selection indicator
+      const prefix = isSelected ? this.theme.formatSelectedPrefix() + ' ' : '  ';
+      
+      // Session and conversation info
+      const sessionIdShort = result.sessionId.substring(0, 8);
+      const time = new Date(result.userTime).toLocaleString();
+      console.log(prefix + this.theme.formatDim(`[${sessionIdShort}] ${result.projectName} - Conv #${result.conversationIndex + 1}`));
+      
+      // Metadata
+      const responseTimeStr = this.theme.formatDuration(result.responseTime * 1000);
+      const toolStr = result.toolCount > 0 ? ` • Tools: ${result.toolCount}` : '';
+      
+      console.log('  ' + `Duration: ${responseTimeStr}` + toolStr);
+      
+      // Match type and context
+      const displayMatchType = result.matchType === 'thinking' ? 'assistant' : result.matchType;
+      const matchTypeColor = result.matchType === 'user' ? 'formatInfo' : 'formatSuccess';
+      console.log('  ' + this.theme[matchTypeColor](`Match in ${displayMatchType}:`));
+      
+      // Highlight the match in context
+      let context = result.matchContext;
+      const queryIndex = context.toLowerCase().indexOf(searchQuery.toLowerCase());
+      if (queryIndex !== -1) {
+        const before = context.substring(0, queryIndex);
+        const match = context.substring(queryIndex, queryIndex + searchQuery.length);
+        const after = context.substring(queryIndex + searchQuery.length);
+        
+        // Clean up and format
+        const cleanBefore = before.replace(/\n/g, ' ').trim();
+        const cleanMatch = match.replace(/\n/g, ' ');
+        const cleanAfter = after.replace(/\n/g, ' ').trim();
+        
+        const contextLine = `  ${cleanBefore.length > 0 ? '...' : ''}${cleanBefore}${this.theme.formatHighlight(cleanMatch)}${cleanAfter}${cleanAfter.length > 0 ? '...' : ''}`;
+        
+        // Truncate if too long
+        const maxWidth = this.terminalWidth - 4;
+        if (this.theme.getDisplayWidth(this.theme.stripAnsiCodes(contextLine)) > maxWidth) {
+          const truncated = this.truncateText(contextLine, maxWidth - 3) + '...';
+          console.log(truncated);
+        } else {
+          console.log(contextLine);
+        }
+      } else {
+        // Fallback if exact match not found in context
+        const contextLine = `  ...${context.replace(/\n/g, ' ').trim()}...`;
+        const maxWidth = this.terminalWidth - 4;
+        if (contextLine.length > maxWidth) {
+          console.log(contextLine.substring(0, maxWidth - 3) + '...');
+        } else {
+          console.log(contextLine);
+        }
+      }
+      
+      if (i < endIndex - 1) {
+        console.log(''); // Empty line between results
+      }
+    }
+    
+    // Footer
+    console.log('');
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    const position = `${selectedIndex + 1}/${searchResults.length}`;
+    console.log(this.theme.formatDim(`Result ${position} • Press h for help`));
+  }
+
+  /**
+   * Render search results (static)
+   * @param {string} query - Search query
+   * @param {Array} results - Search results
+   * @param {Object} options - Search options
+   */
+  renderSearchResults(query, results, options = {}) {
+    this.clearScreen();
+    
+    // Header
+    const title = this.theme.formatHeader('🔍 Claude Code Scope - Search Results');
+    console.log(title);
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log('');
+    
+    // Search info
+    console.log(this.theme.formatInfo(`Query: "${query}"`));
+    if (options.thinkingOnly) {
+      console.log(this.theme.formatWarning('Searching only in thinking content'));
+    }
+    if (options.minThinkingRate !== null && options.minThinkingRate !== undefined) {
+      console.log(this.theme.formatWarning(`Minimum thinking rate: ${(options.minThinkingRate * 100).toFixed(0)}%`));
+    }
+    console.log('');
+    
+    // Results summary
+    console.log(this.theme.formatHeader(`Found ${results.length} matches`));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    
+    if (results.length === 0) {
+      console.log(this.theme.formatMuted('No matches found.'));
+      console.log('');
+      console.log(this.theme.formatDim('Press Ctrl+C to exit'));
+      return;
+    }
+    
+    // Group results by project
+    const projectGroups = new Map();
+    results.forEach(result => {
+      if (!projectGroups.has(result.projectName)) {
+        projectGroups.set(result.projectName, []);
+      }
+      projectGroups.get(result.projectName).push(result);
+    });
+    
+    // Display results by project
+    projectGroups.forEach((projectResults, projectName) => {
+      console.log('');
+      console.log(this.theme.formatHeader(`📁 ${projectName} (${projectResults.length} matches)`));
+      console.log(this.theme.formatSeparator(Math.min(80, this.terminalWidth)));
+      
+      projectResults.slice(0, 10).forEach((result, index) => {
+        console.log('');
+        
+        // Session and conversation info
+        const sessionIdShort = result.sessionId.substring(0, 8);
+        const time = new Date(result.userTime).toLocaleString();
+        console.log(this.theme.formatDim(`[${sessionIdShort}] Conversation #${result.conversationIndex + 1} - ${time}`));
+        
+        // Metadata
+        const responseTimeStr = this.theme.formatDuration(result.responseTime * 1000);
+        const toolStr = result.toolCount > 0 ? ` • Tools: ${result.toolCount}` : '';
+        
+        console.log(`Duration: ${responseTimeStr}` + toolStr);
+        
+        // Match type and context
+        const displayMatchType = result.matchType === 'thinking' ? 'assistant' : result.matchType;
+        const matchTypeColor = result.matchType === 'user' ? 'formatInfo' : 'formatSuccess';
+        console.log(this.theme[matchTypeColor](`Match in ${displayMatchType}:`));
+        
+        // Highlight the match in context
+        let context = result.matchContext;
+        const queryIndex = context.toLowerCase().indexOf(query.toLowerCase());
+        if (queryIndex !== -1) {
+          const before = context.substring(0, queryIndex);
+          const match = context.substring(queryIndex, queryIndex + query.length);
+          const after = context.substring(queryIndex + query.length);
+          
+          // Clean up and format
+          const cleanBefore = before.replace(/\n/g, ' ').trim();
+          const cleanMatch = match.replace(/\n/g, ' ');
+          const cleanAfter = after.replace(/\n/g, ' ').trim();
+          
+          console.log(`  ${cleanBefore.length > 0 ? '...' : ''}${cleanBefore}${this.theme.formatHighlight(cleanMatch)}${cleanAfter}${cleanAfter.length > 0 ? '...' : ''}`);
+        } else {
+          // Fallback if exact match not found in context
+          console.log(`  ...${context.replace(/\n/g, ' ').trim()}...`);
+        }
+      });
+      
+      if (projectResults.length > 10) {
+        console.log('');
+        console.log(this.theme.formatDim(`  ... and ${projectResults.length - 10} more matches in this project`));
+      }
+    });
+    
+    console.log('');
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log(this.theme.formatDim('Press Ctrl+C to exit'));
+  }
+
+  /**
+   * Find first line containing search match
+   * @param {Array} lines - Array of lines to search
+   * @param {string} query - Search query
+   * @returns {number} Line index or -1 if not found
+   */
+  findFirstMatchLine(lines, query) {
+    if (!query) return -1;
+    
+    const lowerQuery = query.toLowerCase();
+    for (let i = 0; i < lines.length; i++) {
+      // Strip ANSI codes before searching
+      const plainLine = this.theme.stripAnsiCodes(lines[i]);
+      if (plainLine.toLowerCase().includes(lowerQuery)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Truncate text to fit within specified width
+   * @param {string} text - Text to truncate
+   * @param {number} maxWidth - Maximum width
+   * @returns {string} Truncated text
+   */
+  truncateText(text, maxWidth) {
+    const strippedText = this.theme.stripAnsiCodes(text);
+    
+    if (this.theme.getDisplayWidth(strippedText) <= maxWidth) {
+      return text;
+    }
+    
+    // Binary search for the right length
+    let left = 0;
+    let right = strippedText.length;
+    let result = '';
+    
+    while (left < right) {
+      const mid = Math.floor((left + right + 1) / 2);
+      const substr = strippedText.substring(0, mid);
+      
+      if (this.theme.getDisplayWidth(substr) <= maxWidth) {
+        result = substr;
+        left = mid;
+      } else {
+        right = mid - 1;
+      }
+    }
+    
+    // Preserve ANSI codes in the original text
+    let ansiIndex = 0;
+    let plainIndex = 0;
+    let truncated = '';
+    
+    while (plainIndex < result.length && ansiIndex < text.length) {
+      if (text[ansiIndex] === '\x1b') {
+        // Copy ANSI escape sequence
+        const match = text.substring(ansiIndex).match(/^\x1b\[[0-9;]*m/);
+        if (match) {
+          truncated += match[0];
+          ansiIndex += match[0].length;
+          continue;
+        }
+      }
+      
+      if (strippedText[plainIndex] === text[ansiIndex]) {
+        truncated += text[ansiIndex];
+        plainIndex++;
+        ansiIndex++;
+      } else {
+        ansiIndex++;
+      }
+    }
+    
+    return truncated;
   }
 
 }

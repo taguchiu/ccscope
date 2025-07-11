@@ -215,6 +215,15 @@ class ThemeManager {
   }
 
   /**
+   * Format highlighted text
+   */
+  formatHighlight(text) {
+    const theme = this.getTheme();
+    // Use inverse video for highlighting
+    return `\x1b[7m${text}\x1b[27m`;
+  }
+
+  /**
    * Format dim/muted text
    */
   formatDim(text) {

@@ -26,29 +26,73 @@ function parseArguments() {
   const options = {
     command: null,
     debug: false,
-    help: false
+    help: false,
+    query: null,
+    thinkingOnly: false,
+    minThinkingRate: null
   };
   
   // Check if first argument is a command
-  const commands = ['daily', 'project'];
+  const commands = ['daily', 'project', 'search'];
   if (args.length > 0 && commands.includes(args[0])) {
     options.command = args[0];
     args.shift(); // Remove command from args
   }
   
-  // Parse remaining options
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  // For search command, first non-option argument is the query
+  if (options.command === 'search') {
+    const nonOptionArgs = [];
+    let i = 0;
     
-    switch (arg) {
-      case '--debug':
-      case '-d':
-        options.debug = true;
-        break;
-      case '--help':
-      case '-h':
-        options.help = true;
-        break;
+    while (i < args.length) {
+      const arg = args[i];
+      
+      if (arg.startsWith('-')) {
+        // Process option
+        switch (arg) {
+          case '--debug':
+          case '-d':
+            options.debug = true;
+            break;
+          case '--help':
+          case '-h':
+            options.help = true;
+            break;
+          case '--thinking-only':
+            options.thinkingOnly = true;
+            break;
+          case '--min-thinking-rate':
+            if (i + 1 < args.length) {
+              options.minThinkingRate = parseFloat(args[++i]);
+            }
+            break;
+        }
+      } else {
+        // Non-option argument
+        nonOptionArgs.push(arg);
+      }
+      i++;
+    }
+    
+    // Join non-option arguments as the query
+    if (nonOptionArgs.length > 0) {
+      options.query = nonOptionArgs.join(' ');
+    }
+  } else {
+    // Parse options for other commands
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      
+      switch (arg) {
+        case '--debug':
+        case '-d':
+          options.debug = true;
+          break;
+        case '--help':
+        case '-h':
+          options.help = true;
+          break;
+      }
     }
   }
   
@@ -67,6 +111,7 @@ USAGE:
 COMMANDS:
   daily            Show usage report grouped by date
   project          Show usage report grouped by project
+  search           Search conversations by text content
 
 OPTIONS:
   -d, --debug              Enable debug mode
@@ -146,6 +191,31 @@ EXAMPLES:
   ccscope project --debug
       `);
       break;
+      
+    case 'search':
+      console.log(`
+🔍 CCScope search - Search conversations by text content
+
+USAGE:
+  ccscope search <query> [OPTIONS]
+
+DESCRIPTION:
+  Search through all conversation transcripts for specific text.
+  Shows matching conversations with context and metadata.
+
+OPTIONS:
+  --thinking-only          Search only in thinking content
+  --min-thinking-rate <n>  Only show results with thinking rate >= n (0-1)
+  -d, --debug              Enable debug mode
+  -h, --help              Show this help message
+
+EXAMPLES:
+  ccscope search "error handling"
+  ccscope search "function" --thinking-only
+  ccscope search "design" --min-thinking-rate 0.5
+  ccscope search "async await" --thinking-only --min-thinking-rate 0.3
+      `);
+      break;
   }
 }
 
@@ -179,6 +249,18 @@ async function main() {
         
       case 'project':
         await app.showProjectStatistics();
+        break;
+        
+      case 'search':
+        if (!options.query) {
+          console.error('❌ Search query is required');
+          showCommandHelp('search');
+          process.exit(1);
+        }
+        await app.showSearchResults(options.query, {
+          thinkingOnly: options.thinkingOnly,
+          minThinkingRate: options.minThinkingRate
+        });
         break;
         
       default:

@@ -54,6 +54,19 @@ class StateManager {
     // Cache for filtered sessions
     this.filteredSessionsCache = null;
     this.cacheInvalidated = true;
+    
+    // Search results state
+    this.searchResults = [];
+    this.searchQuery = '';
+    this.searchOptions = {};
+    this.selectedSearchResultIndex = 0;
+    this.previousSearchState = null;
+    
+    // Highlight state for detail views
+    this.highlightQuery = '';
+    this.highlightMatchType = null;
+    this.scrollToSearchMatch = false;
+    this.searchMatchType = null;
   }
 
   /**
@@ -147,6 +160,15 @@ class StateManager {
           selectedIndex: this.selectedSessionIndex,
           searchQuery: this.searchQuery,
           filters: this.activeFilters
+        };
+        
+      case 'search_results':
+        return {
+          searchResults: this.searchResults,
+          selectedIndex: this.selectedSearchResultIndex,
+          searchQuery: this.searchQuery,
+          searchOptions: this.searchOptions,
+          scrollOffset: this.scrollOffset
         };
         
       default:
@@ -243,6 +265,8 @@ class StateManager {
           this.scrollToEnd = true; // Start at end for new conversation
         }
       }
+    } else if (this.currentView === 'search_results') {
+      this.selectedSearchResultIndex = Math.max(0, this.selectedSearchResultIndex - 1);
     }
     
     this.trackStateChange();
@@ -267,6 +291,8 @@ class StateManager {
           this.scrollToEnd = true; // Start at end for new conversation
         }
       }
+    } else if (this.currentView === 'search_results') {
+      this.selectedSearchResultIndex = Math.min(this.searchResults.length - 1, this.selectedSearchResultIndex + 1);
     }
     
     this.trackStateChange();
@@ -737,6 +763,21 @@ class StateManager {
     this.bookmarkedSessions = new Set(state.bookmarkedSessions || []);
     
     this.validateState();
+    this.trackStateChange();
+  }
+
+  /**
+   * Set search results
+   * @param {string} query - Search query
+   * @param {Array} results - Search results
+   * @param {Object} options - Search options
+   */
+  setSearchResults(query, results, options = {}) {
+    this.searchQuery = query;
+    this.searchResults = results;
+    this.searchOptions = options;
+    this.selectedSearchResultIndex = 0;
+    this.scrollOffset = 0;
     this.trackStateChange();
   }
 }

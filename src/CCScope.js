@@ -267,6 +267,41 @@ class CCLensApplication {
     }
   }
 
+  /**
+   * Show search results
+   * @param {string} query - Search query
+   * @param {Object} options - Search options
+   */
+  async showSearchResults(query, options = {}) {
+    try {
+      // Initialize session manager
+      await this.sessionManager.discoverSessions();
+      
+      // Search conversations
+      const results = this.sessionManager.searchConversations(query, options);
+      
+      // Store search results in state
+      this.stateManager.setSearchResults(query, results, options);
+      
+      // Enter search results view
+      this.stateManager.setView('search_results');
+      
+      // Initialize if not already done
+      if (!this.isInitialized) {
+        this.themeManager.setTheme(config.theme || 'default');
+        process.stdout.write('\x1b[?25l'); // Hide cursor
+        this.isInitialized = true;
+      }
+      
+      // Start interactive mode
+      this.isRunning = true;
+      this.startRenderLoop();
+      
+    } catch (error) {
+      console.error(this.themeManager.formatError('❌ Failed to show search results:'), error);
+    }
+  }
+
 }
 
 /**

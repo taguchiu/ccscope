@@ -130,6 +130,9 @@ class InputHandler {
       case 'full_detail':
         this.handleFullDetailInput(keyName, key);
         break;
+      case 'search_results':
+        this.handleSearchResultsInput(keyName, key);
+        break;
       case 'help':
         this.handleHelpInput(keyName, key);
         break;
@@ -202,9 +205,27 @@ class InputHandler {
       this.state.setView('full_detail');
       this.render();
     } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
-      this.state.setPreviousView();
-      // Use setImmediate to render on next tick for smoother transition
-      setImmediate(() => this.render());
+      // Check if we came from search results
+      if (this.state.previousSearchState) {
+        // Restore search results state
+        this.state.searchResults = this.state.previousSearchState.results;
+        this.state.selectedSearchResultIndex = this.state.previousSearchState.selectedIndex;
+        this.state.searchQuery = this.state.previousSearchState.query;
+        this.state.searchOptions = this.state.previousSearchState.options;
+        this.state.previousSearchState = null;
+        
+        // Clear highlight state
+        this.state.highlightQuery = '';
+        this.state.highlightMatchType = null;
+        
+        // Return to search results view
+        this.state.setView('search_results');
+        this.render();
+      } else {
+        this.state.setPreviousView();
+        // Use setImmediate to render on next tick for smoother transition
+        setImmediate(() => this.render());
+      }
     } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
       this.state.setView('help');
       this.render();
@@ -262,9 +283,86 @@ class InputHandler {
     }
     // Exit and copy
     else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
-      this.state.setPreviousView();
-      // Use setImmediate to render on next tick for smoother transition
-      setImmediate(() => this.render());
+      // Check if we came from search results
+      if (this.state.previousSearchState) {
+        // Restore search results state
+        this.state.searchResults = this.state.previousSearchState.results;
+        this.state.selectedSearchResultIndex = this.state.previousSearchState.selectedIndex;
+        this.state.searchQuery = this.state.previousSearchState.query;
+        this.state.searchOptions = this.state.previousSearchState.options;
+        this.state.previousSearchState = null;
+        
+        // Clear highlight state
+        this.state.highlightQuery = '';
+        this.state.highlightMatchType = null;
+        
+        // Return to search results view
+        this.state.setView('search_results');
+        this.render();
+      } else {
+        this.state.setPreviousView();
+        // Use setImmediate to render on next tick for smoother transition
+        setImmediate(() => this.render());
+      }
+    } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
+      this.state.setView('help');
+      this.render();
+    }
+  }
+
+  /**
+   * Handle search results input
+   */
+  handleSearchResultsInput(keyName, key) {
+    const viewData = this.state.getViewData();
+    const { searchResults, selectedIndex } = viewData;
+    
+    if (this.isKey(keyName, this.keyBindings.navigation.up)) {
+      this.state.navigateUp();
+      this.render();
+    } else if (this.isKey(keyName, this.keyBindings.navigation.down)) {
+      this.state.navigateDown();
+      this.render();
+    } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
+      // Show the selected search result in detail
+      const selectedResult = searchResults[selectedIndex];
+      if (selectedResult) {
+        // Store the current search results state before navigating
+        this.state.previousSearchState = {
+          results: searchResults,
+          selectedIndex: selectedIndex,
+          query: this.state.searchQuery,
+          options: this.state.searchOptions
+        };
+        
+        // Set highlight information for detail view
+        this.state.highlightQuery = this.state.searchQuery;
+        this.state.highlightMatchType = selectedResult.matchType;
+        
+        // Clear any existing filters and search to show all sessions
+        this.state.clearSearch();
+        this.state.clearFilters();
+        
+        // Find the session in the unfiltered list
+        const sessions = this.state.getFilteredSessions(); // This will now return all sessions
+        const sessionIndex = sessions.findIndex(s => s.sessionId === selectedResult.sessionId);
+        if (sessionIndex !== -1) {
+          // Set the session and conversation indices
+          this.state.selectedSessionIndex = sessionIndex;
+          this.state.selectedConversationIndex = selectedResult.conversationIndex;
+          
+          // Navigate directly to full detail view
+          this.state.setView('full_detail');
+          
+          // Calculate initial scroll position to show the match
+          this.calculateScrollToMatch(selectedResult);
+          
+          this.render();
+        }
+      }
+    } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
+      // Exit search results and quit application
+      this.exitApplication();
     } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
       this.state.setView('help');
       this.render();
@@ -605,6 +703,16 @@ class InputHandler {
     process.stdout.write('\x1b[0m'); // Reset colors
     process.stdout.write('\x1b[?25h'); // Show cursor
     console.log('\n👋 Goodbye!');
+  }
+
+  /**
+   * Calculate scroll position to show search match
+   */
+  calculateScrollToMatch(searchResult) {
+    // This will be handled in the view renderer
+    // Set a flag to indicate we need to scroll to match
+    this.state.scrollToSearchMatch = true;
+    this.state.searchMatchType = searchResult.matchType;
   }
 }
 
