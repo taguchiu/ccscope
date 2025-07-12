@@ -17,7 +17,8 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 
 - 🔍 **Interactive Browsing**: Navigate through sessions and conversations with vim-like keybindings
 - 📊 **Rich Analytics**: View response times and tool usage statistics
-- 🔎 **Full-text Search**: Search across all conversations with highlighting
+- 🔎 **Full-text Search**: Search across all conversations with highlighting, OR conditions, and regex support
+- 🔄 **Search-aware Navigation**: Navigate through search results with left/right keys when viewing from search
 - 🔎 **Search & Filter**: Find specific conversations or filter by project
 - 📱 **Responsive Design**: Adapts to your terminal size with wide and compact layouts
 - ⚡ **Performance**: Virtual scrolling and caching for large datasets
@@ -31,21 +32,25 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 ```
 🔍 Claude Code Scope
 ================================================================================
-📊 42 Sessions | 💬 156 Convos | ⏱️ 2h30min
+📊 35 Sessions | 💬 1503 Convos | ⏱️ 4d 9h 23m
 
-▶ 1  abc123ef  ccscope      8 convos   45min    07/10 14:30
-  2  def456gh  sms-proto   12 convos  1h20min   07/09 10:15  
-  3  ghi789jk  refactor     5 convos   25min    07/08 16:20
+▶ 1  52ccc342  ccscope               48 convos  1h 51m   07/10 23:52  07/12 19:58
+  2  14208db7  sms-proto              7 convos  24m 24s   07/12 19:23  07/12 19:55
+  3  7726f0    mobile-documents      40 convos   1h 6m   07/12 15:25  07/12 19:22
 
 ↑/↓ Navigate · Enter Details · f Filter · s Sort · q Exit
 ```
 
-### Conversation Detail View
+### Conversation Detail View  
 ```
-💬 8 Conversations | ⏱️ 45min | ccscope
+🔍 Claude Code Scope
+================================================================================
+💬 48 Convos | ⏱️ 1h 51m
+Selected: [52ccc342] -Users-taguchiu-Documents-workspace-ccscope
+📁 File: /Users/taguchiu/.claude/projects/...
 
 ▶ 1  07/10 14:30  12.3s  3t  Help me refactor ViewRenderer...
-  2  07/10 14:35   8.7s  1t  Add full-width character support
+  2  07/10 14:35   8.7s  1t  Add full-width character support  
   3  07/10 14:42  15.2s  5t  Implement virtual scrolling
 
 ↑/↓ Select · Enter Detail · ←/→ Switch Session · Esc Back
@@ -53,7 +58,9 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 
 ### Full Detail View
 ```
-📅 07/10 14:30 | ⏱️ 12.3s | 🧠 23.4%
+[52ccc342] -Users-taguchiu-Documents-workspace-ccscope     [18-66/66] 100%
+Conversation #15 of 48
+================================================================================
 
 👤 USER:
 Help me refactor the ViewRenderer component...
@@ -63,7 +70,7 @@ I'll help you refactor the ViewRenderer component...
 
 🔧 Tools: Read×2, Edit×1
 
-↑/↓ Scroll · Space Page · ←/→ Prev/Next · Esc Back
+↑/↓ Scroll · Space Page · ←/→ Prev/Next · g/G Top/Bottom · Esc Back
 ```
 
 ## Installation
@@ -136,6 +143,11 @@ ccscope --debug          # Enable debug mode
 # Search examples
 ccscope search "error handling"
 ccscope search "async await"
+ccscope search "error OR warning"     # OR search (uppercase)
+ccscope search "error or warning"     # OR search (lowercase)
+ccscope search "function OR method"
+ccscope search --regex "import.*from" # Regex search
+ccscope search --regex "\berror\b"    # Word boundary search
 
 # Combine commands with options
 ccscope daily --debug
@@ -164,7 +176,7 @@ ccscope project --debug
 - `↑/↓`: Scroll content (5-line increments)
 - `Space/b`: Page up/down
 - `g/G`: Jump to top/bottom
-- `←/→`: Previous/next conversation
+- `←/→`: Previous/next conversation (or navigate search results if from search)
 - `Esc`: Back to conversation list
 
 #### Search Results View

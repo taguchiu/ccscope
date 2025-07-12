@@ -10,21 +10,21 @@ CCScope (Claude Code Scope) is an interactive terminal-based browser for Claude 
 
 ### Running the Application
 ```bash
-# Start the application
+# Start interactive browser
 npm start
 # or
 ccscope
 
-# With debug mode
+# Run with debug mode
 npm run dev
 # or
 ccscope --debug
 
-# With custom theme
-ccscope --theme dark
-
-# With Japanese language
-ccscope --language ja
+# Command-line utilities
+ccscope daily            # Daily conversation statistics
+ccscope project          # Project-grouped statistics
+ccscope search "query"   # Search across all conversations
+ccscope search --regex "pattern"  # Regex search
 
 # Show help
 ccscope --help
@@ -44,111 +44,133 @@ chmod +x bin/ccscope
 
 ## Architecture
 
-The application follows a modular architecture with clear separation of concerns:
+The application follows a modular MVC-like architecture with clear separation of concerns between data management, state control, view rendering, and input handling.
 
-### Core Components
+### Core Components and Data Flow
 
-1. **CCLensApplication** (`CCScope.js`)
-   - Main application entry point and orchestrator
-   - Handles application lifecycle, initialization, and error handling
-   - Coordinates between all other components
+1. **CCScope.js** - Main application orchestrator
+   - Initializes all components in correct order
+   - Handles application lifecycle (startup, shutdown, error handling)
+   - Coordinates between SessionManager → StateManager → ViewRenderer → InputHandler
 
-2. **SessionManager** (`SessionManager.js`)
-   - Discovers and parses Claude Code transcript files (`.jsonl` format)
-   - Searches multiple directories: `~/.claude/projects/`, `~/.config/claude/transcripts/`, `./transcripts/`, `./`
-   - Extracts conversation pairs, metadata, and calculates metrics (thinking rate, response time, tool usage)
-   - Provides search and filtering capabilities
+2. **SessionManager.js** - Data layer
+   - Discovers transcript files from multiple directories (`~/.claude/projects/`, `~/.config/claude/transcripts/`, etc.)
+   - Parses JSONL transcript files into structured session objects
+   - Calculates metrics: thinking rates, response times, tool usage counts
+   - Provides search functionality across all conversations
+   - Caches parsed data for performance
 
-3. **StateManager** (`StateManager.js`)
-   - Manages application state and view transitions
-   - Handles navigation, selection, scrolling, and filtering state
-   - Provides sorting for both sessions and conversations
-   - Manages bookmarks and user preferences
+3. **StateManager.js** - Application state and business logic
+   - Manages current view state (session_list, conversation_detail, full_detail, search_results, help)
+   - Tracks selection indices, scroll positions, and navigation history
+   - Handles filtering (by project) and sorting (multiple criteria)
+   - Manages search state and results navigation
+   - Implements virtual scrolling logic for large datasets
+   - Maintains cache of filtered/sorted sessions
 
-4. **ViewRenderer** (`ViewRenderer.js`)
-   - Handles all UI rendering and display logic
-   - Supports multiple views: session list, conversation detail, full detail, help
+4. **ViewRenderer.js** - Presentation layer
+   - Renders all UI views based on current state
    - Implements virtual scrolling for performance
-   - Handles terminal resizing and responsive layouts
+   - Handles responsive layouts (wide/compact based on terminal width)
+   - Manages fixed headers with proper scroll regions
+   - Highlights search matches in conversation content
+   - Formats session/conversation data with color coding
 
-5. **InputHandler** (`InputHandler.js`)
-   - Processes keyboard input and manages key bindings
-   - Supports multiple input modes: normal, search, filter, selection
-   - Handles vim-like navigation keys (h/j/k/l)
-   - Provides live search functionality
+5. **InputHandler.js** - User interaction layer
+   - Captures raw keyboard input using readline
+   - Maps keys to actions based on current view context
+   - Manages input modes (normal, search, filter, selection)
+   - Handles search-aware navigation (navigates search results when coming from search)
+   - Debounces rapid inputs for performance
 
-6. **ThemeManager** (`ThemeManager.js`)
-   - Manages color themes and visual styling
-   - Supports multiple themes: default, dark, light, minimal
-   - Handles ANSI color codes and terminal formatting
-   - Provides utilities for text width calculation (handles full-width characters)
+6. **ThemeManager.js** - Visual styling
+   - Provides color themes (default, dark, light, minimal)
+   - Handles ANSI color formatting
+   - Manages text width calculations for CJK characters
+   - Provides consistent formatting methods for UI elements
 
-7. **Configuration** (`config.js`)
-   - Centralized configuration for all aspects of the application
-   - Terminal settings, keyboard bindings, theme colors, file system paths
-   - Thinking rate and response time thresholds
-   - Localization settings
+### Key Architectural Patterns
 
-### Key Features
+**Event Flow**: User Input → InputHandler → StateManager → ViewRenderer → Terminal Output
 
-- **Transcript Discovery**: Automatically finds Claude Code transcripts in common locations
-- **Rich Metadata**: Extracts and displays thinking rates, response times, tool usage statistics
-- **Multiple Views**: Session list, conversation detail, and full detail views
-- **Search & Filter**: Live search across conversations and filtering by project
-- **Sorting**: Multiple sort options for sessions and conversations
-- **Keyboard Navigation**: Vim-like navigation with comprehensive key bindings
-- **Responsive Design**: Adapts to terminal width (wide/compact layouts)
-- **Theme Support**: Multiple visual themes including minimal mode
-- **Performance**: Virtual scrolling and caching for large datasets
+**State Management**: 
+- StateManager is the single source of truth for all UI state
+- View changes trigger re-renders through ViewRenderer
+- State changes are tracked for performance optimization
 
-### Data Flow
+**Performance Optimizations**:
+- Virtual scrolling limits rendered content to visible area
+- Caching at multiple levels (parsed sessions, filtered results, layouts)
+- Debounced input handling prevents excessive re-renders
+- Lazy loading of conversation details
 
-1. **Initialization**: CCLensApplication starts → SessionManager discovers transcripts → StateManager initializes
-2. **User Input**: InputHandler captures keypress → updates StateManager → triggers ViewRenderer
-3. **Display**: ViewRenderer queries StateManager for view data → renders to terminal
-4. **Navigation**: User navigates → StateManager updates selection/view → ViewRenderer updates display
+**Search Implementation**:
+- Full-text search across all conversations
+- Supports OR conditions ("error OR warning" or "error or warning")
+- Regex search with --regex flag
+- Search results maintain context for navigation
+- Highlighting preserves original search terms in detail views
 
-### File Structure
+### View Hierarchy and Navigation
 
 ```
-ccscope/
-├── bin/                 # Executable scripts
-│   └── ccscope         # Main CLI entry point
-├── src/                # Source code
-│   ├── config.js       # Configuration
-│   ├── SessionManager.js
-│   ├── StateManager.js
-│   ├── ViewRenderer.js
-│   ├── InputHandler.js
-│   ├── ThemeManager.js
-│   └── CCScope.js
-├── CLAUDE.md           # Claude Code integration guide
-├── examples/           # Example files
-├── package.json
-├── README.md
-└── LICENSE
+Session List (default)
+    ↓ Enter
+Conversation Detail (for selected session)
+    ↓ Enter
+Full Detail (conversation content)
+    ← Esc (returns to previous view)
+
+Search Results (from any view via '/')
+    ↓ Enter
+Full Detail (with search highlighting)
+    ← Esc (returns to search results)
 ```
 
-## Development Guidelines
+### Data Structures
 
-### Code Style
-- ES6+ JavaScript with CommonJS modules
-- Comprehensive error handling and validation
-- Extensive configuration through `config.js`
-- Performance optimizations (caching, virtual scrolling)
+**Session Object**:
+```javascript
+{
+  sessionId: string,
+  projectName: string,
+  filePath: string,
+  conversations: Conversation[],
+  totalDuration: number,
+  startTime: Date,
+  lastActivity: Date,
+  metrics: {
+    avgResponseTime: number,
+    totalThinkingTime: number,
+    thinkingRate: number,
+    toolUsageCount: number
+  }
+}
+```
 
-### Key Patterns
-- **Modular Design**: Each component has a single responsibility
-- **Event-Driven**: Input handling drives state changes and re-rendering
-- **Configurable**: Most behavior can be customized via configuration
-- **Responsive**: Adapts to terminal size and user preferences
+**Conversation Object**:
+```javascript
+{
+  index: number,
+  timestamp: Date,
+  userMessage: string,
+  assistantMessage: string,
+  responseTime: number,
+  thinkingTime: number,
+  thinkingRate: number,
+  tools: ToolUsage[],
+  hasThinking: boolean
+}
+```
 
-### Important Implementation Details
-- Uses readline for raw terminal input handling
-- Implements custom virtual scrolling for performance
-- Handles full-width characters (CJK) properly in text layout
-- Supports multiple transcript file formats and locations
-- Caches filtered/sorted data for performance
+## Important Implementation Details
+
+- Header format displays as "[sessionId] projectName" (e.g., "[52ccc342] ccscope")
+- Virtual scrolling window is calculated as: `contentHeight = terminalHeight - headerLines - footerLines - bufferLines`
+- Search-aware navigation: When viewing from search results, left/right keys navigate between search hits rather than conversations
+- Thinking rate indicators: 🔴 >50% (ultra), 🟡 20-50% (high), 🟢 <20% (normal)
+- Response time indicators: 🔴 >30s (slow), 🟡 10-30s (medium), 🟢 <10s (fast)
+- Tool usage format: "Read×3, Edit×2, Bash×1" shows count per tool type
 
 ## Transcript Format
 
