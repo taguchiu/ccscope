@@ -112,6 +112,23 @@ class InputHandler {
     const keyName = key.name || str;
     const keySequence = key.sequence;
     
+    // Handle uppercase G specifically
+    if (str === 'G') {
+      if (currentView === 'session_list') {
+        this.state.navigateToLast();
+        this.render();
+        return;
+      } else if (currentView === 'conversation_detail') {
+        this.state.navigateToLast();
+        this.render();
+        return;
+      } else if (currentView === 'full_detail') {
+        this.state.scrollToBottom();
+        this.render();
+        return;
+      }
+    }
+    
     // Global shortcuts - 'q' always quits from any view
     if (this.isKey(keyName, this.keyBindings.actions.quit) || 
         this.isKey(keyName, this.keyBindings.navigation.quit)) {
@@ -270,10 +287,10 @@ class InputHandler {
       this.render();
     }
     // Jump to top/bottom
-    else if (keyName === 'g' || keyName === 'home') {
+    else if (this.isKey(keyName, this.keyBindings.navigation.home)) {
       this.state.scrollToTop();
       this.render();
-    } else if ((key && key.shift && keyName === 'g') || keyName === 'end') {
+    } else if (this.isKey(keyName, this.keyBindings.navigation.end)) {
       this.state.scrollToBottom();
       this.render();
     }
@@ -360,14 +377,14 @@ class InputHandler {
         this.state.clearSearch();
         this.state.clearFilters();
         
-        // Find the session in the unfiltered list
-        const sessions = this.state.getFilteredSessions(); // This will now return all sessions
-        const sessionIndex = sessions.findIndex(s => s.sessionId === selectedResult.sessionId);
-        if (sessionIndex !== -1) {
-          // Set the session and conversation indices
-          this.state.selectedSessionIndex = sessionIndex;
-          this.state.selectedConversationIndex = selectedResult.conversationIndex;
-          
+        // Navigate to the specific session and conversation
+        const navigationSuccess = this.state.navigateToSessionConversation(
+          selectedResult.sessionId, 
+          selectedResult.conversationIndex,
+          selectedResult.userTime
+        );
+        
+        if (navigationSuccess) {
           // Navigate directly to full detail view
           this.state.setView('full_detail');
           
@@ -375,6 +392,8 @@ class InputHandler {
           this.calculateScrollToMatch(selectedResult);
           
           this.render();
+        } else {
+          console.error('Could not find session in current list');
         }
       }
     } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {

@@ -18,7 +18,7 @@ class StateManager {
     this.selectedSessionIndex = 0;
     this.selectedConversationIndex = 0;
     this.scrollOffset = 0;
-    this.scrollToEnd = true; // Start at the end for full detail view
+    this.scrollToEnd = false; // Start at the top for full detail view
     this.maxScrollOffset = 0;
     
     // Search and filter state
@@ -87,7 +87,7 @@ class StateManager {
     
     // Reset scroll offset when changing views
     this.scrollOffset = 0;
-    this.scrollToEnd = (viewName === 'full_detail'); // Start at end for full detail
+    this.scrollToEnd = false; // Always start at the top
     
     this.trackStateChange();
   }
@@ -126,23 +126,58 @@ class StateManager {
       case 'conversation_detail':
         const selectedSession = sessions[this.selectedSessionIndex];
         const sortedConversations = selectedSession ? this.sortConversations(selectedSession.conversationPairs) : [];
+        
+        // Calculate the original conversation number for display
+        let originalConversationNumber = this.selectedConversationIndex + 1;
+        if (selectedSession && sortedConversations.length > 0 && this.selectedConversationIndex < sortedConversations.length) {
+          const selectedConversation = sortedConversations[this.selectedConversationIndex];
+          const originalIndex = selectedSession.conversationPairs.findIndex(conv => 
+            conv.userTime && selectedConversation.userTime &&
+            new Date(conv.userTime).getTime() === new Date(selectedConversation.userTime).getTime()
+          );
+          if (originalIndex !== -1) {
+            originalConversationNumber = originalIndex + 1;
+          }
+        }
+        
         return {
           session: selectedSession,
           conversations: sortedConversations,
           selectedConversationIndex: this.selectedConversationIndex,
+          originalConversationNumber: originalConversationNumber,
           scrollOffset: this.scrollOffset,
           conversationSortOrder: this.conversationSortOrder,
-          conversationSortDirection: this.conversationSortDirection
+          conversationSortDirection: this.conversationSortDirection,
+          highlightQuery: this.highlightQuery,
+          highlightOptions: this.highlightOptions
         };
         
       case 'full_detail':
         const detailSession = sessions[this.selectedSessionIndex];
+        const detailSortedConversations = detailSession ? this.sortConversations(detailSession.conversationPairs) : [];
+        
+        // Calculate the original conversation number for display
+        let detailOriginalConversationNumber = this.selectedConversationIndex + 1;
+        if (detailSession && detailSortedConversations.length > 0 && this.selectedConversationIndex < detailSortedConversations.length) {
+          const selectedConversation = detailSortedConversations[this.selectedConversationIndex];
+          const originalIndex = detailSession.conversationPairs.findIndex(conv => 
+            conv.userTime && selectedConversation.userTime &&
+            new Date(conv.userTime).getTime() === new Date(selectedConversation.userTime).getTime()
+          );
+          if (originalIndex !== -1) {
+            detailOriginalConversationNumber = originalIndex + 1;
+          }
+        }
+        
         return {
           session: detailSession,
-          conversations: detailSession ? detailSession.conversationPairs : [],
+          conversations: detailSortedConversations,
           selectedConversationIndex: this.selectedConversationIndex,
+          originalConversationNumber: detailOriginalConversationNumber,
           scrollOffset: this.scrollOffset,
-          scrollToEnd: this.scrollToEnd
+          scrollToEnd: this.scrollToEnd,
+          highlightQuery: this.highlightQuery,
+          highlightOptions: this.highlightOptions
         };
         
       case 'filter':
@@ -263,7 +298,7 @@ class StateManager {
         // Reset scroll position when changing conversations
         if (this.currentView === 'full_detail') {
           this.scrollOffset = 0;
-          this.scrollToEnd = true; // Start at end for new conversation
+          this.scrollToEnd = false; // Start at top for new conversation
         }
       }
     } else if (this.currentView === 'search_results') {
@@ -289,7 +324,7 @@ class StateManager {
         // Reset scroll position when changing conversations
         if (this.currentView === 'full_detail') {
           this.scrollOffset = 0;
-          this.scrollToEnd = true; // Start at end for new conversation
+          this.scrollToEnd = false; // Start at top for new conversation
         }
       }
     } else if (this.currentView === 'search_results') {
@@ -391,7 +426,23 @@ class StateManager {
     
     if (sessionIndex !== -1) {
       this.selectedSessionIndex = sessionIndex;
-      this.selectedConversationIndex = result.conversationIndex;
+      
+      // Find the conversation by timestamp in the sorted list
+      const session = sessions[sessionIndex];
+      const sortedConversations = this.sortConversations(session.conversationPairs);
+      
+      // Find the conversation with matching timestamp
+      const sortedIndex = sortedConversations.findIndex(conv => 
+        conv.userTime && 
+        new Date(conv.userTime).getTime() === new Date(result.userTime).getTime()
+      );
+      
+      if (sortedIndex !== -1) {
+        this.selectedConversationIndex = sortedIndex;
+      } else {
+        // Fallback to original index if timestamp matching fails
+        this.selectedConversationIndex = result.conversationIndex;
+      }
       
       // Set up highlighting for the match
       this.highlightQuery = this.previousSearchState.query;
@@ -482,9 +533,9 @@ class StateManager {
   }
 
   scrollToBottom() {
-    const maxOffset = this.getMaxScrollOffset();
-    this.scrollOffset = maxOffset;
-    this.scrollToEnd = false; // Ensure we don't auto-scroll to end
+    // Set a flag to scroll to bottom on next render
+    // The actual max offset will be calculated by ViewRenderer
+    this.scrollToEnd = true;
     this.scrollToSearchMatch = false; // Clear search match auto-scroll
     this.trackStateChange();
   }
@@ -703,7 +754,7 @@ class StateManager {
     this.selectedSessionIndex = 0;
     this.selectedConversationIndex = 0;
     this.scrollOffset = 0;
-    this.scrollToEnd = true;
+    this.scrollToEnd = false;
     this.maxScrollOffset = 0;
     this.cacheInvalidated = true; // Invalidate cache
     this.trackStateChange();
@@ -783,6 +834,44 @@ class StateManager {
   }
 
   /**
+   * Navigate directly to a specific session and conversation
+   */
+  navigateToSessionConversation(sessionId, conversationIndex, conversationTimestamp = null) {
+    // Get the current filtered and sorted sessions
+    const sessions = this.getFilteredSessions();
+    
+    // Find the session index in the current list
+    const sessionIndex = sessions.findIndex(s => s.sessionId === sessionId);
+    
+    if (sessionIndex !== -1) {
+      this.selectedSessionIndex = sessionIndex;
+      
+      // If we have a timestamp, find the conversation by timestamp in the sorted list
+      if (conversationTimestamp) {
+        const session = sessions[sessionIndex];
+        const sortedConversations = this.sortConversations(session.conversationPairs);
+        
+        // Find the conversation with matching timestamp
+        const sortedIndex = sortedConversations.findIndex(conv => 
+          conv.userTime && 
+          new Date(conv.userTime).getTime() === new Date(conversationTimestamp).getTime()
+        );
+        
+        if (sortedIndex !== -1) {
+          this.selectedConversationIndex = sortedIndex;
+          return true;
+        }
+      }
+      
+      // Fallback to original index if timestamp matching fails
+      this.selectedConversationIndex = conversationIndex;
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
    * Track state change
    */
   trackStateChange() {
@@ -803,7 +892,7 @@ class StateManager {
     this.selectedSessionIndex = 0;
     this.selectedConversationIndex = 0;
     this.scrollOffset = 0;
-    this.scrollToEnd = true;
+    this.scrollToEnd = false;
     this.maxScrollOffset = 0;
     this.searchQuery = '';
     this.activeFilters = {

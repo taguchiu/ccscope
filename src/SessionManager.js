@@ -21,7 +21,6 @@ class SessionManager {
     this.searchQuery = '';
     this.activeFilters = {
       project: null,
-      thinkingRate: null,
       responseTime: null,
       dateRange: null
     };
@@ -348,7 +347,7 @@ class SessionManager {
         const part = pathParts[i];
         
         // Direct matches
-        if (part === 'cclens') return 'cclens';
+        if (part === 'ccscope') return 'ccscope';
         if (part === 'sms' && pathParts.includes('proto')) return 'sms-proto';
         
         // Check after workspace directory
@@ -377,10 +376,10 @@ class SessionManager {
             JSON.stringify(firstUserMessage.message.content);
           
           // Extract project hints from content
-          if (content.includes('cclens') || content.includes('CC Lens') || content.includes('interactive-conversation-browser')) return 'cclens';
+          if (content.includes('ccscope') || content.includes('CCScope') || content.includes('interactive-conversation-browser')) return 'ccscope';
           if (content.includes('sms-proto') || content.includes('SMS') || content.includes('sms/proto')) return 'sms-proto';
           if (content.includes('refactor')) return 'refactor-project';
-          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'cclens';
+          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'ccscope';
         }
       }
       
@@ -420,11 +419,10 @@ class SessionManager {
             JSON.stringify(firstUserMessage.message.content);
           
           // Extract project hints from content
-          if (content.includes('cclens') || content.includes('CC Lens') || content.includes('interactive-conversation-browser')) return 'cclens';
+          if (content.includes('ccscope') || content.includes('CCScope') || content.includes('interactive-conversation-browser')) return 'ccscope';
           if (content.includes('sms-proto') || content.includes('SMS') || content.includes('sms/proto')) return 'sms-proto';
           if (content.includes('refactor')) return 'refactor-project';
-          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'cclens';
-          if (content.includes('ultrathink')) return 'ultrathink-analysis';
+          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'ccscope';
         }
       }
       
@@ -448,11 +446,10 @@ class SessionManager {
             JSON.stringify(firstUserMessage.message.content);
           
           // Extract project hints from content
-          if (content.includes('cclens') || content.includes('CC Lens') || content.includes('interactive-conversation-browser')) return 'cclens';
+          if (content.includes('ccscope') || content.includes('CCScope') || content.includes('interactive-conversation-browser')) return 'ccscope';
           if (content.includes('sms-proto') || content.includes('SMS') || content.includes('sms/proto')) return 'sms-proto';
           if (content.includes('refactor')) return 'refactor-project';
-          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'cclens';
-          if (content.includes('ultrathink')) return 'ultrathink-analysis';
+          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'ccscope';
         }
       }
       
@@ -683,7 +680,6 @@ class SessionManager {
   createConversationPair(pairs, state, assistantEntry) {
     const responseTime = this.calculateResponseTime(state.userMessage.timestamp, assistantEntry.timestamp);
     const assistantContent = this.extractAssistantContent(assistantEntry);
-    const thinkingRate = assistantContent.length > 0 ? state.thinkingCharCount / assistantContent.length : 0;
     
     // Merge tool uses with their results
     const toolUsesWithResults = state.toolUses.map(tool => {
@@ -695,6 +691,9 @@ class SessionManager {
       };
     });
     
+    // Build chronological raw assistant content from all assistant responses
+    const rawAssistantContent = this.buildChronologicalContent(state.assistantResponses);
+    
     pairs.push({
       userTime: new Date(state.userMessage.timestamp),
       assistantTime: new Date(assistantEntry.timestamp),
@@ -703,12 +702,11 @@ class SessionManager {
       assistantContent,
       thinkingCharCount: state.thinkingCharCount,
       thinkingContent: [...state.thinkingContent],
-      thinkingRate,
-      hasThinking: state.thinkingCharCount > 0,
       toolUses: toolUsesWithResults,
       toolCount: state.toolUses.length,
       userEntry: state.userMessage,
       assistantEntry: assistantEntry,
+      rawAssistantContent: rawAssistantContent, // Add raw content for chronological display
       // Legacy fields for compatibility
       userMessage: this.extractUserContent(state.userMessage),
       assistantResponse: assistantContent,
@@ -716,6 +714,50 @@ class SessionManager {
       timestamp: state.userMessage.timestamp,
       toolsUsed: state.toolUses.map(t => t.toolName)
     });
+  }
+
+  /**
+   * Build chronological content from all assistant responses
+   */
+  buildChronologicalContent(assistantResponses) {
+    const chronologicalItems = [];
+    
+    // Process each assistant response in order
+    for (const response of assistantResponses) {
+      if (!response.message || !response.message.content) continue;
+      
+      const content = Array.isArray(response.message.content) ? 
+        response.message.content : [response.message.content];
+      
+      // Add each content item with timestamp for sorting
+      for (const item of content) {
+        chronologicalItems.push({
+          ...item,
+          timestamp: new Date(response.timestamp)
+        });
+      }
+    }
+    
+    // Sort by timestamp to maintain chronological order
+    chronologicalItems.sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Remove timestamp property as it was just for sorting
+    return chronologicalItems.map(item => {
+      const { timestamp, ...contentItem } = item;
+      return contentItem;
+    });
+  }
+
+  /**
+   * Extract raw assistant content for chronological display (legacy)
+   */
+  extractRawAssistantContent(entry) {
+    if (!entry.message || !entry.message.content) return [];
+    
+    const content = Array.isArray(entry.message.content) ? 
+      entry.message.content : [entry.message.content];
+    
+    return content;
   }
 
   /**
@@ -751,7 +793,7 @@ class SessionManager {
         // Look for patterns that indicate the actual user request
         if (line.match(/^(The user|User|ユーザー).*[:：]/i) || 
             line.match(/requested|asked|want|リクエスト|依頼|要求/i) ||
-            line.match(/表示方法|見直し|修正|改善|ultrathink/i)) {
+            line.match(/表示方法|見直し|修正|改善/i)) {
           // Found user request indicator, extract from here
           actualRequest = lines.slice(i).join('\n').trim();
           break;
@@ -888,7 +930,6 @@ class SessionManager {
       return {
         duration: 0,
         avgResponseTime: 0,
-        thinkingRate: 0,
         totalTools: 0,
         startTime: null,
         endTime: null,
@@ -897,8 +938,6 @@ class SessionManager {
     }
     
     const responseTimes = conversationPairs.map(pair => pair.responseTime);
-    const thinkingCounts = conversationPairs.map(pair => pair.thinkingCharCount || 0);
-    const responseLengths = conversationPairs.map(pair => pair.assistantContent.length);
     const totalTools = conversationPairs.reduce((sum, pair) => sum + pair.toolCount, 0);
     
     const startTime = conversationPairs[0].userTime;
@@ -909,15 +948,9 @@ class SessionManager {
     
     const avgResponseTime = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
     
-    // Calculate thinking rate (thinking chars / response chars)
-    const totalThinking = thinkingCounts.reduce((sum, count) => sum + count, 0);
-    const totalResponse = responseLengths.reduce((sum, len) => sum + len, 0);
-    const thinkingRate = totalResponse > 0 ? totalThinking / totalResponse : 0;
-    
     return {
       duration: Math.max(0, duration), // Total response time in milliseconds
       avgResponseTime,
-      thinkingRate,
       totalTools,
       startTime,
       endTime,
@@ -1012,7 +1045,6 @@ class SessionManager {
         { pattern: /remove|削除/i, label: 'Remove' },
         { pattern: /error|エラー/i, label: 'Error' },
         { pattern: /bug|バグ/i, label: 'Bug' },
-        { pattern: /ultrathink/i, label: 'Ultrathink' },
         { pattern: /選択|selection/i, label: 'Selection' },
         { pattern: /ハイライト|highlight/i, label: 'Highlight' },
         { pattern: /表示|display/i, label: 'Display' },
@@ -1125,20 +1157,17 @@ class SessionManager {
       return {
         totalSessions: 0,
         totalConversations: 0,
-        totalDuration: 0,
-        avgThinkingRate: 0
+        totalDuration: 0
       };
     }
     
     const totalConversations = this.sessions.reduce((sum, session) => sum + session.totalConversations, 0);
     const totalDuration = this.sessions.reduce((sum, session) => sum + (session.duration || 0), 0);
-    const avgThinkingRate = this.sessions.reduce((sum, session) => sum + session.thinkingRate, 0) / this.sessions.length;
     
     return {
       totalSessions: this.sessions.length,
       totalConversations,
       totalDuration,
-      avgThinkingRate,
       scanDuration: this.scanDuration,
       lastScanTime: this.lastScanTime
     };
@@ -1268,11 +1297,7 @@ class SessionManager {
     const statsArray = Array.from(projectStats.values()).map(stats => ({
       ...stats,
       sessionCount: stats.sessions.size,
-      avgThinkingRate: stats.thinkingRates.length > 0 
-        ? stats.thinkingRates.reduce((a, b) => a + b, 0) / stats.thinkingRates.length
-        : 0,
-      sessions: undefined, // Remove the Set from output
-      thinkingRates: undefined // Remove array from output
+      sessions: undefined // Remove the Set from output
     }));
     
     // Sort by conversation count descending
@@ -1355,7 +1380,7 @@ class SessionManager {
           const line = lines[i].trim();
           if (line.match(/^(The user|User|ユーザー).*[:：]/i) || 
               line.match(/requested|asked|want|リクエスト|依頼|要求/i) ||
-              line.match(/表示方法|見直し|修正|改善|ultrathink/i)) {
+              line.match(/表示方法|見直し|修正|改善/i)) {
             return '[Continued session] ' + line.substring(0, 100) + (line.length > 100 ? '...' : '');
           }
         }
@@ -1425,12 +1450,12 @@ class SessionManager {
             sessionId: session.sessionId,
             projectName: session.projectName,
             conversationIndex: i,
+            originalConversationNumber: i + 1, // Store the original conversation number
             conversation: conversation,
             matchType: matchType,
             matchContext: matchContext,
             userTime: conversation.userTime,
             responseTime: conversation.responseTime,
-            thinkingRate: conversation.thinkingRate,
             toolCount: conversation.toolCount,
             searchQuery: query,
             searchOptions: options

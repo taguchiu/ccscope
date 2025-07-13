@@ -66,7 +66,7 @@ The application follows a modular MVC-like architecture with clear separation of
    - Parses JSONL transcript files into structured session objects
    - Extracts project paths from `cwd` field in JSONL files
    - Extracts full session IDs from filenames (UUID or hex format)
-   - Calculates metrics: thinking rates, response times, tool usage counts
+   - Calculates metrics: response times, tool usage counts
    - Provides search functionality with OR operators and regex support
    - Caches parsed data for performance
 
@@ -85,7 +85,7 @@ The application follows a modular MVC-like architecture with clear separation of
    - Manages fixed headers with proper scroll regions
    - Highlights search matches in conversation content
    - Formats session/conversation data with color coding
-   - Shows [Continued] for resumed sessions and 🛠️ for thinking content
+   - Shows [Continued] for resumed sessions
 
 5. **InputHandler.js** - User interaction layer
    - Captures raw keyboard input using readline
@@ -155,8 +155,6 @@ Full Detail (with search highlighting)
   lastActivity: Date,
   metrics: {
     avgResponseTime: number,
-    totalThinkingTime: number,
-    thinkingRate: number,
     toolUsageCount: number
   }
 }
@@ -170,10 +168,7 @@ Full Detail (with search highlighting)
   userMessage: string,
   assistantMessage: string,
   responseTime: number,
-  thinkingTime: number,
-  thinkingRate: number,
-  tools: ToolUsage[],
-  hasThinking: boolean
+  tools: ToolUsage[]
 }
 ```
 
@@ -185,11 +180,9 @@ Full Detail (with search highlighting)
 - **Header format**: Displays as "[sessionId] projectName" (e.g., "[52ccc342] ccscope")
 - **Virtual scrolling window**: `contentHeight = terminalHeight - headerLines - footerLines - bufferLines`
 - **Search-aware navigation**: When from search, left/right keys navigate search hits
-- **Thinking rate indicators**: 🔴 >50% (ultra), 🟡 20-50% (high), 🟢 <20% (normal)
 - **Response time indicators**: 🔴 >30s (slow), 🟡 10-30s (medium), 🟢 <10s (fast)
 - **Tool usage format**: "Read×3, Edit×2, Bash×1" shows count per tool type
 - **Continuation sessions**: Shows [Continued] prefix for resumed sessions
-- **Thinking content**: Shows 🛠️ emoji and extracts user message from complex content
 
 ## Transcript Format
 

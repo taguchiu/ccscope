@@ -4,6 +4,7 @@
  */
 
 const config = require('./config');
+const path = require('path');
 
 class ViewRenderer {
   constructor(sessionManager, themeManager, stateManager) {
@@ -455,8 +456,9 @@ class ViewRenderer {
           const conv = recentConversations[i];
           const conversationNumber = startIndex + i;
           const prefix = `   ${conversationNumber}. `;
-          // Use conservative max length to ensure single line display
-          const maxMessageLength = Math.min(80, this.terminalWidth - prefix.length - 10); // Extra safety margin
+          // Calculate ultra-conservative width for message content  
+          const prefixWidth = this.theme.getDisplayWidth(prefix);
+          const maxMessageLength = this.terminalWidth - prefixWidth - 25; // Large 25 char margin for safety
           let originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
           
           // Check if this is a continuation session or contains thinking content
@@ -467,9 +469,20 @@ class ViewRenderer {
             originalMsg = cleanMsg || '[Contains tool execution details]';
           }
           
-          const userMsg = originalMsg.length > maxMessageLength ? 
-            originalMsg.substring(0, maxMessageLength) + '...' : 
-            originalMsg;
+          // Clean and truncate message using the same logic as conversation rows
+          const cleanedMsg = originalMsg
+            .replace(/\n/g, ' ')                    // Replace newlines with spaces
+            .replace(/\r/g, ' ')                    // Replace carriage returns  
+            .replace(/\t/g, ' ')                    // Replace tabs
+            .replace(/\x1b\[[0-9;]*m/g, '')         // Remove ANSI codes
+            .replace(/\u200B/g, '')                 // Remove zero-width spaces
+            .replace(/[\u0000-\u001F]/g, ' ')       // Replace control characters
+            .replace(/[\u007F-\u009F]/g, ' ')       // Replace DEL and C1 control characters
+            .replace(/^\d+\.\s*/g, '')              // Remove numbered list markers at start only
+            .replace(/\s+/g, ' ')                   // Collapse multiple spaces
+            .trim();                                // Remove leading/trailing spaces
+          
+          const userMsg = this.truncateWithWidth(cleanedMsg, maxMessageLength);
           console.log(`${prefix}${userMsg}`);
         } else {
           console.log(`   ${i + 1}. `);
@@ -572,7 +585,7 @@ class ViewRenderer {
    * Get maximum visible sessions
    */
   getMaxVisibleSessions() {
-    const headerHeight = 8; // Title(1) + separator(1) + ultrathink(1) + stats(1) + blank(1) + headers(2) + separator(1)
+    const headerHeight = 8; // Title(1) + separator(1) + stats(1) + blank(1) + headers(2) + separator(1)
     const footerHeight = 10; // separator(1) + selected info(2) + recent activity header(1) + activities(3) + controls(1) + buffer(2)
     
     // Reduce by 2 for stability
@@ -703,22 +716,39 @@ class ViewRenderer {
     const ansiMargin = 15; // Color codes don't display but take up string length
     const fixedColumnsWidth = 2 + 3 + 1 + 12 + 1 + 8 + 1 + 6 + 1 + ansiMargin;
     
-    // Calculate available width for message
-    // Calculate actual fixed width based on real column sizes
-    let actualFixedWidth = 0;
-    actualFixedWidth += 2; // prefix
-    actualFixedWidth += 3 + 1; // no + space
-    actualFixedWidth += 12 + 1; // datetime + space (MM/DD HH:MM = 11 + 1 padding)
-    actualFixedWidth += 8 + 1; // response + space
-    actualFixedWidth += 6 + 1; // tool + space
+    // Calculate exact fixed column widths based on actual conversation detail layout
+    // Headers: "No." (3) + "DateTime" (12) + "Duration" (8) + "Tools" (6) + spaces
+    // Actual row: "  1   07/13 21:41  3m44s      19t  [message content]"
+    const exactFixedWidth = 
+      2 +     // prefix: "  " or "▶ "
+      3 + 1 + // no: "1  " (padEnd 3) + space  
+      12 + 1 + // datetime: "07/13 21:41 " (padEnd 12) + space
+      8 + 1 +  // duration: "3m44s   " (8 chars by formatResponseTime) + space
+      6 + 1;   // tools: "  19t " (6 chars by formatToolCount) + space
     
-    // Use larger safety margin to prevent wrapping
-    // Additional margin for potential full-width character edge cases
-    const safetyMargin = 35; // Further increased to handle all edge cases
-    const availableWidth = Math.max(20, this.terminalWidth - actualFixedWidth - safetyMargin);
+    // Use ultra-conservative width to absolutely prevent wrapping
+    // Reserve huge margin for ANSI codes, numbered lists, complex Japanese text, and calculation errors
+    const targetMessageWidth = this.terminalWidth - exactFixedWidth - 50;
     
-    // Truncate message considering full-width characters
-    const originalMessage = conversation.userMessage.replace(/\n/g, ' ');
+    // Ensure minimum readable width but use most of available space
+    const availableWidth = Math.max(30, targetMessageWidth);
+    
+    // Extract only the clean user message (without assistant responses or thinking content)
+    const cleanUserOnly = this.extractCleanUserMessage(conversation.userMessage);
+    
+    // Clean message while preserving readable content
+    const originalMessage = cleanUserOnly
+      .replace(/\n/g, ' ')                    // Replace newlines with spaces
+      .replace(/\r/g, ' ')                    // Replace carriage returns  
+      .replace(/\t/g, ' ')                    // Replace tabs
+      .replace(/\x1b\[[0-9;]*m/g, '')         // Remove ANSI codes
+      .replace(/\u200B/g, '')                 // Remove zero-width spaces
+      .replace(/[\u0000-\u001F]/g, ' ')       // Replace control characters
+      .replace(/[\u007F-\u009F]/g, ' ')       // Replace DEL and C1 control characters
+      .replace(/^\d+\.\s*/g, '')              // Remove numbered list markers at start only
+      .replace(/\s+/g, ' ')                   // Collapse multiple spaces
+      .trim();                                // Remove leading/trailing spaces
+    
     let truncatedMessage = this.truncateWithWidth(originalMessage, availableWidth);
     
     // Use the truncated message for all display
@@ -735,19 +765,28 @@ class ViewRenderer {
         : `${conversation.responseTime.toFixed(1)}s`;
       const toolCountRaw = `${conversation.toolsUsed.length}t`;
       
-      // Build plain content for full-width selection
-      const plainParts = [
+      // Build plain content for full-width selection, ensuring it fits within terminal width
+      const baseParts = [
         no, 
         dateTime.replace(/\x1b\[[0-9;]*m/g, ''), // Remove any ANSI codes from dateTime
         responseRaw.padEnd(8), 
-        toolCountRaw.padStart(5) + ' ', // Consistent padding with non-selected rows
-        userMessage // Already truncated considering full-width chars
+        toolCountRaw.padStart(5) + ' '
       ];
-      const plainContent = plainParts.join(' ');
+      const baseContent = baseParts.join(' ');
+      
+      // Calculate available width for message in selected row
+      const baseWidth = this.theme.getDisplayWidth(baseContent);
+      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + baseWidth;
+      const messageMaxWidth = Math.max(10, this.terminalWidth - usedWidth - 40); // Ultra-large margin for safety
+      
+      // Re-truncate message for selected row to ensure it fits
+      const selectedMessage = this.truncateWithWidth(userMessage, messageMaxWidth);
+      
+      const plainContent = baseContent + selectedMessage;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -759,7 +798,18 @@ class ViewRenderer {
     } else {
       // For non-selected rows, use colored values but ensure message fits
       const content = `${no} ${dateTime} ${response} ${toolCount} ${userMessage}`;
-      console.log(prefix + content);
+      
+      // Double-check that total line width doesn't exceed terminal width
+      const totalLineWidth = this.theme.getDisplayWidth(prefix + content);
+      if (totalLineWidth > this.terminalWidth) {
+        // Emergency truncation if line is still too long
+        const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 50;
+        const emergencyMessage = this.truncateWithWidth(userMessage, emergencyMaxWidth);
+        const safeContent = `${no} ${dateTime} ${response} ${toolCount} ${emergencyMessage}`;
+        console.log(prefix + safeContent);
+      } else {
+        console.log(prefix + content);
+      }
     }
   }
 
@@ -767,6 +817,14 @@ class ViewRenderer {
    * Truncate string to fit within specified display width
    */
   truncateWithWidth(text, maxWidth) {
+    // Clean text of any remaining ANSI codes and control characters
+    const cleanText = text
+      .replace(/\x1b\[[0-9;]*m/g, '')         // Remove ANSI codes
+      .replace(/[\u0000-\u001F]/g, ' ')       // Replace remaining control characters
+      .replace(/[\u007F-\u009F]/g, ' ')       // Replace DEL and C1 control characters
+      .replace(/\s+/g, ' ')                   // Collapse multiple spaces again
+      .trim();
+    
     let currentWidth = 0;
     let truncateIndex = 0;
     const ellipsis = '...';
@@ -774,38 +832,38 @@ class ViewRenderer {
     
     // Calculate total width first, handling surrogate pairs
     let totalWidth = 0;
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < text.length) {
-        const lowCode = text.charCodeAt(i + 1);
+    for (let i = 0; i < cleanText.length; i++) {
+      const code = cleanText.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < cleanText.length) {
+        const lowCode = cleanText.charCodeAt(i + 1);
         if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
           totalWidth += 2;
           i++; // Skip low surrogate
           continue;
         }
       }
-      totalWidth += this.getCharWidth(text[i]);
+      totalWidth += this.getCharWidth(cleanText[i]);
     }
     
     // Return original if it fits
     if (totalWidth <= maxWidth) {
-      return text;
+      return cleanText;
     }
     
-    // Calculate where to truncate - be more conservative
-    // Leave extra space to ensure no wrapping occurs
-    const conservativeMaxWidth = maxWidth - ellipsisWidth - 2; // Extra 2 char buffer
+    // Use ultra-conservative width calculation with large safety buffer
+    // Account for potential errors in character width calculation
+    const targetMaxWidth = maxWidth - ellipsisWidth - 10; // Extra 10 char safety buffer
     
-    for (let i = 0; i < text.length; i++) {
-      const code = text.charCodeAt(i);
+    for (let i = 0; i < cleanText.length; i++) {
+      const code = cleanText.charCodeAt(i);
       let charWidth = 1;
       
       // Handle surrogate pairs properly
-      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < text.length) {
-        const lowCode = text.charCodeAt(i + 1);
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < cleanText.length) {
+        const lowCode = cleanText.charCodeAt(i + 1);
         if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
           charWidth = 2;
-          if (currentWidth + charWidth > conservativeMaxWidth) {
+          if (currentWidth + charWidth > targetMaxWidth) {
             break;
           }
           currentWidth += charWidth;
@@ -815,15 +873,22 @@ class ViewRenderer {
         }
       }
       
-      charWidth = this.getCharWidth(text[i]);
-      if (currentWidth + charWidth > conservativeMaxWidth) {
+      charWidth = this.getCharWidth(cleanText[i]);
+      
+      // Ultra-conservative character width handling
+      // Assume any non-ASCII character might be wider than calculated
+      if (cleanText.charCodeAt(i) > 127) {
+        charWidth = Math.max(charWidth, 2); // Assume at least 2-width for non-ASCII
+      }
+      
+      if (currentWidth + charWidth > targetMaxWidth) {
         break;
       }
       currentWidth += charWidth;
       truncateIndex = i + 1;
     }
     
-    const truncated = text.substring(0, truncateIndex) + ellipsis;
+    const truncated = cleanText.substring(0, truncateIndex) + ellipsis;
     
     // Return truncated with ellipsis
     return truncated;
@@ -835,32 +900,67 @@ class ViewRenderer {
   getCharWidth(char) {
     const code = char.charCodeAt(0);
     
-    // Check for emoji sequences (surrogate pairs)
+    // Check for emoji sequences (surrogate pairs) - always width 2
     if (code >= 0xD800 && code <= 0xDBFF) {
-      // This is a high surrogate, which means it's part of an emoji
       return 2;
     }
     
-    // Additional emoji ranges
+    // Specific problematic characters that appear in the display
+    const specificWideChars = {
+      0x23FA: 2, // ⏺ Record button
+      0x23BF: 2, // ⎿ Horizontal scan line
+      0x1F527: 2, // 🔧 Wrench
+      0x1F4CA: 2, // 📊 Bar chart
+      0x1F4C5: 2, // 📅 Calendar
+      0x1F4C1: 2, // 📁 Folder
+      0x1F4C4: 2, // 📄 Document
+      0x1F4DD: 2, // 📝 Memo
+      0x2B06: 2, // ⬆ Up arrow
+      0x2B07: 2, // ⬇ Down arrow
+      0x25B6: 2, // ▶ Play button
+      0x25C0: 2, // ◀ Reverse button
+      0x2705: 2, // ✅ Check mark
+      0x274C: 2, // ❌ Cross mark
+      0x26A0: 2, // ⚠ Warning
+      0x2139: 2, // ℹ Information
+    };
+    
+    if (specificWideChars[code]) {
+      return specificWideChars[code];
+    }
+    
+    // Extended emoji and symbol ranges - be more conservative (assume width 2)
     if ((code >= 0x2600 && code <= 0x27BF) || // Miscellaneous Symbols
         (code >= 0x1F300 && code <= 0x1F6FF) || // Miscellaneous Symbols and Pictographs
         (code >= 0x1F900 && code <= 0x1F9FF) || // Supplemental Symbols and Pictographs
-        (code >= 0x1F000 && code <= 0x1F02F)) { // Mahjong/Domino Tiles
+        (code >= 0x1F000 && code <= 0x1F02F) || // Mahjong/Domino Tiles
+        (code >= 0x2300 && code <= 0x23FF) || // Miscellaneous Technical
+        (code >= 0x2000 && code <= 0x206F) || // General Punctuation
+        (code >= 0x25A0 && code <= 0x25FF) || // Geometric Shapes
+        (code >= 0x2190 && code <= 0x21FF) || // Arrows
+        (code >= 0x1F780 && code <= 0x1F7FF) || // Geometric Shapes Extended
+        (code >= 0x1F1E6 && code <= 0x1F1FF) || // Regional Indicator Symbols
+        (code >= 0x1F700 && code <= 0x1F77F) || // Alchemical Symbols
+        (code >= 0x1F800 && code <= 0x1F8FF)) { // Supplemental Arrows-C
       return 2;
     }
     
-    // Check if it's a full-width character
+    // Comprehensive full-width character detection
     if ((code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
         (code >= 0x2E80 && code <= 0x9FFF) || // CJK (includes Hiragana, Katakana, Kanji)
         (code >= 0xAC00 && code <= 0xD7AF) || // Hangul Syllables
         (code >= 0xF900 && code <= 0xFAFF) || // CJK Compatibility Ideographs
         (code >= 0xFE30 && code <= 0xFE4F) || // CJK Compatibility Forms
         (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth Forms
-        (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth Forms
-        (code >= 0x3000 && code <= 0x303F) || // CJK Symbols and Punctuation (、。など)
-        (code >= 0x2018 && code <= 0x201F)) { // Quotation marks
+        (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth Forms Currency
+        (code >= 0x3000 && code <= 0x303F) || // CJK Symbols and Punctuation
+        (code >= 0x3040 && code <= 0x309F) || // Hiragana
+        (code >= 0x30A0 && code <= 0x30FF) || // Katakana
+        (code >= 0x2018 && code <= 0x201F) || // Quotation marks
+        (code >= 0x2010 && code <= 0x2017)) { // Dashes and punctuation
       return 2;
     }
+    
     return 1;
   }
 
@@ -900,7 +1000,6 @@ class ViewRenderer {
       userPrefix = '🔗 ';  // Chain link emoji to indicate continuation
       userMessage = '[Continued session] ' + (userMessage.length > 100 ? userMessage.substring(0, 100) + '...' : userMessage);
     } else if (this.containsThinkingContent(conversation.userMessage)) {
-      userPrefix = '🛠️ ';  // Tool emoji to indicate thinking content
       // Extract just the user message part
       const cleanMessage = this.extractCleanUserMessage(conversation.userMessage);
       userMessage = cleanMessage || '[Contains tool execution details]';
@@ -1068,19 +1167,46 @@ class ViewRenderer {
    * Extract clean user message from text containing thinking content
    */
   extractCleanUserMessage(text) {
+    if (!text) return '';
+    
     const lines = text.split('\n');
     const userMessageLines = [];
     
     for (const line of lines) {
-      // Stop when we hit thinking content markers
+      // Stop when we hit assistant response markers or thinking content
       if (line.includes('🔧 TOOLS EXECUTION FLOW:') ||
           line.includes('🧠 THINKING PROCESS:') ||
+          line.includes('🤖 ASSISTANT') ||
+          line.includes('⏺ Thinking') ||
+          line.includes('⏺ Edit') ||
+          line.includes('⏺ Read') ||
+          line.includes('⏺ Write') ||
+          line.includes('⏺ Bash') ||
+          line.includes('⏺ Task') ||
+          line.includes('⏺ TodoWrite') ||
+          line.includes('⏺ Grep') ||
+          line.includes('⏺ Glob') ||
+          line.includes('⏺ MultiEdit') ||
           line.match(/^\s*\[Thinking \d+\]/) ||
           line.match(/^\s*\[\d+\]\s+\w+/) ||
-          line.startsWith('File:') ||
-          line.startsWith('Command:') ||
-          line.startsWith('pattern:') ||
-          line.startsWith('path:')) {
+          line.match(/^\s*\d+│/) ||
+          line.includes('file:') ||
+          line.includes('File:') ||
+          line.includes('Command:') ||
+          line.includes('pattern:') ||
+          line.includes('path:') ||
+          line.includes('⎿')) {
+        break;
+      }
+      
+      // Skip lines that look like assistant responses
+      if (line.trim().startsWith('Looking at') ||
+          line.trim().startsWith('I need to') ||
+          line.trim().startsWith('Let me') ||
+          line.trim().startsWith('I\'ll') ||
+          line.trim().startsWith('I will') ||
+          line.trim().startsWith('First,') ||
+          line.trim().startsWith('Based on')) {
         break;
       }
       
@@ -1181,7 +1307,7 @@ class ViewRenderer {
    * Render full detail view
    */
   renderFullDetail(viewData) {
-    const { session, conversations, selectedConversationIndex, scrollToEnd = false } = viewData;
+    const { session, conversations, selectedConversationIndex, originalConversationNumber, scrollToEnd = false, highlightQuery, highlightOptions } = viewData;
     const conversation = conversations[selectedConversationIndex];
     
     // Check if conversation exists
@@ -1189,7 +1315,7 @@ class ViewRenderer {
       this.clearScreen();
       // Header for error case
       console.log(this.theme.formatHeader(`[${session.sessionId}] ${session.projectName}`));
-      console.log(this.theme.formatMuted(`Conversation #${selectedConversationIndex + 1} of ${conversations.length}`));
+      console.log(this.theme.formatMuted(`Conversation #${originalConversationNumber || selectedConversationIndex + 1} of ${session.totalConversations || conversations.length}`));
       console.log(this.theme.formatSeparator(this.terminalWidth));
       console.log('');
       console.log(this.theme.formatWarning('No conversation data available'));
@@ -1200,7 +1326,7 @@ class ViewRenderer {
     }
     
     // Build content
-    const lines = this.buildFullDetailContent(session, conversation, selectedConversationIndex);
+    const lines = this.buildFullDetailContent(session, conversation, selectedConversationIndex, highlightQuery, highlightOptions);
     
     // Calculate scroll indicator first (needed for header calculation)
     let scrollIndicator = '';
@@ -1220,7 +1346,7 @@ class ViewRenderer {
     // Build header with scroll indicator embedded
     const headerTitle = `[${session.sessionId}] ${session.projectName}`;
     const headerLine1 = this.buildHeaderWithIndicator(headerTitle, scrollIndicator);
-    const headerLine2 = this.theme.formatMuted(`Conversation #${selectedConversationIndex + 1} of ${conversations.length}`);
+    const headerLine2 = this.theme.formatMuted(`Conversation #${originalConversationNumber || selectedConversationIndex + 1} of ${session.totalConversations || conversations.length}`);
     const headerLine3 = this.theme.formatSeparator(this.terminalWidth);
     
     // Calculate actual header lines (check if headerLine1 contains newline)
@@ -1228,14 +1354,13 @@ class ViewRenderer {
     
     // Recalculate with actual header size
     const footerLines = 2; // Controls + separator
-    const bufferLines = 1; // Add 1 line buffer to ensure header is visible
-    const contentHeight = this.terminalHeight - actualHeaderLines - footerLines - bufferLines;
+    const contentHeight = Math.max(1, this.terminalHeight - actualHeaderLines - footerLines);
     
     // Set max scroll offset in state manager
     const maxScrollOffset = Math.max(0, lines.length - contentHeight);
     this.state.setMaxScrollOffset(maxScrollOffset);
     
-    // Get current scroll offset from state (updated by scroll methods)
+    // Get current scroll offset from state and ensure it's within bounds
     let scrollOffset = this.state.scrollOffset;
     
     // Check current state flag (this is authoritative over viewData parameter)
@@ -1244,6 +1369,13 @@ class ViewRenderer {
       scrollOffset = maxScrollOffset;
       this.state.scrollOffset = scrollOffset;
       this.state.scrollToEnd = false; // Reset flag after initial positioning
+    } else {
+      // Ensure scrollOffset is within valid bounds
+      scrollOffset = Math.max(0, Math.min(scrollOffset, maxScrollOffset));
+      // Update state if we had to adjust
+      if (scrollOffset !== this.state.scrollOffset) {
+        this.state.scrollOffset = scrollOffset;
+      }
     }
     
     // If we need to scroll to search match
@@ -1340,9 +1472,9 @@ class ViewRenderer {
   }
 
   /**
-   * Build full detail content lines
+   * Build full detail content lines with enhanced visual formatting
    */
-  buildFullDetailContent(session, conversation, selectedConversationIndex) {
+  buildFullDetailContent(session, conversation, selectedConversationIndex, highlightQuery, highlightOptions) {
     const lines = [];
     
     // Safety check
@@ -1352,210 +1484,34 @@ class ViewRenderer {
       return lines;
     }
     
-    // Check if we need to highlight search terms
-    const highlightQuery = this.state.highlightQuery;
-    const highlightOptions = this.state.highlightOptions || {};
+    // Use provided highlight parameters or fallback to state
+    highlightQuery = highlightQuery || this.state.highlightQuery;
+    highlightOptions = highlightOptions || this.state.highlightOptions || {};
     
-    // Timestamp and metadata
+    // Simple metadata header
     lines.push('');
-    lines.push(this.theme.formatInfo('📅 ' + this.theme.formatDateTime(conversation.timestamp)));
-    lines.push(this.theme.formatInfo(`⏱️  Response Time: ${this.theme.formatResponseTime(conversation.responseTime)}`));
+    lines.push(this.theme.formatDim('━━━ Conversation Details ━━━'));
+    lines.push(`📅 ${this.theme.formatDateTime(conversation.timestamp)}`);
+    lines.push(`⏱️  Response Time: ${this.theme.formatResponseTime(conversation.responseTime)}`);
     
-    if (conversation.thinkingRate && conversation.thinkingRate > 0) {
-      lines.push(this.theme.formatInfo(`🧠 Thinking Rate: ${(conversation.thinkingRate * 100).toFixed(1)}%`));
-    }
-    
+    // User message section
     lines.push('');
-    
-    // User message
-    lines.push(this.theme.formatAccent('👤 USER MESSAGE:'));
-    lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
-    
-    // Check if this is a continuation session with metadata or contains thinking content
-    let displayMessage = conversation.userMessage;
-    
-    if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
-      // Add a notice that this is a continued session
-      lines.push(this.theme.formatWarning('⚠️  This is a continued session. Full context shown below:'));
-      lines.push('');
-      
-      // Format the continuation metadata more clearly
-      const messageLines = conversation.userMessage.split('\n');
-      let formattedMessage = [];
-      let inAnalysis = false;
-      let inSummary = false;
-      
-      for (const line of messageLines) {
-        if (line.startsWith('Analysis:')) {
-          formattedMessage.push(this.theme.formatDim('--- Analysis (from previous session) ---'));
-          inAnalysis = true;
-          inSummary = false;
-        } else if (line.startsWith('Summary:')) {
-          formattedMessage.push(this.theme.formatDim('--- Summary (from previous session) ---'));
-          inAnalysis = false;
-          inSummary = true;
-        } else if (line.match(/^(The user|User|ユーザー).*[:：]/i) ||
-                   line.match(/表示方法|見直し|修正|改善|ultrathink/i)) {
-          formattedMessage.push('');
-          formattedMessage.push(this.theme.formatAccent('--- Actual User Request ---'));
-          formattedMessage.push(line);
-        } else if (inAnalysis || inSummary) {
-          formattedMessage.push(this.theme.formatDim(line));
-        } else {
-          formattedMessage.push(line);
-        }
-      }
-      
-      displayMessage = formattedMessage.join('\n');
-    } else if (this.containsThinkingContent(conversation.userMessage)) {
-      // Handle thinking content in regular messages
-      lines.push(this.theme.formatWarning('ℹ️  Message contains tool execution details. Actual user request shown below:'));
-      lines.push('');
-      
-      displayMessage = this.formatMessageWithThinkingContent(conversation.userMessage);
-    }
-    
+    lines.push(this.theme.formatAccent('👤 USER'));
+    lines.push('');
+    let displayMessage = this.processUserMessage(conversation.userMessage);
     const userMessage = highlightQuery ? this.highlightText(displayMessage, highlightQuery, highlightOptions) : displayMessage;
-    const userLines = this.wrapText(userMessage, this.terminalWidth - 2);
-    userLines.forEach(line => lines.push(line));
+    const userLines = this.wrapTextWithWidth(userMessage, this.terminalWidth - 4);
+    userLines.forEach(line => lines.push('  ' + line));
+    
+    // Assistant response section - show chronological thinking + tools + response
+    lines.push('');
+    lines.push(this.theme.formatAccent('🤖 ASSISTANT'));
     lines.push('');
     
-    // Thinking content
-    if (conversation.thinkingContent && conversation.thinkingContent.length > 0) {
-      lines.push(this.theme.formatAccent('🧠 THINKING PROCESS:'));
-      lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
-      
-      conversation.thinkingContent.forEach((thinking, index) => {
-        if (index > 0) lines.push(''); // Add space between thinking blocks
-        lines.push(this.theme.formatMuted(`[Thinking ${index + 1}]`));
-        // Show first 1000 characters of each thinking block
-        const preview = thinking.text.substring(0, 1000);
-        const thinkingText = highlightQuery ? this.highlightText(preview, highlightQuery, highlightOptions) : preview;
-        const thinkingLines = this.wrapText(thinkingText, this.terminalWidth - 2);
-        thinkingLines.forEach(line => lines.push(line));
-        if (thinking.text.length > 1000) {
-          lines.push(this.theme.formatMuted(`... (${thinking.text.length - 1000} more characters)`));
-        }
-      });
-      
-      lines.push('');
-    }
-    
-    // Tool usage details
-    if (conversation.toolUses && conversation.toolUses.length > 0) {
-      lines.push(this.theme.formatAccent('🔧 TOOLS EXECUTION FLOW:'));
-      lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
-      
-      // Show detailed tool execution with parameters and results
-      conversation.toolUses.forEach((tool, index) => {
-        lines.push('');
-        lines.push(this.theme.formatInfo(`[${index + 1}] ${tool.toolName}`));
-        
-        // Show tool parameters
-        if (tool.input) {
-          // Special formatting for Bash commands
-          if (tool.toolName === 'Bash' && tool.input.command) {
-            const commandLines = this.wrapText(tool.input.command, this.terminalWidth - 12, 12);
-            if (commandLines.length > 0) {
-              lines.push(`  ${this.theme.formatMuted('Command:')} ${this.theme.formatAccent(commandLines[0])}`);
-              for (let i = 1; i < commandLines.length; i++) {
-                lines.push(`            ${this.theme.formatAccent(commandLines[i])}`);
-              }
-            } else {
-              lines.push(`  ${this.theme.formatMuted('Command:')} ${this.theme.formatAccent(tool.input.command)}`);
-            }
-          } 
-          // Special formatting for Read/Write file operations
-          else if ((tool.toolName === 'Read' || tool.toolName === 'Write' || tool.toolName === 'Edit') && tool.input.file_path) {
-            lines.push(`  ${this.theme.formatMuted('File:')} ${tool.input.file_path}`);
-            if (tool.input.old_string) {
-              lines.push(`  ${this.theme.formatMuted('Replace:')} "${tool.input.old_string.substring(0, 50)}${tool.input.old_string.length > 50 ? '...' : ''}"`);
-            }
-            if (tool.input.new_string) {
-              lines.push(`  ${this.theme.formatMuted('With:')} "${tool.input.new_string.substring(0, 50)}${tool.input.new_string.length > 50 ? '...' : ''}"`);
-            }
-          }
-          // Special formatting for Grep
-          else if (tool.toolName === 'Grep' && tool.input.pattern) {
-            lines.push(`  ${this.theme.formatMuted('Pattern:')} ${tool.input.pattern}`);
-            if (tool.input.path) {
-              lines.push(`  ${this.theme.formatMuted('Path:')} ${tool.input.path}`);
-            }
-          }
-          // Generic formatting for other tools
-          else {
-            const params = Object.entries(tool.input)
-              .filter(([key, value]) => value !== undefined && value !== null)
-              .slice(0, 3); // Show max 3 parameters
-            
-            params.forEach(([key, value]) => {
-              let displayValue = typeof value === 'string' ? value : JSON.stringify(value);
-              if (displayValue.length > 100) {
-                displayValue = displayValue.substring(0, 100) + '...';
-              }
-              
-              // Wrap long values
-              const valueLines = this.wrapText(displayValue, this.terminalWidth - key.length - 6, key.length + 6);
-              lines.push(`  ${this.theme.formatMuted(key + ':')} ${valueLines[0]}`);
-              for (let i = 1; i < valueLines.length; i++) {
-                lines.push(`  ${' '.repeat(key.length + 2)}${valueLines[i]}`);
-              }
-            });
-          }
-        }
-        
-        // Show tool result
-        if (tool.result !== null && tool.result !== undefined) {
-          lines.push('');
-          if (tool.isError) {
-            lines.push(`  ${this.theme.formatError('❌ Error:')}`);
-          } else {
-            lines.push(`  ${this.theme.formatSuccess('✅ Result:')}`);
-          }
-          
-          // Format and wrap result based on tool type
-          let resultText = tool.result;
-          if (typeof resultText === 'object') {
-            resultText = JSON.stringify(resultText, null, 2);
-          }
-          
-          // Limit result display to reasonable length
-          const maxResultLength = 500;
-          if (resultText.length > maxResultLength) {
-            resultText = resultText.substring(0, maxResultLength) + `\n${this.theme.formatMuted(`... (${resultText.length - maxResultLength} more characters)`)}`;
-          }
-          
-          const resultLines = this.wrapText(resultText, this.terminalWidth - 4, 4);
-          resultLines.forEach(line => lines.push(`  ${line}`));
-        }
-      });
-      
-      lines.push('');
-    } else if (conversation.toolsUsed && conversation.toolsUsed.length > 0) {
-      // Fallback for legacy data
-      lines.push(this.theme.formatAccent('🔧 TOOLS USED:'));
-      lines.push(this.theme.formatSeparator(40, '-'));
-      lines.push(`  ${conversation.toolsUsed.join(', ')}`);
-      lines.push('');
-    }
-    
-    // Assistant response
-    lines.push(this.theme.formatAccent('🤖 ASSISTANT RESPONSE:'));
-    lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
-    
-    // Show assistant response (limit to reasonable length for terminal)
-    const maxResponseLength = 2000;
-    const responseToShow = conversation.assistantResponse.length > maxResponseLength 
-      ? conversation.assistantResponse.substring(0, maxResponseLength)
-      : conversation.assistantResponse;
-    
-    const assistantMessage = highlightQuery ? this.highlightText(responseToShow, highlightQuery, highlightOptions) : responseToShow;
-    const responseLines = this.wrapText(assistantMessage, this.terminalWidth - 2);
-    responseLines.forEach(line => lines.push(line));
-    
-    if (conversation.assistantResponse.length > maxResponseLength) {
-      lines.push(this.theme.formatMuted(`\n... (${conversation.assistantResponse.length - maxResponseLength} more characters)`));
-    }
+    // Create chronological content from assistant message
+    const chronologicalContent = this.createChronologicalContent(conversation, highlightQuery, highlightOptions);
+    const chronologicalLines = chronologicalContent.split('\n');
+    chronologicalLines.forEach(line => lines.push(line));
     
     // Add final spacing
     lines.push('');
@@ -1564,18 +1520,850 @@ class ViewRenderer {
   }
 
   /**
+   * Create a simple, clean content section without boxes
+   */
+  createContentBox(title, content, type = 'default') {
+    const lines = [];
+    
+    // Choose colors based on content type
+    const colors = {
+      'user': '\x1b[36m',      // Cyan
+      'assistant': '\x1b[35m', // Magenta
+      'thinking': '\x1b[33m',  // Yellow
+      'tools': '\x1b[32m',     // Green
+      'info': '\x1b[90m',      // Gray
+      'default': '\x1b[37m'    // White
+    };
+    
+    const color = colors[type] || colors.default;
+    
+    // Simple title with underline
+    lines.push('');
+    lines.push(`${color}${title}\x1b[0m`);
+    lines.push(this.theme.formatDim('─'.repeat(Math.min(40, this.theme.getDisplayWidth(title)))));
+    
+    // Content without box borders
+    content.forEach(item => {
+      if (typeof item === 'string') {
+        // Process each line for better formatting
+        const itemLines = item.split('\n');
+        itemLines.forEach(rawLine => {
+          // Check for code blocks or special formatting
+          if (rawLine.startsWith('```')) {
+            // Code block delimiter - just show as a separator
+            lines.push(this.theme.formatDim('  ' + '─'.repeat(40)));
+          } else if (rawLine.match(/^\s{4,}/) || rawLine.match(/^\t/)) {
+            // Indented code
+            lines.push(this.theme.formatMuted('  ' + rawLine));
+          } else {
+            // Regular content
+            const contentLines = this.wrapTextWithWidth(rawLine, this.terminalWidth - 4);
+            contentLines.forEach(line => {
+              lines.push('  ' + line);
+            });
+          }
+        });
+      }
+    });
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Wrap text considering actual display width of characters
+   */
+  wrapTextWithWidth(text, maxWidth) {
+    const lines = [];
+    const paragraphs = text.split('\n');
+    
+    for (const paragraph of paragraphs) {
+      if (!paragraph) {
+        lines.push('');
+        continue;
+      }
+      
+      let currentLine = '';
+      let currentWidth = 0;
+      const words = paragraph.split(' ');
+      
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const wordWidth = this.theme.getDisplayWidth(word);
+        const spaceWidth = i > 0 ? 1 : 0;
+        
+        if (currentWidth + spaceWidth + wordWidth <= maxWidth) {
+          if (i > 0) {
+            currentLine += ' ';
+            currentWidth += 1;
+          }
+          currentLine += word;
+          currentWidth += wordWidth;
+        } else {
+          if (currentLine) {
+            lines.push(currentLine);
+          }
+          
+          // Handle long words that exceed maxWidth
+          if (wordWidth > maxWidth) {
+            let remainingWord = word;
+            while (remainingWord) {
+              let charCount = 0;
+              let lineWidth = 0;
+              
+              // Find how many characters fit in the width
+              for (let j = 0; j < remainingWord.length; j++) {
+                const char = remainingWord[j];
+                const charCode = char.charCodeAt(0);
+                const charWidth = this.getCharWidth(charCode);
+                
+                if (lineWidth + charWidth > maxWidth) break;
+                lineWidth += charWidth;
+                charCount++;
+              }
+              
+              lines.push(remainingWord.substring(0, charCount));
+              remainingWord = remainingWord.substring(charCount);
+            }
+            currentLine = '';
+            currentWidth = 0;
+          } else {
+            currentLine = word;
+            currentWidth = wordWidth;
+          }
+        }
+      }
+      
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+    }
+    
+    return lines;
+  }
+
+  /**
+   * Get character width (1 for half-width, 2 for full-width)
+   */
+  getCharWidth(charCode) {
+    // Full-width characters
+    if ((charCode >= 0x1100 && charCode <= 0x115F) || // Hangul Jamo
+        (charCode >= 0x2E80 && charCode <= 0x9FFF) || // CJK
+        (charCode >= 0xAC00 && charCode <= 0xD7AF) || // Hangul Syllables
+        (charCode >= 0xF900 && charCode <= 0xFAFF) || // CJK Compatibility
+        (charCode >= 0xFE30 && charCode <= 0xFE4F) || // CJK Compatibility Forms
+        (charCode >= 0xFF00 && charCode <= 0xFF60) || // Fullwidth Forms
+        (charCode >= 0xFFE0 && charCode <= 0xFFE6) || // Fullwidth Forms
+        (charCode >= 0x3000 && charCode <= 0x303F) || // CJK Symbols
+        (charCode >= 0x2018 && charCode <= 0x201F)) { // Quotation marks
+      return 2;
+    }
+    
+    // Emoji and symbols (simplified check)
+    if ((charCode >= 0x2600 && charCode <= 0x27BF) || // Miscellaneous Symbols
+        (charCode >= 0x1F300 && charCode <= 0x1F6FF) || // Misc Symbols and Pictographs
+        (charCode >= 0x1F900 && charCode <= 0x1F9FF)) { // Supplemental Symbols
+      return 2;
+    }
+    
+    return 1;
+  }
+
+  /**
+   * Create a special thinking content box with enhanced visualization
+   */
+  /**
+   * Create a simplified thinking section for better visibility
+   */
+  createThinkingSection(thinkingContent, highlightQuery, highlightOptions) {
+    const lines = [];
+    
+    // Simple header for thinking
+    lines.push(this.theme.formatWarning('💭 THINKING PROCESS'));
+    lines.push(this.theme.formatDim('─'.repeat(20)));
+    
+    // Process each thinking block
+    thinkingContent.forEach((thinking, index) => {
+      if (index > 0) {
+        lines.push(''); // Space between blocks
+      }
+      
+      // Simple block indicator
+      lines.push(this.theme.formatAccent(`  [Thinking ${index + 1}]`));
+      lines.push('');
+      
+      // Process thinking content with enhanced formatting - show all content
+      const preview = thinking.text; // Show complete thinking content
+      
+      // Apply special formatting for common thinking patterns
+      let formattedThinking = preview;
+      
+      // Highlight key thinking indicators
+      formattedThinking = formattedThinking.replace(/^(I need to|I should|Let me|I'll|Looking at|Checking|Analyzing|The user|User wants|Now I)/gim, 
+        (match) => this.theme.formatAccent(`➤ ${match}`));
+      
+      // Highlight conclusions and decisions
+      formattedThinking = formattedThinking.replace(/^(So|Therefore|This means|The issue is|The problem is|I found|Actually|It seems)/gim,
+        (match) => this.theme.formatSuccess(`✓ ${match}`));
+      
+      // Highlight errors or concerns
+      formattedThinking = formattedThinking.replace(/^(Error|Failed|Cannot|Problem|Issue|Warning)/gim,
+        (match) => this.theme.formatError(`⚠ ${match}`));
+        
+      // Highlight file/code references
+      formattedThinking = formattedThinking.replace(/`([^`]+)`/g,
+        (match, content) => this.theme.formatInfo(`[${content}]`));
+      
+      // Highlight file paths
+      formattedThinking = formattedThinking.replace(/(\/[\w\-\/.]+\.(js|ts|tsx|jsx|py|go|rs|cpp|java|rb|php))/g,
+        (match) => this.theme.formatInfo(match));
+        
+      // Apply search highlighting if needed
+      const thinkingText = highlightQuery ? this.highlightText(formattedThinking, highlightQuery, highlightOptions) : formattedThinking;
+      
+      // Display thinking content with proper indentation
+      const contentLines = this.wrapTextWithWidth(thinkingText, this.terminalWidth - 6);
+      contentLines.forEach((line, lineIndex) => {
+        // Add line numbers for very long thinking sections
+        if (contentLines.length > 20 && lineIndex % 10 === 0 && lineIndex > 0) {
+          lines.push(this.theme.formatDim(`    [line ${lineIndex}]`));
+        }
+        lines.push('    ' + line);
+      });
+      
+      // All thinking content is now displayed, no truncation
+    });
+    
+    return lines.join('\n');
+  }
+
+  createThinkingBox(thinkingContent, highlightQuery, highlightOptions) {
+    // Redirect to simpler version
+    return this.createThinkingSection(thinkingContent, highlightQuery, highlightOptions);
+  }
+
+  /**
+   * Create chronological content showing thinking, tools, and response in order
+   */
+  createChronologicalContent(conversation, highlightQuery, highlightOptions) {
+    const lines = [];
+    
+    // Try to get raw assistant message content if available
+    const assistantRawContent = conversation.rawAssistantContent || conversation.assistantRawContent;
+    
+    if (assistantRawContent && Array.isArray(assistantRawContent)) {
+      // Process content in chronological order
+      let thinkingIndex = 1;
+      let toolIndex = 1;
+      
+      assistantRawContent.forEach((item, index) => {
+        if (item.type === 'thinking' && item.thinking) {
+          // Add thinking section - Claude Code style
+          lines.push('');
+          lines.push(this.theme.formatWarning('⏺ Thinking'));
+          lines.push('');
+          
+          // Apply search highlighting if needed
+          const thinkingText = highlightQuery ? this.highlightText(item.thinking, highlightQuery, highlightOptions) : item.thinking;
+          
+          // Display thinking content with proper indentation
+          const contentLines = this.wrapTextWithWidth(thinkingText, this.terminalWidth - 4);
+          contentLines.forEach(line => {
+            lines.push('  ' + line);
+          });
+          
+        } else if (item.type === 'tool_use') {
+          // Add tool execution section - Claude Code style
+          lines.push('');
+          
+          // Create tool header with parameters
+          let toolHeader = `⏺ ${item.name}`;
+          if (item.input) {
+            // Add key parameters to header
+            const keyParams = this.getKeyParams(item.name, item.input);
+            if (keyParams) {
+              toolHeader += `(${keyParams})`;
+            }
+          }
+          lines.push(this.theme.formatSuccess(toolHeader));
+          
+          // Format tool input details
+          const toolInputLines = this.formatToolInput({ toolName: item.name, input: item.input });
+          toolInputLines.forEach(line => {
+            lines.push(line);
+          });
+          
+          // Find corresponding tool result
+          const toolResult = conversation.toolUses?.find(t => t.toolId === item.id);
+          if (toolResult && toolResult.result) {
+            // Format tool result
+            const resultLines = this.formatToolResult(toolResult.result).split('\n');
+            if (resultLines.length <= 3) {
+              lines.push(this.theme.formatInfo(resultLines.join(' ')));
+            } else {
+              lines.push(this.theme.formatInfo(resultLines[0] + '...'));
+            }
+          }
+          
+        } else if (item.type === 'text' && item.text) {
+          // Add text response - show directly without header
+          lines.push('');
+          
+          // Process markdown-style content for better display
+          const processedResponse = this.processMarkdownContent(item.text);
+          const responseText = highlightQuery ? this.highlightText(processedResponse, highlightQuery, highlightOptions) : processedResponse;
+          const responseLines = responseText.split('\n');
+          responseLines.forEach(line => {
+            lines.push(line); // No indentation for response text
+          });
+        }
+      });
+    } else {
+      // Fallback to simplified display if raw content not available
+      // Thinking content section
+      if (conversation.thinkingContent && conversation.thinkingContent.length > 0) {
+        conversation.thinkingContent.forEach(thinking => {
+          lines.push('');
+          lines.push(this.theme.formatWarning('⏺ Thinking'));
+          lines.push('');
+          
+          const thinkingText = highlightQuery ? this.highlightText(thinking.text, highlightQuery, highlightOptions) : thinking.text;
+          const contentLines = this.wrapTextWithWidth(thinkingText, this.terminalWidth - 4);
+          contentLines.forEach(line => {
+            lines.push('  ' + line);
+          });
+        });
+      }
+      
+      // Tool usage section
+      if (conversation.toolUses && conversation.toolUses.length > 0) {
+        conversation.toolUses.forEach(tool => {
+          lines.push('');
+          
+          let toolHeader = `⏺ ${tool.toolName}`;
+          if (tool.input) {
+            const keyParams = this.getKeyParams(tool.toolName, tool.input);
+            if (keyParams) {
+              toolHeader += `(${keyParams})`;
+            }
+          }
+          lines.push(this.theme.formatSuccess(toolHeader));
+          
+          const toolInputLines = this.formatToolInput(tool);
+          toolInputLines.forEach(line => {
+            lines.push(line);
+          });
+        });
+      }
+      
+      // Assistant response section - show directly
+      if (conversation.assistantResponse) {
+        lines.push('');
+        
+        // Show full assistant response (no truncation)
+        const processedResponse = this.processMarkdownContent(conversation.assistantResponse);
+        const assistantMessage = highlightQuery ? this.highlightText(processedResponse, highlightQuery, highlightOptions) : processedResponse;
+        const assistantLines = assistantMessage.split('\n');
+        assistantLines.forEach(line => {
+          lines.push(line);
+        });
+      }
+    }
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Get key parameters for tool header display
+   */
+  getKeyParams(toolName, input) {
+    if (!input) return '';
+    
+    switch (toolName) {
+      case 'Edit':
+      case 'Read':
+      case 'Write':
+        return input.file_path ? path.basename(input.file_path) : '';
+      case 'Bash':
+        return input.command ? input.command.substring(0, 30) + (input.command.length > 30 ? '...' : '') : '';
+      case 'Task':
+        return input.description || '';
+      case 'Grep':
+        return input.pattern || '';
+      case 'Glob':
+        return input.pattern || '';
+      case 'MultiEdit':
+        return input.file_path ? path.basename(input.file_path) : '';
+      case 'TodoWrite':
+        return input.todos ? `${input.todos.length} todos` : '';
+      default:
+        // For unknown tools, try to find a meaningful parameter
+        const keyParam = input.file_path || input.path || input.command || input.description || input.pattern;
+        return keyParam ? (typeof keyParam === 'string' ? keyParam.substring(0, 30) : '') : '';
+    }
+  }
+
+  /**
+   * Format tool result for display
+   */
+  formatToolResult(result) {
+    if (!result) return '(No result)';
+    
+    if (typeof result === 'string') {
+      return result;
+    } else if (typeof result === 'object') {
+      return JSON.stringify(result, null, 2);
+    } else {
+      return String(result);
+    }
+  }
+
+  /**
+   * Create an enhanced tools execution box
+   */
+  /**
+   * Create a simplified tools section
+   */
+  createToolsSection(toolUses) {
+    const lines = [];
+    
+    // Simple header
+    lines.push(this.theme.formatSuccess('🔧 TOOLS EXECUTION'));
+    lines.push(this.theme.formatDim('─'.repeat(20)));
+    
+    // Process each tool
+    toolUses.forEach((tool, index) => {
+      if (index > 0) {
+        lines.push(''); // Space between tools
+      }
+      
+      // Tool header with number
+      lines.push(this.theme.formatAccent(`  [${index + 1}] ${tool.toolName}`));
+      
+      // Tool parameters
+      if (tool.input) {
+        this.formatToolInput(tool, this.terminalWidth).forEach(line => {
+          lines.push('  ' + line);
+        });
+      }
+      
+      // Tool result
+      if (tool.result !== null && tool.result !== undefined) {
+        lines.push('');
+        const resultIcon = tool.isError ? '❌' : '✅';
+        const resultLabel = tool.isError ? 'Error' : 'Result';
+        lines.push(`  ${resultIcon} ${this.theme.formatAccent(resultLabel)}:`);
+        
+        // Format result
+        let resultText = tool.result;
+        if (typeof resultText === 'object') {
+          resultText = JSON.stringify(resultText, null, 2);
+        }
+        
+        resultText = resultText.toString();
+        
+        // Special formatting for Read tool - show with line numbers
+        if (tool.toolName === 'Read' && resultText.includes('\n')) {
+          const fileLines = resultText.split('\n').slice(0, 15);
+          fileLines.forEach((line, idx) => {
+            const lineNum = this.theme.formatDim(`${String(idx + 1).padStart(4)}│`);
+            lines.push(`    ${lineNum} ${line.substring(0, 100)}`);
+          });
+          if (resultText.split('\n').length > 15) {
+            lines.push(this.theme.formatMuted(`    ... ${resultText.split('\n').length - 15} more lines`));
+          }
+        } else {
+          // Regular result
+          const maxResultLength = 500;
+          if (resultText.length > maxResultLength) {
+            resultText = resultText.substring(0, maxResultLength) + '...';
+          }
+          
+          const resultLines = this.wrapTextWithWidth(resultText, this.terminalWidth - 8);
+          resultLines.forEach(line => {
+            lines.push('    ' + (tool.isError ? this.theme.formatError(line) : line));
+          });
+        }
+      }
+    });
+    
+    return lines.join('\n');
+  }
+
+  createToolsBox(toolUses) {
+    // Redirect to simpler version
+    return this.createToolsSection(toolUses);
+  }
+
+  /**
+   * Format tool input parameters
+   */
+  formatToolInput(tool, boxWidth) {
+    const lines = [];
+    
+    // Simple, clean formatting for tool inputs
+    if (tool.toolName === 'Bash' && tool.input.command) {
+      lines.push(`  ${this.theme.formatMuted('command:')} ${this.theme.formatInfo(tool.input.command)}`);
+      if (tool.input.description) {
+        lines.push(`  ${this.theme.formatMuted('purpose:')} ${tool.input.description}`);
+      }
+    } else if ((tool.toolName === 'Read' || tool.toolName === 'Write' || tool.toolName === 'Edit' || tool.toolName === 'MultiEdit') && tool.input.file_path) {
+      lines.push(`  ${this.theme.formatMuted('file:')} ${this.theme.formatInfo(tool.input.file_path)}`);
+      
+      if (tool.toolName === 'Edit' && tool.input.old_string) {
+        // Show git-style diff
+        lines.push('');
+        const diffLines = this.createUnifiedDiff(tool.input.old_string, tool.input.new_string);
+        
+        if (diffLines.length === 0) {
+          lines.push(`    ${this.theme.formatMuted('(No visible changes)')}`);
+        } else {
+          // Show unified diff with proper formatting
+          let shownLines = 0;
+          const maxLines = 15;
+          
+          for (const diffLine of diffLines) {
+            if (shownLines >= maxLines) {
+              lines.push(`    ${this.theme.formatMuted(`... ${diffLines.length - shownLines} more lines`)}`);
+              break;
+            }
+            
+            let lineNumStr = '';
+            if (diffLine.lineNum !== '...') {
+              lineNumStr = String(diffLine.lineNum).padStart(4) + '│';
+            } else {
+              lineNumStr = '    │';
+            }
+            
+            if (diffLine.type === 'removed') {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatError('- ' + diffLine.content)}`);
+            } else if (diffLine.type === 'added') {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
+            } else {
+              // Context line
+              lines.push(`       ${this.theme.formatDim(lineNumStr)}   ${diffLine.content}`);
+            }
+            shownLines++;
+          }
+        }
+      } else if (tool.toolName === 'MultiEdit' && tool.input.edits) {
+        // Handle MultiEdit specially
+        lines.push(`  ${this.theme.formatMuted('edits:')} ${tool.input.edits.length} changes`);
+        
+        // Show all edits (no truncation)
+        tool.input.edits.forEach((edit, idx) => {
+          lines.push('');
+          lines.push(`  ${this.theme.formatAccent(`[Edit ${idx + 1}]`)}`);
+          
+          // Show complete unified diff for each edit
+          const diffResult = this.createUnifiedDiff(edit.old_string, edit.new_string);
+          diffResult.forEach(diffLine => {
+            let lineNumStr = '';
+            if (diffLine.lineNum !== '...') {
+              lineNumStr = String(diffLine.lineNum).padStart(4) + '│';
+            } else {
+              lineNumStr = '    │';
+            }
+            
+            if (diffLine.type === 'added') {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
+            } else if (diffLine.type === 'removed') {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatError('- ' + diffLine.content)}`);
+            } else {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)}   ${diffLine.content}`);
+            }
+          });
+        });
+      }
+      
+      if (tool.toolName === 'Read' && tool.input.offset) {
+        lines.push(`  ${this.theme.formatMuted('offset:')} line ${tool.input.offset}`);
+      }
+      
+      if (tool.toolName === 'Write' && tool.input.content) {
+        lines.push(`  ${this.theme.formatMuted('writing:')} ${tool.input.content.split('\n').length} lines`);
+        // Show all content (no truncation)
+        const contentLines = tool.input.content.split('\n');
+        contentLines.forEach((line, idx) => {
+          const lineNum = this.theme.formatDim(`${String(idx + 1).padStart(4)}│`);
+          lines.push(`       ${lineNum} ${line}`);
+        });
+      }
+    } else if (tool.toolName === 'Grep' && tool.input.pattern) {
+      lines.push(`  ${this.theme.formatMuted('pattern:')} ${this.theme.formatInfo(tool.input.pattern)}`);
+      if (tool.input.path) {
+        lines.push(`  ${this.theme.formatMuted('path:')} ${tool.input.path}`);
+      }
+      if (tool.input.glob) {
+        lines.push(`  ${this.theme.formatMuted('glob:')} ${tool.input.glob}`);
+      }
+    } else if (tool.toolName === 'Task' && tool.input.prompt) {
+      lines.push(`  ${this.theme.formatMuted('task:')} ${tool.input.description || 'Agent task'}`);
+      // Show all prompt lines (no truncation)
+      const promptLines = tool.input.prompt.split('\n');
+      promptLines.forEach(line => {
+        lines.push(`    ${this.theme.formatDim(line)}`);
+      });
+    } else if (tool.toolName === 'TodoWrite' && tool.input.todos) {
+      const todoCount = tool.input.todos.length;
+      const completedCount = tool.input.todos.filter(t => t.status === 'completed').length;
+      const inProgressCount = tool.input.todos.filter(t => t.status === 'in_progress').length;
+      lines.push(`  ${this.theme.formatMuted('todos:')} ${completedCount}/${todoCount} completed`);
+      if (inProgressCount > 0) {
+        lines.push(`  ${this.theme.formatMuted('in progress:')} ${inProgressCount}`);
+      }
+      // Show all todos (no truncation)
+      tool.input.todos.forEach(todo => {
+        const status = todo.status === 'completed' ? '✓' : 
+                      todo.status === 'in_progress' ? '→' : '○';
+        let formattedStatus;
+        if (todo.status === 'completed') {
+          formattedStatus = this.theme.formatSuccess(status + ' ' + todo.content);
+        } else if (todo.status === 'in_progress') {
+          formattedStatus = this.theme.formatWarning(status + ' ' + todo.content);
+        } else {
+          formattedStatus = this.theme.formatMuted(status + ' ' + todo.content);
+        }
+        lines.push(`    ${formattedStatus}`);
+      });
+    } else {
+      // Generic formatting - show all parameters
+      const params = Object.entries(tool.input)
+        .filter(([key, value]) => value !== undefined && value !== null && key !== 'edits');
+      
+      params.forEach(([key, value]) => {
+        let displayValue = typeof value === 'string' ? value : JSON.stringify(value);
+        lines.push(`  ${this.theme.formatMuted(key + ':')} ${displayValue}`);
+      });
+    }
+    
+    return lines;
+  }
+
+  /**
+   * Create unified diff like git diff
+   */
+  createUnifiedDiff(oldText, newText) {
+    const oldLines = oldText.split('\n');
+    const newLines = newText.split('\n');
+    const diffLines = [];
+    
+    // Simple diff algorithm
+    let oldIndex = 0;
+    let newIndex = 0;
+    const contextLines = 999; // Show all context (no truncation)
+    
+    while (oldIndex < oldLines.length || newIndex < newLines.length) {
+      const oldLine = oldLines[oldIndex] || '';
+      const newLine = newLines[newIndex] || '';
+      
+      if (oldIndex >= oldLines.length) {
+        // Only new lines remaining
+        diffLines.push({
+          type: 'added',
+          lineNum: newIndex + 1,
+          content: newLine
+        });
+        newIndex++;
+      } else if (newIndex >= newLines.length) {
+        // Only old lines remaining
+        diffLines.push({
+          type: 'removed',
+          lineNum: oldIndex + 1,
+          content: oldLine
+        });
+        oldIndex++;
+      } else if (oldLine === newLine) {
+        // Lines are the same - context line
+        // Show all context lines (no filtering)
+        diffLines.push({
+          type: 'context',
+          lineNum: oldIndex + 1,
+          content: oldLine
+        });
+        oldIndex++;
+        newIndex++;
+      } else {
+        // Lines are different - check if it's replacement or insertion/deletion
+        const oldTrimmed = oldLine.trim();
+        const newTrimmed = newLine.trim();
+        
+        // Look ahead to see if this is a replacement
+        let foundMatch = false;
+        for (let lookahead = 1; lookahead <= 3; lookahead++) {
+          if (oldIndex + lookahead < oldLines.length && 
+              oldLines[oldIndex + lookahead] === newLine) {
+            // Old line(s) were deleted
+            for (let i = 0; i < lookahead; i++) {
+              diffLines.push({
+                type: 'removed',
+                lineNum: oldIndex + i + 1,
+                content: oldLines[oldIndex + i]
+              });
+            }
+            oldIndex += lookahead;
+            foundMatch = true;
+            break;
+          }
+          if (newIndex + lookahead < newLines.length && 
+              newLines[newIndex + lookahead] === oldLine) {
+            // New line(s) were added
+            for (let i = 0; i < lookahead; i++) {
+              diffLines.push({
+                type: 'added',
+                lineNum: newIndex + i + 1,
+                content: newLines[newIndex + i]
+              });
+            }
+            newIndex += lookahead;
+            foundMatch = true;
+            break;
+          }
+        }
+        
+        if (!foundMatch) {
+          // Direct replacement
+          diffLines.push({
+            type: 'removed',
+            lineNum: oldIndex + 1,
+            content: oldLine
+          });
+          diffLines.push({
+            type: 'added',
+            lineNum: newIndex + 1,
+            content: newLine
+          });
+          oldIndex++;
+          newIndex++;
+        }
+      }
+    }
+    
+    // Return all diff lines without truncation
+    return diffLines;
+  }
+
+  /**
+   * Check if there are changes nearby for context determination
+   */
+  hasChangesNearby(oldLines, newLines, oldIndex, newIndex, contextLines) {
+    // Check if there are any differences within contextLines distance
+    const startOld = Math.max(0, oldIndex - contextLines);
+    const endOld = Math.min(oldLines.length, oldIndex + contextLines + 1);
+    const startNew = Math.max(0, newIndex - contextLines);
+    const endNew = Math.min(newLines.length, newIndex + contextLines + 1);
+    
+    // Simple check: if lengths differ in this range, there are changes
+    if ((endOld - startOld) !== (endNew - startNew)) {
+      return true;
+    }
+    
+    // Check for line differences in the range
+    for (let i = 0; i < Math.min(endOld - startOld, endNew - startNew); i++) {
+      if (oldLines[startOld + i] !== newLines[startNew + i]) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * Trim excessive context lines from diff
+   */
+  trimContextLines(diffLines, maxContext) {
+    // Group consecutive context lines and trim them
+    const result = [];
+    let contextGroup = [];
+    
+    for (const line of diffLines) {
+      if (line.type === 'context') {
+        contextGroup.push(line);
+      } else {
+        // Process accumulated context
+        if (contextGroup.length > maxContext * 2) {
+          // Keep first and last few context lines
+          result.push(...contextGroup.slice(0, maxContext));
+          if (contextGroup.length > maxContext * 2) {
+            result.push({
+              type: 'context',
+              lineNum: '...',
+              content: `... ${contextGroup.length - maxContext * 2} lines ...`
+            });
+          }
+          result.push(...contextGroup.slice(-maxContext));
+        } else {
+          result.push(...contextGroup);
+        }
+        contextGroup = [];
+        result.push(line);
+      }
+    }
+    
+    // Handle remaining context
+    if (contextGroup.length > maxContext) {
+      result.push(...contextGroup.slice(0, maxContext));
+    } else {
+      result.push(...contextGroup);
+    }
+    
+    return result;
+  }
+
+  /**
+   * Process user message for better display
+   */
+  processUserMessage(userMessage) {
+    if (!userMessage) return '';
+    
+    if (userMessage.includes('This session is being continued from a previous conversation')) {
+      // Format continuation metadata more clearly
+      const messageLines = userMessage.split('\n');
+      let formattedMessage = [];
+      let inAnalysis = false;
+      let inSummary = false;
+      
+      for (const line of messageLines) {
+        if (line.startsWith('Analysis:')) {
+          formattedMessage.push('\n' + this.theme.formatDim('📋 Analysis (from previous session):'));
+          inAnalysis = true;
+          inSummary = false;
+        } else if (line.startsWith('Summary:')) {
+          formattedMessage.push('\n' + this.theme.formatDim('📄 Summary (from previous session):'));
+          inAnalysis = false;
+          inSummary = true;
+        } else if (line.match(/^(The user|User|ユーザー).*[:：]/i) ||
+                   line.match(/表示方法|見直し|修正|改善/i)) {
+          formattedMessage.push('\n' + this.theme.formatAccent('📌 Actual User Request:'));
+          formattedMessage.push(line);
+          inAnalysis = false;
+          inSummary = false;
+        } else if (inAnalysis || inSummary) {
+          formattedMessage.push(this.theme.formatDim('  ' + line));
+        } else if (line.trim()) {
+          formattedMessage.push(line);
+        }
+      }
+      
+      return formattedMessage.join('\n');
+    } else if (this.containsThinkingContent(userMessage)) {
+      return this.formatMessageWithThinkingContent(userMessage);
+    }
+    
+    return userMessage;
+  }
+
+  /**
    * Render full detail controls
    */
   renderFullDetailControls(canScroll = false) {
     const controls = [];
     
-    if (canScroll) {
-      controls.push(
-        this.theme.formatMuted('↑/↓') + ' 5-line scroll',
-        this.theme.formatMuted('Space/b') + ' page',
-        this.theme.formatMuted('g/G') + ' top/bottom'
-      );
-    }
+    // Always show scroll controls regardless of content length
+    controls.push(
+      this.theme.formatMuted('↑/↓') + ' 5-line scroll',
+      this.theme.formatMuted('Space/b') + ' page',
+      this.theme.formatMuted('g/G') + ' top/bottom'
+    );
     
     controls.push(
       this.theme.formatMuted('←/→') + ' prev/next conversation',
@@ -1631,58 +2419,47 @@ class ViewRenderer {
   renderHelp() {
     this.clearScreen();
     
-    console.log(this.theme.formatHeader('🔍 CC Lens - Help'));
-    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log(this.theme.formatAccent('CCScope Help'));
+    console.log(this.theme.formatDim('─'.repeat(20)));
     console.log('');
     
     const sections = [
       {
         title: 'Navigation',
         items: [
-          '↑/↓ or k/j    Navigate up/down',
-          '←/→ or h/l    Navigate left/right',
+          '↑/↓ k/j       Navigate up/down',
+          '←/→ h/l       Navigate left/right',
           'Enter         Select/Enter view',
-          'Esc or q      Back/Exit'
-        ]
-      },
-      {
-        title: 'Views',
-        items: [
-          'Enter         View session details',
-          '+/-           Adjust context range',
-          'L             Toggle language'
+          'Esc/q         Back/Exit',
+          'g/G           Top/Bottom (in detail view)'
         ]
       },
       {
         title: 'Search & Filter',
         items: [
           '/             Search sessions',
-          'f             Filter sessions (project)',
-          's             Sort sessions',
-          'c             Clear filters'
+          'f             Filter by project',
+          's             Sort sessions'
         ]
       },
       {
         title: 'Actions',
         items: [
           'r             Resume session (claude -r)',
-          'b             Bookmark session',
-          'e             Export data',
-          'h or ?        This help'
+          'h/?           Show this help'
         ]
       }
     ];
     
     sections.forEach(section => {
-      console.log(this.theme.formatAccent(section.title));
+      console.log(this.theme.formatAccent(`${section.title}:`));
       section.items.forEach(item => {
         console.log(`  ${item}`);
       });
       console.log('');
     });
     
-    console.log(this.theme.formatSeparator(this.terminalWidth, '─'));
-    console.log(this.theme.formatMuted('Press any key to continue...'));
+    console.log(this.theme.formatDim('Press any key to continue...'));
   }
 
   /**
@@ -1916,12 +2693,6 @@ class ViewRenderer {
     
     // Search info
     console.log(this.theme.formatInfo(`Query: "${searchQuery}"`));
-    if (searchOptions.thinkingOnly) {
-      console.log(this.theme.formatWarning('Searching only in thinking content'));
-    }
-    if (searchOptions.minThinkingRate !== null && searchOptions.minThinkingRate !== undefined) {
-      console.log(this.theme.formatWarning(`Minimum thinking rate: ${(searchOptions.minThinkingRate * 100).toFixed(0)}%`));
-    }
     
     // Results summary and controls
     console.log(this.theme.formatHeader(`Found ${searchResults.length} matches`));
@@ -1958,7 +2729,7 @@ class ViewRenderer {
       // Format with better colors for readability
       const sessionInfo = `[${sessionIdShort}]`;
       const projectInfo = result.projectName;
-      const convInfo = `Conv #${result.conversationIndex + 1}`;
+      const convInfo = `Conv #${result.originalConversationNumber}`;
       
       console.log(prefix + 
         this.theme.formatMuted(sessionInfo) + ' ' +
@@ -2030,12 +2801,6 @@ class ViewRenderer {
     
     // Search info
     console.log(this.theme.formatInfo(`Query: "${query}"`));
-    if (options.thinkingOnly) {
-      console.log(this.theme.formatWarning('Searching only in thinking content'));
-    }
-    if (options.minThinkingRate !== null && options.minThinkingRate !== undefined) {
-      console.log(this.theme.formatWarning(`Minimum thinking rate: ${(options.minThinkingRate * 100).toFixed(0)}%`));
-    }
     console.log('');
     
     // Results summary
@@ -2111,6 +2876,40 @@ class ViewRenderer {
     console.log('');
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log(this.theme.formatDim('Press Ctrl+C to exit'));
+  }
+
+  /**
+   * Process markdown-style content for better display
+   */
+  processMarkdownContent(text) {
+    if (!text) return text;
+    
+    let processedText = text;
+    
+    // Handle markdown-style headers - simpler approach
+    processedText = processedText.replace(/^(#+)\s+(.+)$/gm, (match, hashes, content) => {
+      const level = hashes.length;
+      if (level === 1) return this.theme.formatAccent(`\n${content}\n${'─'.repeat(content.length)}`);
+      if (level === 2) return this.theme.formatAccent(`▸ ${content}`);
+      return `${'  '.repeat(level - 2)}• ${content}`;
+    });
+    
+    // Handle inline code
+    processedText = processedText.replace(/`([^`]+)`/g, (match, content) => {
+      return this.theme.formatInfo(content);
+    });
+    
+    // Handle lists
+    processedText = processedText.replace(/^(\s*)([-*+])\s+(.+)$/gm, (match, indent, bullet, content) => {
+      return `${indent}• ${content}`;
+    });
+    
+    // Handle file paths
+    processedText = processedText.replace(/\b(\/[^\s]+\.(js|ts|tsx|jsx|py|go|rs|cpp|c|h|java|rb|php))\b/g, (match) => {
+      return this.theme.formatInfo(match);
+    });
+    
+    return processedText;
   }
 
   /**
