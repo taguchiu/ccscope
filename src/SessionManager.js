@@ -179,6 +179,7 @@ class SessionManager {
       
       // Extract session metadata
       const sessionId = this.extractSessionId(entries);
+      const fullSessionId = this.extractFullSessionId(filePath); // Get full ID from filename
       const projectName = this.extractProjectName(entries, filePath);
       
       // Build conversation pairs
@@ -194,8 +195,9 @@ class SessionManager {
       
       return {
         sessionId,
-        fullSessionId: sessionId,
+        fullSessionId: fullSessionId || sessionId, // Use full ID if available
         projectName,
+        projectPath: this.extractProjectPath(filePath, projectName), // Add project path
         filePath,
         conversationPairs,
         totalConversations: conversationPairs.length,
@@ -222,6 +224,100 @@ class SessionManager {
     const content = JSON.stringify(entries.slice(0, 3));
     const hash = this.generateHash(content);
     return hash.substring(0, 8);
+  }
+
+  /**
+   * Extract full session ID from filename
+   */
+  extractFullSessionId(filePath) {
+    const filename = path.basename(filePath);
+    
+    // Look for UUID pattern in filename (8-4-4-4-12 format)
+    const uuidPattern = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i;
+    const match = filename.match(uuidPattern);
+    
+    if (match) {
+      return match[1];
+    }
+    
+    // Look for other long ID patterns (e.g., 32 character hex string)
+    const hexPattern = /([a-f0-9]{32,})/i;
+    const hexMatch = filename.match(hexPattern);
+    
+    if (hexMatch) {
+      return hexMatch[1];
+    }
+    
+    return null;
+  }
+
+  /**
+   * Extract project path from file path and project name
+   */
+  extractProjectPath(filePath, projectName) {
+    try {
+      // Read the first line of the JSONL file to get cwd
+      const content = fs.readFileSync(filePath, 'utf8');
+      const firstLine = content.split('\n')[0];
+      
+      if (firstLine) {
+        const entry = JSON.parse(firstLine);
+        if (entry.cwd) {
+          // Return the cwd field directly - this is the most accurate
+          return entry.cwd;
+        }
+      }
+    } catch (error) {
+      // If we can't read the file or parse JSON, fall back to other methods
+      console.debug('Could not extract cwd from file:', error.message);
+    }
+    
+    // Fallback: Special handling for .claude/projects/ pattern
+    if (filePath.includes('/.claude/projects/')) {
+      const filename = path.basename(filePath);
+      const nameWithoutExt = filename.replace('.jsonl', '');
+      
+      // If filename starts with '-' or contains mangled path
+      if (nameWithoutExt.startsWith('-') || nameWithoutExt.includes('-Users-')) {
+        // Reconstruct the actual path from the mangled filename
+        // -Users-taguchiu-Documents-workspace-ccscope -> /Users/taguchiu/Documents/workspace/ccscope
+        const reconstructedPath = '/' + nameWithoutExt.replace(/^-/, '').replace(/-/g, '/');
+        return reconstructedPath;
+      }
+    }
+    
+    // Look for the project path in the file path
+    const parts = filePath.split(path.sep);
+    
+    // Try to find the project directory
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (parts[i] === projectName) {
+        // Found project directory, return path up to and including it
+        return parts.slice(0, i + 1).join(path.sep);
+      }
+    }
+    
+    // Try common patterns
+    if (filePath.includes('/workspace/')) {
+      const workspaceIndex = filePath.indexOf('/workspace/');
+      const afterWorkspace = filePath.substring(workspaceIndex + '/workspace/'.length);
+      const projectDir = afterWorkspace.split('/')[0];
+      if (projectDir) {
+        return filePath.substring(0, workspaceIndex + '/workspace/'.length + projectDir.length);
+      }
+    }
+    
+    if (filePath.includes('/Documents/')) {
+      const docsIndex = filePath.indexOf('/Documents/');
+      const afterDocs = filePath.substring(docsIndex + '/Documents/'.length);
+      const projectDir = afterDocs.split('/')[0];
+      if (projectDir && projectDir !== 'workspace') {
+        return filePath.substring(0, docsIndex + '/Documents/'.length + projectDir.length);
+      }
+    }
+    
+    // Default to home directory if can't determine
+    return process.env.HOME || '/';
   }
 
   /**
@@ -643,8 +739,104 @@ class SessionManager {
       text = JSON.stringify(content);
     }
     
+    // Check if this is a continuation session with metadata
+    if (text.includes('This session is being continued from a previous conversation')) {
+      // Extract the actual user request from continuation metadata
+      const lines = text.split('\n');
+      let actualRequest = '';
+      
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        
+        // Look for patterns that indicate the actual user request
+        if (line.match(/^(The user|User|ユーザー).*[:：]/i) || 
+            line.match(/requested|asked|want|リクエスト|依頼|要求/i) ||
+            line.match(/表示方法|見直し|修正|改善|ultrathink/i)) {
+          // Found user request indicator, extract from here
+          actualRequest = lines.slice(i).join('\n').trim();
+          break;
+        }
+        
+        // Also check for the last non-metadata content
+        if (!line.startsWith('Analysis:') && 
+            !line.startsWith('Summary:') && 
+            !line.startsWith('-') &&
+            !line.match(/^\d+\./) &&
+            line.length > 0) {
+          actualRequest = line;
+        }
+      }
+      
+      // If we found an actual request, use it; otherwise show continuation marker
+      if (actualRequest) {
+        return actualRequest;
+      } else {
+        return '[Continued session - see full detail for context]';
+      }
+    }
+    
+    // Check if this contains Claude Code thinking content or tool execution flow
+    if (this.containsThinkingContent(text)) {
+      return this.extractActualUserMessage(text);
+    }
+    
     // Return full content without sanitizing (keep line breaks)
     return text.trim();
+  }
+
+  /**
+   * Check if text contains Claude Code thinking content markers
+   */
+  containsThinkingContent(text) {
+    const thinkingMarkers = [
+      '🔧 TOOLS EXECUTION FLOW:',
+      '🧠 THINKING PROCESS:',
+      '[Thinking',
+      /\[\d+\]\s+(Read|Write|Edit|Bash|Glob|Grep|Task)/,
+      'File:',
+      'Command:',
+      'pattern:',
+      'path:',
+      /^\s*\[\d+\]\s+\w+$/m  // Tool execution markers like [1] Read
+    ];
+    
+    return thinkingMarkers.some(marker => {
+      if (typeof marker === 'string') {
+        return text.includes(marker);
+      } else {
+        return marker.test(text);
+      }
+    });
+  }
+
+  /**
+   * Extract actual user message from text containing thinking content
+   */
+  extractActualUserMessage(text) {
+    const lines = text.split('\n');
+    const userMessageLines = [];
+    let foundThinkingMarker = false;
+    
+    for (const line of lines) {
+      // Check if this line is a thinking content marker
+      if (line.includes('🔧 TOOLS EXECUTION FLOW:') ||
+          line.includes('🧠 THINKING PROCESS:') ||
+          line.match(/^\s*\[Thinking \d+\]/) ||
+          line.match(/^\s*\[\d+\]\s+\w+/) ||
+          line.startsWith('File:') ||
+          line.startsWith('Command:') ||
+          line.startsWith('pattern:') ||
+          line.startsWith('path:') ||
+          (foundThinkingMarker && line.trim().startsWith('['))) {
+        foundThinkingMarker = true;
+        break;
+      }
+      
+      userMessageLines.push(line);
+    }
+    
+    const userMessage = userMessageLines.join('\n').trim();
+    return userMessage || '[See full detail for complete context]';
   }
 
   /**
@@ -1089,13 +1281,102 @@ class SessionManager {
 
   /**
    * Search conversations by query
-   * @param {string} query - Search query
-   * @param {Object} options - Search options (for future use)
+   * @param {string} query - Search query (supports OR operator and regex)
+   * @param {Object} options - Search options
+   * @param {boolean} options.regex - Use regular expression search
    * @returns {Array} Search results
    */
   searchConversations(query, options = {}) {
     const results = [];
-    const searchQuery = query.toLowerCase();
+    
+    // Parse search terms - support OR operator
+    let searchTerms = [];
+    let searchRegex = null;
+    
+    if (options.regex) {
+      // Regex mode
+      try {
+        searchRegex = new RegExp(query, 'i');
+      } catch (error) {
+        console.error('Invalid regex:', error.message);
+        return [];
+      }
+    } else {
+      // Normal mode - parse OR conditions (support both OR and or)
+      const orPattern = /\s+(OR|or)\s+/;
+      if (orPattern.test(query)) {
+        searchTerms = query.split(orPattern)
+          .filter((term, index) => index % 2 === 0) // Skip the "OR"/"or" matches
+          .map(term => term.trim().toLowerCase());
+      } else {
+        searchTerms = [query.toLowerCase()];
+      }
+    }
+    
+    // Helper function to check if text matches
+    const textMatches = (text) => {
+      if (!text) return null;
+      
+      if (searchRegex) {
+        const match = text.match(searchRegex);
+        if (match) {
+          return {
+            found: true,
+            index: match.index,
+            length: match[0].length,
+            matchedText: match[0]
+          };
+        }
+      } else {
+        // Check each OR term
+        for (const term of searchTerms) {
+          const lowerText = text.toLowerCase();
+          const index = lowerText.indexOf(term);
+          if (index !== -1) {
+            return {
+              found: true,
+              index: index,
+              length: term.length,
+              matchedText: text.substring(index, index + term.length)
+            };
+          }
+        }
+      }
+      return null;
+    };
+    
+    // Helper function to extract context
+    const extractContext = (text, matchInfo) => {
+      // Check if this is continuation session metadata
+      if (text.includes('This session is being continued from a previous conversation')) {
+        // For continuation sessions, try to extract the actual user request
+        const lines = text.split('\n');
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i].trim();
+          if (line.match(/^(The user|User|ユーザー).*[:：]/i) || 
+              line.match(/requested|asked|want|リクエスト|依頼|要求/i) ||
+              line.match(/表示方法|見直し|修正|改善|ultrathink/i)) {
+            return '[Continued session] ' + line.substring(0, 100) + (line.length > 100 ? '...' : '');
+          }
+        }
+        // If no specific request found, return a generic message
+        return '[Continued session with previous context]';
+      }
+      
+      // Check if this contains thinking content
+      if (this.containsThinkingContent(text)) {
+        // Extract clean user message for context
+        const cleanMessage = this.extractActualUserMessage(text);
+        return cleanMessage.length > 100 ? 
+          cleanMessage.substring(0, 100) + '...' : 
+          cleanMessage || '[Contains tool execution - see full detail]';
+      }
+      
+      // Normal context extraction
+      const contextStart = Math.max(0, matchInfo.index - 50);
+      const contextEnd = Math.min(text.length, matchInfo.index + matchInfo.length + 50);
+      return text.substring(contextStart, contextEnd);
+    };
     
     // Search through all sessions
     for (const session of this.sessions) {
@@ -1108,37 +1389,32 @@ class SessionManager {
         let matchContext = '';
         let matchType = '';
         
-        // Search in all content
         // Search in user content
-        if (conversation.userContent && conversation.userContent.toLowerCase().includes(searchQuery)) {
+        const userMatch = textMatches(conversation.userContent);
+        if (userMatch) {
           matchFound = true;
           matchType = 'user';
-          const matchIndex = conversation.userContent.toLowerCase().indexOf(searchQuery);
-          const contextStart = Math.max(0, matchIndex - 50);
-          const contextEnd = Math.min(conversation.userContent.length, matchIndex + searchQuery.length + 50);
-          matchContext = conversation.userContent.substring(contextStart, contextEnd);
+          matchContext = extractContext(conversation.userContent, userMatch);
         }
         
         // Search in assistant content
-        if (!matchFound && conversation.assistantContent && conversation.assistantContent.toLowerCase().includes(searchQuery)) {
-          matchFound = true;
-          matchType = 'assistant';
-          const matchIndex = conversation.assistantContent.toLowerCase().indexOf(searchQuery);
-          const contextStart = Math.max(0, matchIndex - 50);
-          const contextEnd = Math.min(conversation.assistantContent.length, matchIndex + searchQuery.length + 50);
-          matchContext = conversation.assistantContent.substring(contextStart, contextEnd);
+        if (!matchFound) {
+          const assistantMatch = textMatches(conversation.assistantContent);
+          if (assistantMatch) {
+            matchFound = true;
+            matchType = 'assistant';
+            matchContext = extractContext(conversation.assistantContent, assistantMatch);
+          }
         }
         
         // Search in thinking content
         if (!matchFound && conversation.thinkingContent && Array.isArray(conversation.thinkingContent)) {
           for (const thinking of conversation.thinkingContent) {
-            if (thinking.text && thinking.text.toLowerCase().includes(searchQuery)) {
+            const thinkingMatch = textMatches(thinking.text);
+            if (thinkingMatch) {
               matchFound = true;
               matchType = 'thinking';
-              const matchIndex = thinking.text.toLowerCase().indexOf(searchQuery);
-              const contextStart = Math.max(0, matchIndex - 50);
-              const contextEnd = Math.min(thinking.text.length, matchIndex + searchQuery.length + 50);
-              matchContext = thinking.text.substring(contextStart, contextEnd);
+              matchContext = extractContext(thinking.text, thinkingMatch);
               break;
             }
           }
@@ -1155,7 +1431,9 @@ class SessionManager {
             userTime: conversation.userTime,
             responseTime: conversation.responseTime,
             thinkingRate: conversation.thinkingRate,
-            toolCount: conversation.toolCount
+            toolCount: conversation.toolCount,
+            searchQuery: query,
+            searchOptions: options
           });
         }
       }

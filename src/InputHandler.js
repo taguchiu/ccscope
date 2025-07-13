@@ -168,6 +168,8 @@ class InputHandler {
       this.enterFilterMode();
     } else if (this.isKey(keyName, this.keyBindings.actions.sort)) {
       this.cycleSorting();
+    } else if (keyName === 'r') {
+      this.resumeSession();
     } else if (this.isKey(keyName, this.keyBindings.actions.refresh)) {
       this.refreshSessions();
     } else if (this.isKey(keyName, this.keyBindings.actions.bookmark)) {
@@ -231,6 +233,8 @@ class InputHandler {
       this.render();
     } else if (this.isKey(keyName, this.keyBindings.actions.sort)) {
       this.cycleConversationSorting();
+    } else if (keyName === 'r') {
+      this.resumeSession();
     }
   }
 
@@ -273,12 +277,22 @@ class InputHandler {
       this.state.scrollToBottom();
       this.render();
     }
-    // Conversation navigation (within same session)
+    // Conversation navigation (within same session or search results)
     else if (this.isKey(keyName, this.keyBindings.navigation.left)) {
-      this.state.navigateUp(); // Previous conversation
+      // Check if we're in search mode - if so, navigate search results
+      if (this.state.previousSearchState && this.state.previousSearchState.results.length > 0) {
+        this.state.navigateSearchResultLeft();
+      } else {
+        this.state.navigateUp(); // Previous conversation
+      }
       this.render();
     } else if (this.isKey(keyName, this.keyBindings.navigation.right)) {
-      this.state.navigateDown(); // Next conversation
+      // Check if we're in search mode - if so, navigate search results
+      if (this.state.previousSearchState && this.state.previousSearchState.results.length > 0) {
+        this.state.navigateSearchResultRight();
+      } else {
+        this.state.navigateDown(); // Next conversation
+      }
       this.render();
     }
     // Exit and copy
@@ -304,6 +318,8 @@ class InputHandler {
         // Use setImmediate to render on next tick for smoother transition
         setImmediate(() => this.render());
       }
+    } else if (keyName === 'r') {
+      this.resumeSession();
     } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
       this.state.setView('help');
       this.render();
@@ -337,6 +353,7 @@ class InputHandler {
         
         // Set highlight information for detail view
         this.state.highlightQuery = this.state.searchQuery;
+        this.state.highlightOptions = this.state.searchOptions;
         this.state.highlightMatchType = selectedResult.matchType;
         
         // Clear any existing filters and search to show all sessions
@@ -713,6 +730,74 @@ class InputHandler {
     // Set a flag to indicate we need to scroll to match
     this.state.scrollToSearchMatch = true;
     this.state.searchMatchType = searchResult.matchType;
+  }
+
+  /**
+   * Resume the current session using claude -r
+   */
+  resumeSession() {
+    const viewData = this.state.getViewData();
+    let sessionId = null;
+    let projectPath = null;
+    
+    // Get session ID and project path based on current view
+    const currentView = this.state.getCurrentView();
+    if (currentView === 'conversation_detail' || currentView === 'full_detail') {
+      const { session } = viewData;
+      sessionId = session?.fullSessionId || session?.sessionId;
+      projectPath = session?.projectPath;
+    } else if (currentView === 'session_list') {
+      const { sessions, selectedIndex } = viewData;
+      const selectedSession = sessions[selectedIndex];
+      sessionId = selectedSession?.fullSessionId || selectedSession?.sessionId;
+      projectPath = selectedSession?.projectPath;
+    }
+    
+    if (sessionId) {
+      const { spawn } = require('child_process');
+      
+      // Save current directory
+      const originalDir = process.cwd();
+      
+      // Clean up current UI
+      this.cleanup();
+      
+      try {
+        // Change to project directory if available
+        if (projectPath && projectPath !== '/' && projectPath !== process.env.HOME) {
+          console.log(`\nChanging to project directory: ${projectPath}`);
+          process.chdir(projectPath);
+        }
+        
+        // Execute claude -r with the session ID
+        const claudeProcess = spawn('claude', ['-r', sessionId], {
+          stdio: 'inherit', // Inherit stdin, stdout, stderr
+          shell: true,
+          cwd: projectPath || originalDir // Set working directory
+        });
+        
+        claudeProcess.on('error', (error) => {
+          console.error(`Error starting claude: ${error.message}`);
+          // Restore original directory on error
+          process.chdir(originalDir);
+          process.exit(1);
+        });
+        
+        claudeProcess.on('close', (code) => {
+          // Restore original directory before exiting
+          process.chdir(originalDir);
+          // After claude session ends, exit CCScope
+          process.exit(code);
+        });
+      } catch (error) {
+        console.error(`Error changing directory: ${error.message}`);
+        // Restore original directory on error
+        process.chdir(originalDir);
+        process.exit(1);
+      }
+    } else {
+      this.showNotification('No session ID available');
+    }
   }
 }
 

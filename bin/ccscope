@@ -56,6 +56,10 @@ function parseArguments() {
           case '-h':
             options.help = true;
             break;
+          case '--regex':
+          case '-r':
+            options.regex = true;
+            break;
         }
       } else {
         // Non-option argument
@@ -192,16 +196,21 @@ USAGE:
 DESCRIPTION:
   Search through all conversation transcripts for specific text.
   Shows matching conversations with context and metadata.
+  
+  Supports OR conditions: "error OR warning" or "error or warning"
+  Supports regex with --regex flag: --regex "async.*await"
 
 OPTIONS:
+  -r, --regex              Use regular expression search
   -d, --debug              Enable debug mode
   -h, --help              Show this help message
 
 EXAMPLES:
   ccscope search "error handling"
-  ccscope search "function"
-  ccscope search "design"
-  ccscope search "async await"
+  ccscope search "async OR await"
+  ccscope search "function or method"    # lowercase also works
+  ccscope search --regex "import.*from"
+  ccscope search --regex "\\berror\\b"
       `);
       break;
   }
@@ -245,7 +254,7 @@ async function main() {
           showCommandHelp('search');
           process.exit(1);
         }
-        await app.showSearchResults(options.query, {});
+        await app.showSearchResults(options.query, { regex: options.regex || false });
         break;
         
       default:

@@ -25,6 +25,7 @@ CCScope (Claude Code Scope)は、Claude Codeの会話記録を閲覧、分析、
 - 🔧 **ツール分析**: ツール使用と実行フローの詳細な内訳
 - 💭 **思考プロセス**: Claudeの思考パターンを表示
 - 📈 **セッションメトリクス**: 会話の継続時間、応答時間、生産性を追跡
+- 🚀 **セッション再開**: 'r'キーでCCScope から直接Claude Codeセッションを再開
 
 ## スクリーンショット
 
@@ -38,7 +39,7 @@ CCScope (Claude Code Scope)は、Claude Codeの会話記録を閲覧、分析、
   2  14208db7  sms-proto              7 convos  24m 24s   07/12 19:23  07/12 19:55
   3  7726f0    mobile-documents      40 convos   1h 6m   07/12 15:25  07/12 19:22
 
-↑/↓ Navigate · Enter Details · f Filter · s Sort · q Exit
+↑/↓ Navigate · Enter Details · r Resume · f Filter · s Sort · q Exit
 ```
 
 ### 会話詳細ビュー
@@ -53,7 +54,7 @@ Selected: [52ccc342] -Users-taguchiu-Documents-workspace-ccscope
   2  07/10 14:35   8.7s  1t  Add full-width character support
   3  07/10 14:42  15.2s  5t  Implement virtual scrolling
 
-↑/↓ Select · Enter Detail · ←/→ Switch Session · Esc Back
+↑/↓ Select · Enter Detail · ←/→ Switch Session · r Resume · Esc Back
 ```
 
 ### フル詳細ビュー
@@ -70,7 +71,7 @@ I'll help you refactor the ViewRenderer component...
 
 🔧 Tools: Read×2, Edit×1
 
-↑/↓ Scroll · Space Page · ←/→ Prev/Next · g/G Top/Bottom · Esc Back
+↑/↓ Scroll · Space Page · ←/→ Prev/Next · r Resume · g/G Top/Bottom · Esc Back
 ```
 
 ## インストール
@@ -154,11 +155,21 @@ ccscope daily --debug
 ccscope project --debug
 ```
 
+### Claude Code セッションの再開
+
+任意のビューで `r` キーを押してClaude Codeセッションを再開できます：
+- トランスクリプトファイルから完全なセッションIDを自動抽出
+- 再開前にプロジェクトディレクトリに自動移動
+- `claude -r <session-id>` を実行して会話を継続
+
+この機能により、CCScopeで見つけた会話をシームレスに継続できます。
+
 ### ナビゲーション
 
 #### セッションリストビュー
 - `↑/↓` または `k/j`: 上下に移動
 - `Enter`: セッションの会話を表示
+- `r`: `claude -r` でセッションを再開
 - `f`: プロジェクトでフィルタ
 - `s`: セッションをソート（最終活動、期間、会話数、開始時刻、プロジェクト名）
 - `/`: セッションを検索
@@ -169,6 +180,7 @@ ccscope project --debug
 - `↑/↓` または `k/j`: 会話を移動
 - `←/→` または `h/l`: セッションを切り替え
 - `Enter`: 会話の詳細を表示
+- `r`: `claude -r` でセッションを再開
 - `s`: 会話をソート（日時、期間、ツール）
 - `Esc`: セッションリストに戻る
 
@@ -177,6 +189,7 @@ ccscope project --debug
 - `Space/b`: ページアップ/ダウン
 - `g/G`: 最上部/最下部にジャンプ
 - `←/→`: 前/次の会話（検索経由の場合は検索結果間を移動）
+- `r`: `claude -r` でセッションを再開
 - `Esc`: 会話リストに戻る
 
 #### 検索結果ビュー
@@ -193,7 +206,7 @@ ccscope project --debug
 | `/` | 検索 |
 | `f` | フィルタ |
 | `s` | ソート |
-| `r` | 更新 |
+| `r` | セッションを再開 (claude -r) |
 | `Esc` | 戻る |
 | `Enter` | 選択/決定 |
 

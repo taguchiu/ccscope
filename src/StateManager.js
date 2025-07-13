@@ -64,6 +64,7 @@ class StateManager {
     
     // Highlight state for detail views
     this.highlightQuery = '';
+    this.highlightOptions = {};
     this.highlightMatchType = null;
     this.scrollToSearchMatch = false;
     this.searchMatchType = null;
@@ -313,6 +314,12 @@ class StateManager {
   }
 
   navigateSessionLeft() {
+    // Check if we're in search mode and should navigate search results
+    if (this.previousSearchState && this.previousSearchState.results.length > 0) {
+      this.navigateSearchResultLeft();
+      return;
+    }
+    
     const sessions = this.getFilteredSessions();
     this.selectedSessionIndex = Math.max(0, this.selectedSessionIndex - 1);
     this.selectedConversationIndex = 0; // Reset conversation selection
@@ -320,10 +327,79 @@ class StateManager {
   }
 
   navigateSessionRight() {
+    // Check if we're in search mode and should navigate search results
+    if (this.previousSearchState && this.previousSearchState.results.length > 0) {
+      this.navigateSearchResultRight();
+      return;
+    }
+    
     const sessions = this.getFilteredSessions();
     this.selectedSessionIndex = Math.min(sessions.length - 1, this.selectedSessionIndex + 1);
     this.selectedConversationIndex = 0; // Reset conversation selection
     this.trackStateChange();
+  }
+
+  /**
+   * Navigate to previous search result when in search-originated detail view
+   */
+  navigateSearchResultLeft() {
+    if (!this.previousSearchState || this.previousSearchState.results.length === 0) {
+      return;
+    }
+    
+    const currentIndex = this.previousSearchState.selectedIndex;
+    const newIndex = Math.max(0, currentIndex - 1);
+    
+    if (newIndex !== currentIndex) {
+      // Update the search state
+      this.previousSearchState.selectedIndex = newIndex;
+      
+      // Navigate to the previous search result
+      const result = this.previousSearchState.results[newIndex];
+      this.navigateToSearchResult(result);
+    }
+  }
+
+  /**
+   * Navigate to next search result when in search-originated detail view
+   */
+  navigateSearchResultRight() {
+    if (!this.previousSearchState || this.previousSearchState.results.length === 0) {
+      return;
+    }
+    
+    const currentIndex = this.previousSearchState.selectedIndex;
+    const newIndex = Math.min(this.previousSearchState.results.length - 1, currentIndex + 1);
+    
+    if (newIndex !== currentIndex) {
+      // Update the search state
+      this.previousSearchState.selectedIndex = newIndex;
+      
+      // Navigate to the next search result
+      const result = this.previousSearchState.results[newIndex];
+      this.navigateToSearchResult(result);
+    }
+  }
+
+  /**
+   * Navigate to a specific search result
+   */
+  navigateToSearchResult(result) {
+    // Find the session by ID
+    const sessions = this.getFilteredSessions();
+    const sessionIndex = sessions.findIndex(s => s.sessionId === result.sessionId);
+    
+    if (sessionIndex !== -1) {
+      this.selectedSessionIndex = sessionIndex;
+      this.selectedConversationIndex = result.conversationIndex;
+      
+      // Set up highlighting for the match
+      this.highlightQuery = this.previousSearchState.query;
+      this.highlightOptions = this.previousSearchState.options;
+      this.scrollToSearchMatch = true;
+      
+      this.trackStateChange();
+    }
   }
 
   navigateToFirst() {
@@ -354,41 +430,54 @@ class StateManager {
    */
   scrollUp(lines = 1) {
     this.scrollOffset = Math.max(0, this.scrollOffset - lines);
+    this.scrollToEnd = false; // Clear auto-scroll flags on manual scroll
+    this.scrollToSearchMatch = false;
     this.trackStateChange();
   }
 
   scrollDown(lines = 1) {
     this.scrollOffset = Math.min(this.getMaxScrollOffset(), this.scrollOffset + lines);
+    this.scrollToEnd = false; // Clear auto-scroll flags on manual scroll
+    this.scrollToSearchMatch = false;
     this.trackStateChange();
   }
 
   scrollPageUp() {
     const pageSize = this.getPageSize();
     this.scrollOffset = Math.max(0, this.scrollOffset - pageSize);
+    this.scrollToEnd = false; // Clear auto-scroll flags on manual scroll
+    this.scrollToSearchMatch = false;
     this.trackStateChange();
   }
 
   scrollPageDown() {
     const pageSize = this.getPageSize();
     this.scrollOffset = Math.min(this.getMaxScrollOffset(), this.scrollOffset + pageSize);
+    this.scrollToEnd = false; // Clear auto-scroll flags on manual scroll
+    this.scrollToSearchMatch = false;
     this.trackStateChange();
   }
 
   scrollHalfPageUp() {
     const halfPageSize = Math.floor(this.getPageSize() / 2);
     this.scrollOffset = Math.max(0, this.scrollOffset - halfPageSize);
+    this.scrollToEnd = false; // Clear auto-scroll flags on manual scroll
+    this.scrollToSearchMatch = false;
     this.trackStateChange();
   }
 
   scrollHalfPageDown() {
     const halfPageSize = Math.floor(this.getPageSize() / 2);
     this.scrollOffset = Math.min(this.getMaxScrollOffset(), this.scrollOffset + halfPageSize);
+    this.scrollToEnd = false; // Clear auto-scroll flags on manual scroll
+    this.scrollToSearchMatch = false;
     this.trackStateChange();
   }
 
   scrollToTop() {
     this.scrollOffset = 0;
     this.scrollToEnd = false; // Ensure we don't auto-scroll to end
+    this.scrollToSearchMatch = false; // Clear search match auto-scroll
     this.trackStateChange();
   }
 
@@ -396,6 +485,7 @@ class StateManager {
     const maxOffset = this.getMaxScrollOffset();
     this.scrollOffset = maxOffset;
     this.scrollToEnd = false; // Ensure we don't auto-scroll to end
+    this.scrollToSearchMatch = false; // Clear search match auto-scroll
     this.trackStateChange();
   }
 

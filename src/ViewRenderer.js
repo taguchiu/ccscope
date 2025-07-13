@@ -457,7 +457,16 @@ class ViewRenderer {
           const prefix = `   ${conversationNumber}. `;
           // Use conservative max length to ensure single line display
           const maxMessageLength = Math.min(80, this.terminalWidth - prefix.length - 10); // Extra safety margin
-          const originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
+          let originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
+          
+          // Check if this is a continuation session or contains thinking content
+          if (originalMsg.includes('This session is being continued from a previous conversation')) {
+            originalMsg = '[Continued] ' + originalMsg.substring(0, 50) + '...';
+          } else if (this.containsThinkingContent(originalMsg)) {
+            const cleanMsg = this.extractCleanUserMessage(originalMsg);
+            originalMsg = cleanMsg || '[Contains tool execution details]';
+          }
+          
           const userMsg = originalMsg.length > maxMessageLength ? 
             originalMsg.substring(0, maxMessageLength) + '...' : 
             originalMsg;
@@ -527,6 +536,7 @@ class ViewRenderer {
     const controls = [
       this.theme.formatMuted('↑/↓') + ' to select',
       this.theme.formatMuted('Enter') + ' to view details',
+      this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('f') + ' filter',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('h') + ' help',
@@ -619,7 +629,7 @@ class ViewRenderer {
     console.log(statsLine);
     
     // Selected session info with file
-    const sessionInfo = `Selected: ${session.projectName} - ${session.sessionId}`;
+    const sessionInfo = `Selected: [${session.sessionId}] ${session.projectName}`;
     console.log(this.theme.formatInfo(sessionInfo));
     
     if (session.filePath) {
@@ -879,15 +889,28 @@ class ViewRenderer {
     
     // Check if we need to highlight search terms
     const highlightQuery = this.state.highlightQuery;
+    const highlightOptions = this.state.highlightOptions || {};
     
     // User message (truncate to fit one line considering display width)
-    const userPrefix = '👤 ';
+    let userMessage = conversation.userMessage.replace(/\n/g, ' ').trim();
+    let userPrefix = '👤 ';
+    
+    // Check if this is a continuation session or contains thinking content
+    if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
+      userPrefix = '🔗 ';  // Chain link emoji to indicate continuation
+      userMessage = '[Continued session] ' + (userMessage.length > 100 ? userMessage.substring(0, 100) + '...' : userMessage);
+    } else if (this.containsThinkingContent(conversation.userMessage)) {
+      userPrefix = '🛠️ ';  // Tool emoji to indicate thinking content
+      // Extract just the user message part
+      const cleanMessage = this.extractCleanUserMessage(conversation.userMessage);
+      userMessage = cleanMessage || '[Contains tool execution details]';
+    }
+    
     const userPrefixWidth = this.theme.getDisplayWidth(userPrefix);
     const maxUserWidth = this.terminalWidth - userPrefixWidth;
-    const userMessage = conversation.userMessage.replace(/\n/g, ' ').trim();
     
-    if (highlightQuery && userMessage.toLowerCase().includes(highlightQuery.toLowerCase())) {
-      const highlighted = this.highlightText(userMessage, highlightQuery);
+    if (highlightQuery && this.textMatchesQuery(userMessage, highlightQuery, highlightOptions)) {
+      const highlighted = this.highlightText(userMessage, highlightQuery, highlightOptions);
       const truncatedUser = this.truncateWithWidth(highlighted, maxUserWidth);
       console.log(`${userPrefix}${truncatedUser}`);
     } else {
@@ -901,8 +924,8 @@ class ViewRenderer {
     const maxAssistantWidth = this.terminalWidth - assistantPrefixWidth;
     const assistantMessage = conversation.assistantResponse.replace(/\n/g, ' ').trim();
     
-    if (highlightQuery && assistantMessage.toLowerCase().includes(highlightQuery.toLowerCase())) {
-      const highlighted = this.highlightText(assistantMessage, highlightQuery);
+    if (highlightQuery && this.textMatchesQuery(assistantMessage, highlightQuery, highlightOptions)) {
+      const highlighted = this.highlightText(assistantMessage, highlightQuery, highlightOptions);
       const truncatedAssistant = this.truncateWithWidth(highlighted, maxAssistantWidth);
       console.log(`${assistantPrefix}${truncatedAssistant}`);
     } else {
@@ -935,12 +958,12 @@ class ViewRenderer {
     // Show thinking content preview if there's a search match in thinking
     if (highlightQuery && conversation.thinkingContent && conversation.thinkingContent.length > 0) {
       for (const thinking of conversation.thinkingContent) {
-        if (thinking.text && thinking.text.toLowerCase().includes(highlightQuery.toLowerCase())) {
+        if (thinking.text && this.textMatchesQuery(thinking.text, highlightQuery, highlightOptions)) {
           const thinkingPrefix = '💭 ';
           const thinkingPrefixWidth = this.theme.getDisplayWidth(thinkingPrefix);
           const maxThinkingWidth = this.terminalWidth - thinkingPrefixWidth;
           const thinkingText = thinking.text.replace(/\n/g, ' ').trim();
-          const highlighted = this.highlightText(thinkingText, highlightQuery);
+          const highlighted = this.highlightText(thinkingText, highlightQuery, highlightOptions);
           const truncatedThinking = this.truncateWithWidth(highlighted, maxThinkingWidth);
           console.log(`${thinkingPrefix}${this.theme.formatDim(truncatedThinking)}`);
           break; // Only show first matching thinking
@@ -950,12 +973,151 @@ class ViewRenderer {
   }
 
   /**
-   * Highlight text with search query
+   * Check if text matches search query (supports OR and regex)
    */
-  highlightText(text, query) {
+  textMatchesQuery(text, query, options = {}) {
+    if (!query || !text) return false;
+    
+    if (options.regex) {
+      try {
+        const regex = new RegExp(query, 'i');
+        return regex.test(text);
+      } catch (error) {
+        return false;
+      }
+    } else if (/\s+(OR|or)\s+/.test(query)) {
+      const orPattern = /\s+(OR|or)\s+/;
+      const terms = query.split(orPattern)
+        .filter((term, index) => index % 2 === 0) // Skip the "OR"/"or" matches
+        .map(term => term.trim().toLowerCase());
+      const lowerText = text.toLowerCase();
+      return terms.some(term => lowerText.includes(term));
+    } else {
+      return text.toLowerCase().includes(query.toLowerCase());
+    }
+  }
+
+  /**
+   * Check if text contains Claude Code thinking content markers
+   */
+  containsThinkingContent(text) {
+    if (!text) return false;
+    
+    const thinkingMarkers = [
+      '🔧 TOOLS EXECUTION FLOW:',
+      '🧠 THINKING PROCESS:',
+      '[Thinking',
+      /\[\d+\]\s+(Read|Write|Edit|Bash|Glob|Grep|Task)/,
+      'File:',
+      'Command:',
+      'pattern:',
+      'path:',
+      /^\s*\[\d+\]\s+\w+$/m  // Tool execution markers like [1] Read
+    ];
+    
+    return thinkingMarkers.some(marker => {
+      if (typeof marker === 'string') {
+        return text.includes(marker);
+      } else {
+        return marker.test(text);
+      }
+    });
+  }
+
+  /**
+   * Format message with thinking content separated
+   */
+  formatMessageWithThinkingContent(text) {
+    const lines = text.split('\n');
+    const formattedLines = [];
+    let inThinkingSection = false;
+    
+    for (const line of lines) {
+      // Check if this line starts thinking content
+      if (line.includes('🔧 TOOLS EXECUTION FLOW:')) {
+        formattedLines.push('');
+        formattedLines.push(this.theme.formatDim('--- Tool Execution Details ---'));
+        formattedLines.push(this.theme.formatDim(line));
+        inThinkingSection = true;
+      } else if (line.includes('🧠 THINKING PROCESS:')) {
+        formattedLines.push('');
+        formattedLines.push(this.theme.formatDim('--- Claude Thinking Process ---'));
+        formattedLines.push(this.theme.formatDim(line));
+        inThinkingSection = true;
+      } else if (line.match(/^\s*\[Thinking \d+\]/) ||
+                 line.match(/^\s*\[\d+\]\s+\w+/) ||
+                 line.startsWith('File:') ||
+                 line.startsWith('Command:') ||
+                 line.startsWith('pattern:') ||
+                 line.startsWith('path:')) {
+        formattedLines.push(this.theme.formatDim(line));
+        inThinkingSection = true;
+      } else if (inThinkingSection) {
+        // Continue formatting as thinking content
+        formattedLines.push(this.theme.formatDim(line));
+      } else {
+        // This is user content
+        formattedLines.push(line);
+      }
+    }
+    
+    return formattedLines.join('\n');
+  }
+
+  /**
+   * Extract clean user message from text containing thinking content
+   */
+  extractCleanUserMessage(text) {
+    const lines = text.split('\n');
+    const userMessageLines = [];
+    
+    for (const line of lines) {
+      // Stop when we hit thinking content markers
+      if (line.includes('🔧 TOOLS EXECUTION FLOW:') ||
+          line.includes('🧠 THINKING PROCESS:') ||
+          line.match(/^\s*\[Thinking \d+\]/) ||
+          line.match(/^\s*\[\d+\]\s+\w+/) ||
+          line.startsWith('File:') ||
+          line.startsWith('Command:') ||
+          line.startsWith('pattern:') ||
+          line.startsWith('path:')) {
+        break;
+      }
+      
+      userMessageLines.push(line);
+    }
+    
+    return userMessageLines.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Highlight text with search query (supports OR and regex)
+   */
+  highlightText(text, query, options = {}) {
     if (!query) return text;
     
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    let regex;
+    
+    if (options.regex) {
+      // Use query as regex directly
+      try {
+        regex = new RegExp(`(${query})`, 'gi');
+      } catch (error) {
+        // If regex is invalid, return text as-is
+        return text;
+      }
+    } else if (/\s+(OR|or)\s+/.test(query)) {
+      // Handle OR conditions (support both OR and or)
+      const orPattern = /\s+(OR|or)\s+/;
+      const terms = query.split(orPattern)
+        .filter((term, index) => index % 2 === 0) // Skip the "OR"/"or" matches
+        .map(term => term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      regex = new RegExp(`(${terms.join('|')})`, 'gi');
+    } else {
+      // Simple search
+      regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    }
+    
     return text.replace(regex, (match) => this.theme.formatHighlight(match));
   }
 
@@ -967,6 +1129,7 @@ class ViewRenderer {
       this.theme.formatMuted('↑/↓') + ' to select conversation',
       this.theme.formatMuted('Enter') + ' to view detail',
       this.theme.formatMuted('←/→') + ' switch session',
+      this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
@@ -1018,18 +1181,16 @@ class ViewRenderer {
    * Render full detail view
    */
   renderFullDetail(viewData) {
-    this.clearScreen();
-    
     const { session, conversations, selectedConversationIndex, scrollToEnd = false } = viewData;
     const conversation = conversations[selectedConversationIndex];
     
-    // Always display fixed header first (ensure it's never scrolled off)
-    console.log(this.theme.formatHeader(`Full Detail: ${session.projectName}`));
-    console.log(this.theme.formatMuted(`Conversation #${selectedConversationIndex + 1} of ${conversations.length}`));
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    
     // Check if conversation exists
     if (!conversation) {
+      this.clearScreen();
+      // Header for error case
+      console.log(this.theme.formatHeader(`[${session.sessionId}] ${session.projectName}`));
+      console.log(this.theme.formatMuted(`Conversation #${selectedConversationIndex + 1} of ${conversations.length}`));
+      console.log(this.theme.formatSeparator(this.terminalWidth));
       console.log('');
       console.log(this.theme.formatWarning('No conversation data available'));
       console.log('');
@@ -1041,10 +1202,34 @@ class ViewRenderer {
     // Build content
     const lines = this.buildFullDetailContent(session, conversation, selectedConversationIndex);
     
-    // Calculate visible area (header is already displayed above)
-    const headerLines = 3; // Fixed header (already displayed)
+    // Calculate scroll indicator first (needed for header calculation)
+    let scrollIndicator = '';
+    let preliminaryHeaderLines = 3; // Initial estimate
+    let preliminaryBufferLines = 1; // Add buffer for header visibility
+    let preliminaryContentHeight = this.terminalHeight - preliminaryHeaderLines - 2 - preliminaryBufferLines; // 2 for footer + 1 buffer
+    let preliminaryMaxScrollOffset = Math.max(0, lines.length - preliminaryContentHeight);
+    
+    if (lines.length > preliminaryContentHeight) {
+      const preliminaryScrollOffset = this.state.scrollOffset;
+      const visibleStart = preliminaryScrollOffset;
+      const visibleEnd = Math.min(visibleStart + preliminaryContentHeight, lines.length);
+      const scrollPercentage = preliminaryMaxScrollOffset > 0 ? Math.round((preliminaryScrollOffset / preliminaryMaxScrollOffset) * 100) : 0;
+      scrollIndicator = `[${visibleStart + 1}-${visibleEnd}/${lines.length}] ${scrollPercentage}%`;
+    }
+    
+    // Build header with scroll indicator embedded
+    const headerTitle = `[${session.sessionId}] ${session.projectName}`;
+    const headerLine1 = this.buildHeaderWithIndicator(headerTitle, scrollIndicator);
+    const headerLine2 = this.theme.formatMuted(`Conversation #${selectedConversationIndex + 1} of ${conversations.length}`);
+    const headerLine3 = this.theme.formatSeparator(this.terminalWidth);
+    
+    // Calculate actual header lines (check if headerLine1 contains newline)
+    const actualHeaderLines = headerLine1.includes('\n') ? 4 : 3; // +1 if indicator is on separate line
+    
+    // Recalculate with actual header size
     const footerLines = 2; // Controls + separator
-    const contentHeight = this.terminalHeight - headerLines - footerLines;
+    const bufferLines = 1; // Add 1 line buffer to ensure header is visible
+    const contentHeight = this.terminalHeight - actualHeaderLines - footerLines - bufferLines;
     
     // Set max scroll offset in state manager
     const maxScrollOffset = Math.max(0, lines.length - contentHeight);
@@ -1053,8 +1238,9 @@ class ViewRenderer {
     // Get current scroll offset from state (updated by scroll methods)
     let scrollOffset = this.state.scrollOffset;
     
-    // If scrollToEnd is true (first time entering), scroll to bottom
-    if (scrollToEnd && lines.length > contentHeight) {
+    // Check current state flag (this is authoritative over viewData parameter)
+    // If scrollToEnd is true in state (first time entering), scroll to bottom
+    if (this.state.scrollToEnd && lines.length > contentHeight) {
       scrollOffset = maxScrollOffset;
       this.state.scrollOffset = scrollOffset;
       this.state.scrollToEnd = false; // Reset flag after initial positioning
@@ -1062,14 +1248,42 @@ class ViewRenderer {
     
     // If we need to scroll to search match
     if (this.state.scrollToSearchMatch && this.state.highlightQuery) {
-      const matchLine = this.findFirstMatchLine(lines, this.state.highlightQuery);
+      const matchLine = this.findFirstMatchLine(lines, this.state.highlightQuery, this.state.highlightOptions || {});
       if (matchLine !== -1) {
-        // Center the match in the viewport if possible
-        scrollOffset = Math.max(0, Math.min(matchLine - Math.floor(contentHeight / 2), maxScrollOffset));
+        // Position the match near the top of the content area (not center)
+        // This ensures the header stays fixed at the top
+        const topOffset = Math.min(5, Math.floor(contentHeight * 0.1)); // 10% down from top, max 5 lines
+        scrollOffset = Math.max(0, Math.min(matchLine - topOffset, maxScrollOffset));
         this.state.scrollOffset = scrollOffset;
       }
       this.state.scrollToSearchMatch = false; // Reset flag
     }
+    
+    // Recalculate scroll indicator with final values
+    if (lines.length > contentHeight) {
+      const visibleStart = scrollOffset;
+      const visibleEnd = Math.min(visibleStart + contentHeight, lines.length);
+      const scrollPercentage = maxScrollOffset > 0 ? Math.round((scrollOffset / maxScrollOffset) * 100) : 0;
+      scrollIndicator = `[${visibleStart + 1}-${visibleEnd}/${lines.length}] ${scrollPercentage}%`;
+    }
+    
+    // Always clear screen and display fixed header at top
+    this.clearScreen();
+    
+    // Build and display header with updated indicator
+    if (lines.length > contentHeight && scrollIndicator) {
+      const updatedHeaderLine1 = this.buildHeaderWithIndicator(headerTitle, scrollIndicator);
+      // Ensure we start from top of screen
+      process.stdout.write('\x1b[1;1H'); // Move cursor to top-left
+      console.log(updatedHeaderLine1);
+    } else {
+      // No scrolling needed, display header without indicator
+      process.stdout.write('\x1b[1;1H'); // Move cursor to top-left
+      console.log(this.theme.formatHeader(headerTitle));
+    }
+    
+    console.log(headerLine2);
+    console.log(headerLine3);
     
     // Display scrollable content
     const visibleStart = scrollOffset;
@@ -1084,21 +1298,45 @@ class ViewRenderer {
       console.log('');
     }
     
-    // Display scroll indicator in header area (line 1, right side)
-    if (lines.length > contentHeight) {
-      const scrollPercentage = Math.round((scrollOffset / maxScrollOffset) * 100);
-      const scrollIndicator = `[${visibleStart + 1}-${visibleEnd}/${lines.length}] ${scrollPercentage}%`;
-      
-      // Position in header area (line 1, right side)
-      process.stdout.write('\x1b[s'); // Save cursor
-      process.stdout.write(`\x1b[1;${this.terminalWidth - scrollIndicator.length + 1}H`); // Move to header line, right side
-      process.stdout.write(this.theme.formatMuted(scrollIndicator));
-      process.stdout.write('\x1b[u'); // Restore cursor
-    }
-    
     // Footer
     console.log(this.theme.formatSeparator(this.terminalWidth, '─'));
     this.renderFullDetailControls(lines.length > contentHeight);
+  }
+
+  /**
+   * Build header line with scroll indicator on the right
+   */
+  buildHeaderWithIndicator(title, indicator) {
+    if (!indicator) {
+      return this.theme.formatHeader(title);
+    }
+    
+    // Calculate available space for title
+    const indicatorLength = this.theme.getDisplayWidth(indicator);
+    const availableWidth = this.terminalWidth - indicatorLength - 2; // 2 spaces padding
+    
+    // Don't truncate the title - let it show completely
+    let displayTitle = title;
+    
+    // Build line with title on left, indicator on right
+    const titleFormatted = this.theme.formatHeader(displayTitle);
+    const indicatorFormatted = this.theme.formatMuted(indicator);
+    
+    // Calculate actual lengths after formatting
+    const actualTitleLength = this.theme.getDisplayWidth(displayTitle);
+    const totalNeeded = actualTitleLength + indicatorLength + 2; // 2 spaces padding
+    
+    if (totalNeeded <= this.terminalWidth) {
+      // Normal case - everything fits on one line
+      const padding = ' '.repeat(this.terminalWidth - actualTitleLength - indicatorLength);
+      return titleFormatted + padding + indicatorFormatted;
+    } else {
+      // Wide case - split into two lines
+      // Line 1: Full title
+      // Line 2: Right-aligned indicator  
+      const indicatorPadding = ' '.repeat(Math.max(0, this.terminalWidth - indicatorLength));
+      return titleFormatted + '\n' + indicatorPadding + indicatorFormatted;
+    }
   }
 
   /**
@@ -1116,6 +1354,7 @@ class ViewRenderer {
     
     // Check if we need to highlight search terms
     const highlightQuery = this.state.highlightQuery;
+    const highlightOptions = this.state.highlightOptions || {};
     
     // Timestamp and metadata
     lines.push('');
@@ -1130,8 +1369,53 @@ class ViewRenderer {
     
     // User message
     lines.push(this.theme.formatAccent('👤 USER MESSAGE:'));
-    lines.push(this.theme.formatSeparator(this.terminalWidth, '-'));
-    const userMessage = highlightQuery ? this.highlightText(conversation.userMessage, highlightQuery) : conversation.userMessage;
+    lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
+    
+    // Check if this is a continuation session with metadata or contains thinking content
+    let displayMessage = conversation.userMessage;
+    
+    if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
+      // Add a notice that this is a continued session
+      lines.push(this.theme.formatWarning('⚠️  This is a continued session. Full context shown below:'));
+      lines.push('');
+      
+      // Format the continuation metadata more clearly
+      const messageLines = conversation.userMessage.split('\n');
+      let formattedMessage = [];
+      let inAnalysis = false;
+      let inSummary = false;
+      
+      for (const line of messageLines) {
+        if (line.startsWith('Analysis:')) {
+          formattedMessage.push(this.theme.formatDim('--- Analysis (from previous session) ---'));
+          inAnalysis = true;
+          inSummary = false;
+        } else if (line.startsWith('Summary:')) {
+          formattedMessage.push(this.theme.formatDim('--- Summary (from previous session) ---'));
+          inAnalysis = false;
+          inSummary = true;
+        } else if (line.match(/^(The user|User|ユーザー).*[:：]/i) ||
+                   line.match(/表示方法|見直し|修正|改善|ultrathink/i)) {
+          formattedMessage.push('');
+          formattedMessage.push(this.theme.formatAccent('--- Actual User Request ---'));
+          formattedMessage.push(line);
+        } else if (inAnalysis || inSummary) {
+          formattedMessage.push(this.theme.formatDim(line));
+        } else {
+          formattedMessage.push(line);
+        }
+      }
+      
+      displayMessage = formattedMessage.join('\n');
+    } else if (this.containsThinkingContent(conversation.userMessage)) {
+      // Handle thinking content in regular messages
+      lines.push(this.theme.formatWarning('ℹ️  Message contains tool execution details. Actual user request shown below:'));
+      lines.push('');
+      
+      displayMessage = this.formatMessageWithThinkingContent(conversation.userMessage);
+    }
+    
+    const userMessage = highlightQuery ? this.highlightText(displayMessage, highlightQuery, highlightOptions) : displayMessage;
     const userLines = this.wrapText(userMessage, this.terminalWidth - 2);
     userLines.forEach(line => lines.push(line));
     lines.push('');
@@ -1139,14 +1423,14 @@ class ViewRenderer {
     // Thinking content
     if (conversation.thinkingContent && conversation.thinkingContent.length > 0) {
       lines.push(this.theme.formatAccent('🧠 THINKING PROCESS:'));
-      lines.push(this.theme.formatSeparator(this.terminalWidth, '-'));
+      lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
       
       conversation.thinkingContent.forEach((thinking, index) => {
         if (index > 0) lines.push(''); // Add space between thinking blocks
         lines.push(this.theme.formatMuted(`[Thinking ${index + 1}]`));
         // Show first 1000 characters of each thinking block
         const preview = thinking.text.substring(0, 1000);
-        const thinkingText = highlightQuery ? this.highlightText(preview, highlightQuery) : preview;
+        const thinkingText = highlightQuery ? this.highlightText(preview, highlightQuery, highlightOptions) : preview;
         const thinkingLines = this.wrapText(thinkingText, this.terminalWidth - 2);
         thinkingLines.forEach(line => lines.push(line));
         if (thinking.text.length > 1000) {
@@ -1160,7 +1444,7 @@ class ViewRenderer {
     // Tool usage details
     if (conversation.toolUses && conversation.toolUses.length > 0) {
       lines.push(this.theme.formatAccent('🔧 TOOLS EXECUTION FLOW:'));
-      lines.push(this.theme.formatSeparator(this.terminalWidth, '-'));
+      lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
       
       // Show detailed tool execution with parameters and results
       conversation.toolUses.forEach((tool, index) => {
@@ -1257,7 +1541,7 @@ class ViewRenderer {
     
     // Assistant response
     lines.push(this.theme.formatAccent('🤖 ASSISTANT RESPONSE:'));
-    lines.push(this.theme.formatSeparator(this.terminalWidth, '-'));
+    lines.push(this.theme.formatSeparator(Math.min(this.terminalWidth, 120), '-'));
     
     // Show assistant response (limit to reasonable length for terminal)
     const maxResponseLength = 2000;
@@ -1265,7 +1549,7 @@ class ViewRenderer {
       ? conversation.assistantResponse.substring(0, maxResponseLength)
       : conversation.assistantResponse;
     
-    const assistantMessage = highlightQuery ? this.highlightText(responseToShow, highlightQuery) : responseToShow;
+    const assistantMessage = highlightQuery ? this.highlightText(responseToShow, highlightQuery, highlightOptions) : responseToShow;
     const responseLines = this.wrapText(assistantMessage, this.terminalWidth - 2);
     responseLines.forEach(line => lines.push(line));
     
@@ -1295,6 +1579,7 @@ class ViewRenderer {
     
     controls.push(
       this.theme.formatMuted('←/→') + ' prev/next conversation',
+      this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
     );
@@ -1380,7 +1665,7 @@ class ViewRenderer {
       {
         title: 'Actions',
         items: [
-          'r             Refresh sessions',
+          'r             Resume session (claude -r)',
           'b             Bookmark session',
           'e             Export data',
           'h or ?        This help'
@@ -1670,7 +1955,16 @@ class ViewRenderer {
       // Session and conversation info
       const sessionIdShort = result.sessionId.substring(0, 8);
       const time = new Date(result.userTime).toLocaleString();
-      console.log(prefix + this.theme.formatDim(`[${sessionIdShort}] ${result.projectName} - Conv #${result.conversationIndex + 1}`));
+      // Format with better colors for readability
+      const sessionInfo = `[${sessionIdShort}]`;
+      const projectInfo = result.projectName;
+      const convInfo = `Conv #${result.conversationIndex + 1}`;
+      
+      console.log(prefix + 
+        this.theme.formatMuted(sessionInfo) + ' ' +
+        this.theme.formatInfo(projectInfo) + ' - ' +
+        this.theme.formatAccent(convInfo)
+      );
       
       // Metadata
       const responseTimeStr = this.theme.formatDuration(result.responseTime * 1000);
@@ -1684,37 +1978,27 @@ class ViewRenderer {
       console.log('  ' + this.theme[matchTypeColor](`Match in ${displayMatchType}:`));
       
       // Highlight the match in context
-      let context = result.matchContext;
-      const queryIndex = context.toLowerCase().indexOf(searchQuery.toLowerCase());
-      if (queryIndex !== -1) {
-        const before = context.substring(0, queryIndex);
-        const match = context.substring(queryIndex, queryIndex + searchQuery.length);
-        const after = context.substring(queryIndex + searchQuery.length);
-        
-        // Clean up and format
-        const cleanBefore = before.replace(/\n/g, ' ').trim();
-        const cleanMatch = match.replace(/\n/g, ' ');
-        const cleanAfter = after.replace(/\n/g, ' ').trim();
-        
-        const contextLine = `  ${cleanBefore.length > 0 ? '...' : ''}${cleanBefore}${this.theme.formatHighlight(cleanMatch)}${cleanAfter}${cleanAfter.length > 0 ? '...' : ''}`;
-        
-        // Truncate if too long
-        const maxWidth = this.terminalWidth - 4;
-        if (this.theme.getDisplayWidth(this.theme.stripAnsiCodes(contextLine)) > maxWidth) {
-          const truncated = this.truncateText(contextLine, maxWidth - 3) + '...';
-          console.log(truncated);
-        } else {
-          console.log(contextLine);
-        }
+      let context = result.matchContext.replace(/\n/g, ' ').trim();
+      
+      // Get search options from the result
+      const searchOptions = result.searchOptions || {};
+      
+      // Apply highlighting with support for OR and regex
+      const highlightedContext = this.highlightText(context, searchQuery, searchOptions);
+      
+      // Format the context line with ellipsis
+      const contextLine = `  ...${highlightedContext}...`;
+      
+      // Truncate if too long (considering ANSI codes)
+      const maxWidth = this.terminalWidth - 4;
+      const displayWidth = this.theme.getDisplayWidth(this.theme.stripAnsiCodes(contextLine));
+      
+      if (displayWidth > maxWidth) {
+        // Need more sophisticated truncation that preserves highlights
+        const truncated = this.truncateWithWidth(contextLine, maxWidth);
+        console.log(truncated);
       } else {
-        // Fallback if exact match not found in context
-        const contextLine = `  ...${context.replace(/\n/g, ' ').trim()}...`;
-        const maxWidth = this.terminalWidth - 4;
-        if (contextLine.length > maxWidth) {
-          console.log(contextLine.substring(0, maxWidth - 3) + '...');
-        } else {
-          console.log(contextLine);
-        }
+        console.log(contextLine);
       }
       
       if (i < endIndex - 1) {
@@ -1786,7 +2070,16 @@ class ViewRenderer {
         // Session and conversation info
         const sessionIdShort = result.sessionId.substring(0, 8);
         const time = new Date(result.userTime).toLocaleString();
-        console.log(this.theme.formatDim(`[${sessionIdShort}] Conversation #${result.conversationIndex + 1} - ${time}`));
+        // Format with better colors for readability
+        const sessionInfo = `[${sessionIdShort}]`;
+        const convInfo = `Conversation #${result.conversationIndex + 1}`;
+        const timeInfo = time;
+        
+        console.log(
+          this.theme.formatMuted(sessionInfo) + ' ' +
+          this.theme.formatAccent(convInfo) + ' - ' +
+          this.theme.formatDim(timeInfo)
+        );
         
         // Metadata
         const responseTimeStr = this.theme.formatDuration(result.responseTime * 1000);
@@ -1800,23 +2093,13 @@ class ViewRenderer {
         console.log(this.theme[matchTypeColor](`Match in ${displayMatchType}:`));
         
         // Highlight the match in context
-        let context = result.matchContext;
-        const queryIndex = context.toLowerCase().indexOf(query.toLowerCase());
-        if (queryIndex !== -1) {
-          const before = context.substring(0, queryIndex);
-          const match = context.substring(queryIndex, queryIndex + query.length);
-          const after = context.substring(queryIndex + query.length);
-          
-          // Clean up and format
-          const cleanBefore = before.replace(/\n/g, ' ').trim();
-          const cleanMatch = match.replace(/\n/g, ' ');
-          const cleanAfter = after.replace(/\n/g, ' ').trim();
-          
-          console.log(`  ${cleanBefore.length > 0 ? '...' : ''}${cleanBefore}${this.theme.formatHighlight(cleanMatch)}${cleanAfter}${cleanAfter.length > 0 ? '...' : ''}`);
-        } else {
-          // Fallback if exact match not found in context
-          console.log(`  ...${context.replace(/\n/g, ' ').trim()}...`);
-        }
+        let context = result.matchContext.replace(/\n/g, ' ').trim();
+        
+        // Apply highlighting with support for OR and regex
+        const highlightedContext = this.highlightText(context, query, options);
+        
+        // Format and display
+        console.log(`  ...${highlightedContext}...`);
       });
       
       if (projectResults.length > 10) {
@@ -1834,17 +2117,48 @@ class ViewRenderer {
    * Find first line containing search match
    * @param {Array} lines - Array of lines to search
    * @param {string} query - Search query
+   * @param {Object} options - Search options (supports OR and regex)
    * @returns {number} Line index or -1 if not found
    */
-  findFirstMatchLine(lines, query) {
+  findFirstMatchLine(lines, query, options = {}) {
     if (!query) return -1;
     
-    const lowerQuery = query.toLowerCase();
+    let searchTerms = [];
+    let searchRegex = null;
+    
+    if (options.regex) {
+      // Regex mode
+      try {
+        searchRegex = new RegExp(query, 'i');
+      } catch (error) {
+        return -1;
+      }
+    } else if (/\s+(OR|or)\s+/.test(query)) {
+      // Handle OR conditions (support both OR and or)
+      const orPattern = /\s+(OR|or)\s+/;
+      searchTerms = query.split(orPattern)
+        .filter((term, index) => index % 2 === 0) // Skip the "OR"/"or" matches
+        .map(term => term.trim().toLowerCase());
+    } else {
+      // Simple search
+      searchTerms = [query.toLowerCase()];
+    }
+    
     for (let i = 0; i < lines.length; i++) {
       // Strip ANSI codes before searching
       const plainLine = this.theme.stripAnsiCodes(lines[i]);
-      if (plainLine.toLowerCase().includes(lowerQuery)) {
-        return i;
+      
+      if (searchRegex) {
+        if (searchRegex.test(plainLine)) {
+          return i;
+        }
+      } else {
+        const lowerLine = plainLine.toLowerCase();
+        for (const term of searchTerms) {
+          if (lowerLine.includes(term)) {
+            return i;
+          }
+        }
       }
     }
     return -1;

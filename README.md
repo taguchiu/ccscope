@@ -25,6 +25,7 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
 - 🔧 **Tool Analysis**: Detailed breakdown of tool usage and execution flow
 - 💭 **Thinking Process**: View Claude's thinking patterns
 - 📈 **Session Metrics**: Track conversation duration, response times, and productivity
+- 🚀 **Resume Sessions**: Resume Claude Code sessions directly from CCScope with 'r' key
 
 ## Screenshots
 
@@ -38,7 +39,7 @@ CCScope (Claude Code Scope) is a powerful terminal-based application that allows
   2  14208db7  sms-proto              7 convos  24m 24s   07/12 19:23  07/12 19:55
   3  7726f0    mobile-documents      40 convos   1h 6m   07/12 15:25  07/12 19:22
 
-↑/↓ Navigate · Enter Details · f Filter · s Sort · q Exit
+↑/↓ Navigate · Enter Details · r Resume · f Filter · s Sort · q Exit
 ```
 
 ### Conversation Detail View  
@@ -53,7 +54,7 @@ Selected: [52ccc342] -Users-taguchiu-Documents-workspace-ccscope
   2  07/10 14:35   8.7s  1t  Add full-width character support  
   3  07/10 14:42  15.2s  5t  Implement virtual scrolling
 
-↑/↓ Select · Enter Detail · ←/→ Switch Session · Esc Back
+↑/↓ Select · Enter Detail · ←/→ Switch Session · r Resume · Esc Back
 ```
 
 ### Full Detail View
@@ -70,7 +71,7 @@ I'll help you refactor the ViewRenderer component...
 
 🔧 Tools: Read×2, Edit×1
 
-↑/↓ Scroll · Space Page · ←/→ Prev/Next · g/G Top/Bottom · Esc Back
+↑/↓ Scroll · Space Page · ←/→ Prev/Next · r Resume · g/G Top/Bottom · Esc Back
 ```
 
 ## Installation
@@ -154,11 +155,21 @@ ccscope daily --debug
 ccscope project --debug
 ```
 
+### Resume Claude Code Sessions
+
+Press `r` in any view to resume a Claude Code session:
+- Automatically extracts the full session ID from transcript files
+- Changes to the project directory before resuming
+- Executes `claude -r <session-id>` to continue the conversation
+
+This feature allows you to seamlessly continue conversations discovered through CCScope.
+
 ### Navigation
 
 #### Session List View
 - `↑/↓` or `k/j`: Navigate up/down
 - `Enter`: View session conversations
+- `r`: Resume session with `claude -r`
 - `f`: Filter by project
 - `s`: Sort sessions (last activity, duration, conversations, start time, project name)
 - `/`: Search sessions
@@ -169,6 +180,7 @@ ccscope project --debug
 - `↑/↓` or `k/j`: Navigate conversations
 - `←/→` or `h/l`: Switch sessions
 - `Enter`: View full conversation detail
+- `r`: Resume session with `claude -r`
 - `s`: Sort conversations (date/time, duration, tools)
 - `Esc`: Back to session list
 
@@ -177,6 +189,7 @@ ccscope project --debug
 - `Space/b`: Page up/down
 - `g/G`: Jump to top/bottom
 - `←/→`: Previous/next conversation (or navigate search results if from search)
+- `r`: Resume session with `claude -r`
 - `Esc`: Back to conversation list
 
 #### Search Results View
@@ -193,7 +206,7 @@ ccscope project --debug
 | `/` | Search |
 | `f` | Filter |
 | `s` | Sort |
-| `r` | Refresh |
+| `r` | Resume session (claude -r) |
 | `Esc` | Go back |
 | `Enter` | Select/Enter |
 
