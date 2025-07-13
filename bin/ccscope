@@ -6,7 +6,7 @@
  */
 
 const path = require('path');
-const CCLensApplication = require('../src/CCScope');
+const CCScopeApplication = require('../src/CCScope');
 
 // Get package version
 const packageJson = require('../package.json');
@@ -231,7 +231,7 @@ async function main() {
   }
   
   try {
-    const app = new CCLensApplication();
+    const app = new CCScopeApplication();
     
     // Apply CLI options
     if (options.debug) {

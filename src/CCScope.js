@@ -12,7 +12,7 @@ const ViewRenderer = require('./ViewRenderer');
 const InputHandler = require('./InputHandler');
 const config = require('./config');
 
-class CCLensApplication {
+class CCScopeApplication {
   constructor() {
     this.isInitialized = false;
     this.isRunning = false;
@@ -60,10 +60,10 @@ class CCLensApplication {
       process.stdout.write('\x1b[?25l');
       
       this.isInitialized = true;
-      console.log('✅ CC Lens initialized successfully');
+      console.log('✅ Claude Code Scope initialized successfully');
       
     } catch (error) {
-      console.error('❌ Failed to initialize CC Lens:', error);
+      console.error('❌ Failed to initialize Claude Code Scope:', error);
       process.exit(1);
     }
   }
@@ -73,7 +73,7 @@ class CCLensApplication {
    */
   showLoadingScreen() {
     console.clear();
-    console.log(this.themeManager.formatHeader('🔍 CC Lens - Loading...'));
+    console.log(this.themeManager.formatHeader('🔍 Claude Code Scope - Loading...'));
     console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
     console.log('');
     console.log(this.themeManager.formatInfo('Initializing conversation browser...'));
@@ -113,14 +113,10 @@ class CCLensApplication {
     const stats = this.sessionManager.getStatistics();
     
     console.clear();
-    console.log(this.themeManager.formatHeader('🎉 Welcome to CC Lens'));
+    console.log(this.themeManager.formatHeader('🎉 Welcome to Claude Code Scope'));
     console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
     console.log('');
     console.log(this.themeManager.formatSuccess(`📊 Found ${stats.totalSessions} sessions with ${stats.totalConversations} conversations`));
-    
-    if (stats.ultrathinkSessions > 0) {
-      console.log(this.themeManager.formatError(`🔥 Discovered ${stats.ultrathinkSessions} ultrathink sessions!`));
-    }
     
     console.log('');
     console.log(this.themeManager.formatInfo('🎯 Navigation: ↑/↓ to browse • Enter to select • h for help • q to quit'));
@@ -163,7 +159,7 @@ class CCLensApplication {
    */
   handleExit() {
     console.log('\\n');
-    console.log(this.themeManager.formatInfo('🔄 Shutting down CC Lens...'));
+    console.log(this.themeManager.formatInfo('🔄 Shutting down Claude Code Scope...'));
     
     // Cleanup components
     if (this.inputHandler) {
@@ -177,8 +173,8 @@ class CCLensApplication {
     process.stdout.write('\x1b[0m');
     
     // Show exit message
-    console.log(this.themeManager.formatSuccess('👋 Thanks for using CC Lens!'));
-    console.log(this.themeManager.formatMuted('Find more tools at https://github.com/your-repo/cclens'));
+    console.log(this.themeManager.formatSuccess('👋 Thanks for using Claude Code Scope!'));
+    console.log(this.themeManager.formatMuted('Find more tools at https://github.com/your-repo/ccscope'));
     
     process.exit(0);
   }
@@ -347,7 +343,7 @@ function parseArguments() {
  */
 function showHelp() {
   console.log(`
-🔍 CC Lens - Interactive Conversation Browser
+🔍 Claude Code Scope - Interactive Conversation Browser
 
 Usage: node interactive-conversation-browser-refactored.js [options]
 
@@ -373,7 +369,7 @@ Navigation:
   f             Filter
   s             Sort
 
-More information: https://github.com/your-repo/cclens
+More information: https://github.com/your-repo/ccscope
   `);
 }
 
@@ -389,7 +385,7 @@ async function main() {
   }
   
   try {
-    const app = new CCLensApplication();
+    const app = new CCScopeApplication();
     
     // Apply CLI options
     if (options.debug) {
@@ -408,7 +404,7 @@ async function main() {
     await app.start();
     
   } catch (error) {
-    console.error('❌ Failed to start CC Lens:', error);
+    console.error('❌ Failed to start Claude Code Scope:', error);
     process.exit(1);
   }
 }
@@ -421,4 +417,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = CCLensApplication;
+module.exports = CCScopeApplication;

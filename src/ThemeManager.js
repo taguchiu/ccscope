@@ -325,17 +325,10 @@ class ThemeManager {
       ...config.theme,
       colors: {
         // All colors are reset (no colors)
-        ultraUltraThink: '',
-        ultraThink: '',
-        highThink: '',
-        mediumThink: '',
-        lowThink: '',
-        noThink: '',
         slowResponse: '',
         mediumResponse: '',
         fastResponse: '',
         selected: '\x1b[7m',           // Only use reverse video
-        selectedUltraThink: '\x1b[7m',
         header: '\x1b[1m',             // Only bold
         separator: '',
         prefix: '',
@@ -349,8 +342,6 @@ class ThemeManager {
       },
       icons: {
         thinking: {
-          ultra: '! ',
-          ultrathink: '* ',
           high: '+ ',
           medium: '  ',
           low: '  ',
@@ -379,20 +370,6 @@ class ThemeManager {
     this.formatCache.clear();
   }
 
-  /**
-   * Get color for thinking rate
-   */
-  getThinkingColor(rate) {
-    const theme = this.getTheme();
-    
-    if (rate > config.thinkingRates.high) {
-      return theme.colors.highThink;
-    } else if (rate > config.thinkingRates.medium) {
-      return theme.colors.mediumThink;
-    } else {
-      return theme.colors.lowThink;
-    }
-  }
 
   /**
    * Format duration

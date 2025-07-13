@@ -1,5 +1,5 @@
 /**
- * CC Lens Configuration
+ * Claude Code Scope Configuration
  * Centralized configuration for the interactive conversation browser
  */
 
@@ -14,14 +14,6 @@ module.exports = {
     minHeight: 20
   },
 
-  // Thinking Rate Thresholds
-  thinkingRates: {
-    ultra: 1.0,        // 100%+ - Ultra ultrathink
-    ultrathink: 0.8,   // 80%+ - Ultrathink
-    high: 0.5,         // 50%+ - High thinking
-    medium: 0.2,       // 20%+ - Medium thinking
-    low: 0.0           // 0%+ - Low thinking
-  },
 
   // Response Time Thresholds (seconds)
   responseTime: {
@@ -104,14 +96,6 @@ module.exports = {
   // Theme Settings
   theme: {
     colors: {
-      // Thinking rate colors
-      ultraUltraThink: '\x1b[91m\x1b[1m\x1b[5m', // Red, bold, blinking
-      ultraThink: '\x1b[91m\x1b[1m',              // Red, bold
-      highThink: '\x1b[91m',                       // Red
-      mediumThink: '\x1b[93m',                     // Yellow
-      lowThink: '\x1b[92m',                        // Green
-      noThink: '\x1b[90m',                         // Gray
-      
       // Response time colors
       slowResponse: '\x1b[91m',                    // Red
       mediumResponse: '\x1b[93m',                  // Yellow
@@ -119,7 +103,6 @@ module.exports = {
       
       // UI colors
       selected: '\x1b[44m\x1b[97m',               // Blue background, white text
-      selectedUltraThink: '\x1b[41m\x1b[97m',     // Red background, white text
       header: '\x1b[1m\x1b[94m',                  // Bold blue
       separator: '\x1b[97m',                       // White
       prefix: '\x1b[92m',                          // Green
@@ -134,14 +117,6 @@ module.exports = {
     
     // Emoji/Icons
     icons: {
-      thinking: {
-        ultra: '🔥',
-        ultrathink: '🧠',
-        high: '💭',
-        medium: '  ',
-        low: '  ',
-        none: '  '
-      },
       ui: {
         selected: '▶',
         unselected: ' ',
