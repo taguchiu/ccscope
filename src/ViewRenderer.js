@@ -2586,7 +2586,8 @@ class ViewRenderer {
         items: [
           '↑/↓ k/j       Navigate up/down',
           '←/→ h/l       Navigate left/right',
-          'Mouse wheel   Scroll up/down (all views)',
+          'PgUp/PgDn     Page up/down',
+          'Ctrl+B/F      Page up/down (vim style)',
           'Enter         Select/Enter view',
           'Esc/q         Back/Exit',
           'g/G           Top/Bottom (in detail view)',

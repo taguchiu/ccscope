@@ -23,7 +23,7 @@ class MouseEventFilter {
       rightClick: /^2;\d+;\d+M/,     // Right click
       selectionRelease: /^3;\d+;\d+M/, // Selection release
       
-      // Scroll wheel events
+      // Scroll wheel events (for artifact detection only)
       scrollUp: /^64;\d+;\d+M/,      // Scroll up
       scrollDown: /^65;\d+;\d+M/,    // Scroll down
       

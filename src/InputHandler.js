@@ -30,8 +30,8 @@ class InputHandler {
     }
     process.stdin.resume();
     
-    // Enable mouse events
-    this.enableMouseEvents();
+    // Mouse events disabled - using keyboard navigation instead
+    // this.enableMouseEvents();
     
     // Input state
     this.inputBuffer = '';
@@ -50,7 +50,7 @@ class InputHandler {
     this.debounceTimer = null;
     
     // Mouse event filter for centralized mouse event detection
-    // Handles all mouse event patterns (scroll, drag, click, selection)
+    // Handles mouse event patterns (drag, click, selection) for artifact prevention
     this.mouseFilter = new MouseEventFilter();
     
     // Setup output filtering
@@ -147,71 +147,17 @@ class InputHandler {
 
   /**
    * Handle mouse events from raw data
-   * Processes scroll events and consumes all mouse events to prevent artifacts
+   * Consumes all mouse events to prevent artifacts (scroll functionality disabled)
    */
   handleMouseEvent(data) {
-    const dataStr = data.toString();
-    
-    // Use centralized scroll event extraction from MouseEventFilter
-    const scrollEvents = this.mouseFilter.extractScrollEvents(dataStr);
-    
-    // Process scroll events
-    for (const event of scrollEvents) {
-      if (event.direction === 'up') {
-        this.handleScrollUp();
-      } else if (event.direction === 'down') {
-        this.handleScrollDown();
-      }
-    }
+    // Mouse scroll functionality disabled - using keyboard navigation instead
+    // Simply consume all mouse events to prevent artifacts from appearing
     
     // Always consume all mouse events to prevent artifacts
     // This is critical to prevent mouse event strings from leaking to display
     return true;
   }
 
-  /**
-   * Handle scroll up event
-   */
-  handleScrollUp() {
-    const currentView = this.state.getCurrentView();
-    
-    // Only handle scrolling in detail views
-    if (currentView === 'full_detail') {
-      this.state.scrollUp(3); // Scroll up 3 lines
-      this.render();
-    } else if (currentView === 'conversation_detail') {
-      this.state.navigateUp();
-      this.render();
-    } else if (currentView === 'session_list') {
-      this.state.navigateUp();
-      this.render();
-    } else if (currentView === 'search_results') {
-      this.state.navigateUp();
-      this.render();
-    }
-  }
-
-  /**
-   * Handle scroll down event
-   */
-  handleScrollDown() {
-    const currentView = this.state.getCurrentView();
-    
-    // Only handle scrolling in detail views
-    if (currentView === 'full_detail') {
-      this.state.scrollDown(3); // Scroll down 3 lines
-      this.render();
-    } else if (currentView === 'conversation_detail') {
-      this.state.navigateDown();
-      this.render();
-    } else if (currentView === 'session_list') {
-      this.state.navigateDown();
-      this.render();
-    } else if (currentView === 'search_results') {
-      this.state.navigateDown();
-      this.render();
-    }
-  }
 
   /**
    * Handle key press events
@@ -418,11 +364,11 @@ class InputHandler {
       this.state.scrollDown(smoothScrollLines);
       this.render();
     }
-    // Page scrolling
-    else if (keyName === 'space' || keyName === 'pagedown') {
+    // Page scrolling (PgUp/PgDn, Ctrl+B/Ctrl+F)
+    else if (keyName === 'space' || keyName === 'pagedown' || (key && key.ctrl && keyName === 'f')) {
       this.state.scrollPageDown();
       this.render();
-    } else if (keyName === 'b' || keyName === 'pageup') {
+    } else if (keyName === 'b' || keyName === 'pageup' || (key && key.ctrl && keyName === 'b')) {
       this.state.scrollPageUp();
       this.render();
     }
