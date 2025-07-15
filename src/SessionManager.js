@@ -146,7 +146,11 @@ class SessionManager {
       const barWidth = 30;
       const filled = Math.round((progress / 100) * barWidth);
       const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-      process.stdout.write(`\r📊 Analyzing sessions... [${bar}] ${progress}%`);
+      const progressText = `📊 Analyzing sessions... [${bar}] ${progress}%`;
+      
+      // Clear line and write progress
+      process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
+      process.stdout.write(progressText);
       
       try {
         const session = await this.parseTranscriptFile(file);

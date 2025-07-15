@@ -68,6 +68,11 @@ class StateManager {
     this.highlightMatchType = null;
     this.scrollToSearchMatch = false;
     this.searchMatchType = null;
+    
+    // Tool result expansion state
+    // Maps toolId to expansion state
+    this.expandedTools = new Map();
+    this.currentToolId = null; // Track current tool for Ctrl+R
   }
 
   /**
@@ -88,6 +93,11 @@ class StateManager {
     // Reset scroll offset when changing views
     this.scrollOffset = 0;
     this.scrollToEnd = false; // Always start at the top
+    
+    // Clear tool expansions when leaving full_detail view
+    if (this.previousView === 'full_detail') {
+      this.clearToolExpansions();
+    }
     
     this.trackStateChange();
   }
@@ -868,6 +878,48 @@ class StateManager {
       return true;
     }
     
+    return false;
+  }
+
+  /**
+   * Toggle tool expansion state
+   */
+  toggleToolExpansion(toolId) {
+    const currentState = this.expandedTools.get(toolId) || false;
+    this.expandedTools.set(toolId, !currentState);
+    this.trackStateChange();
+  }
+
+  /**
+   * Clear all tool expansions
+   */
+  clearToolExpansions() {
+    this.expandedTools.clear();
+    this.trackStateChange();
+  }
+
+  /**
+   * Check if tool is expanded
+   */
+  isToolExpanded(toolId) {
+    return this.expandedTools.get(toolId) || false;
+  }
+
+  /**
+   * Set current tool ID (for Ctrl+R focus)
+   */
+  setCurrentToolId(toolId) {
+    this.currentToolId = toolId;
+  }
+
+  /**
+   * Toggle current tool expansion
+   */
+  toggleCurrentToolExpansion() {
+    if (this.currentToolId) {
+      this.toggleToolExpansion(this.currentToolId);
+      return true;
+    }
     return false;
   }
 

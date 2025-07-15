@@ -286,6 +286,12 @@ class InputHandler {
       this.state.scrollHalfPageUp();
       this.render();
     }
+    // Toggle tool expansion (Ctrl+R)
+    else if (key && key.ctrl && keyName === 'r') {
+      if (this.state.toggleCurrentToolExpansion()) {
+        this.render();
+      }
+    }
     // Jump to top/bottom
     else if (this.isKey(keyName, this.keyBindings.navigation.home)) {
       this.state.scrollToTop();

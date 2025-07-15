@@ -1795,19 +1795,72 @@ class ViewRenderer {
           
           // Format tool input details
           const toolInputLines = this.formatToolInput({ toolName: item.name, input: item.input });
-          toolInputLines.forEach(line => {
-            lines.push(line);
-          });
+          const inputToolId = `input-${item.id || index}`;
+          const isInputExpanded = this.state.isToolExpanded(inputToolId);
+          
+          // Set current tool for Ctrl+R focus
+          this.state.setCurrentToolId(inputToolId);
+          
+          if (toolInputLines.length > 0) {
+            lines.push('  ⎿ ' + ' ');
+            
+            if (toolInputLines.length <= 20 || isInputExpanded) {
+              // Show all lines if short or expanded
+              toolInputLines.forEach((line, i) => {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿' + line.substring(1); // Remove first space
+                } else {
+                  lines.push('    ' + line);
+                }
+              });
+            } else {
+              // Show first 20 lines and collapsed indicator
+              for (let i = 0; i < 20; i++) {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿' + toolInputLines[i].substring(1); // Remove first space
+                } else {
+                  lines.push('    ' + toolInputLines[i]);
+                }
+              }
+              const remainingLines = toolInputLines.length - 20;
+              lines.push(this.theme.formatDim(`     … +${remainingLines} lines (ctrl+r to expand)`));
+            }
+          }
           
           // Find corresponding tool result
           const toolResult = conversation.toolUses?.find(t => t.toolId === item.id);
           if (toolResult && toolResult.result) {
             // Format tool result
             const resultLines = this.formatToolResult(toolResult.result).split('\n');
-            if (resultLines.length <= 3) {
-              lines.push(this.theme.formatInfo(resultLines.join(' ')));
+            const toolId = item.id || `tool-${index}`;
+            const isExpanded = this.state.isToolExpanded(toolId);
+            
+            // Set current tool for Ctrl+R focus
+            this.state.setCurrentToolId(toolId);
+            
+            // Add indented ⎿ prefix
+            lines.push('  ⎿ ' + ' ');
+            
+            if (resultLines.length <= 20 || isExpanded) {
+              // Show all lines if short or expanded
+              resultLines.forEach((line, i) => {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿  ' + line;
+                } else {
+                  lines.push('     ' + line);
+                }
+              });
             } else {
-              lines.push(this.theme.formatInfo(resultLines[0] + '...'));
+              // Show first 20 lines and collapsed indicator
+              for (let i = 0; i < 20; i++) {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿  ' + resultLines[i];
+                } else {
+                  lines.push('     ' + resultLines[i]);
+                }
+              }
+              const remainingLines = resultLines.length - 20;
+              lines.push(this.theme.formatDim(`     … +${remainingLines} lines (ctrl+r to expand)`));
             }
           }
           
@@ -1819,9 +1872,9 @@ class ViewRenderer {
           const processedResponse = this.processMarkdownContent(item.text);
           const responseText = highlightQuery ? this.highlightText(processedResponse, highlightQuery, highlightOptions) : processedResponse;
           const responseLines = responseText.split('\n');
-          responseLines.forEach(line => {
-            lines.push(line); // No indentation for response text
-          });
+          
+          // Check if there are any tool-like blocks in the text that need collapsing
+          this.processTextWithCollapsibleBlocks(responseLines, lines);
         }
       });
     } else {
@@ -1875,9 +1928,9 @@ class ViewRenderer {
         const processedResponse = this.processMarkdownContent(conversation.assistantResponse);
         const assistantMessage = highlightQuery ? this.highlightText(processedResponse, highlightQuery, highlightOptions) : processedResponse;
         const assistantLines = assistantMessage.split('\n');
-        assistantLines.forEach(line => {
-          lines.push(line);
-        });
+        
+        // Process text with collapsible blocks
+        this.processTextWithCollapsibleBlocks(assistantLines, lines);
       }
     }
     
@@ -2011,6 +2064,88 @@ class ViewRenderer {
   }
 
   /**
+   * Process text with collapsible tool blocks
+   */
+  processTextWithCollapsibleBlocks(responseLines, outputLines) {
+    let i = 0;
+    while (i < responseLines.length) {
+      const line = responseLines[i];
+      
+      // Check if this line starts a tool block
+      if (line.match(/^⏺\s+\w+/)) {
+        // Found a tool header
+        outputLines.push(line);
+        i++;
+        
+        // Debug: Log what we're processing
+        if (config.debug && config.debug.enabled) {
+          console.log(`Found tool block at line ${i}, next line: "${responseLines[i] || 'EOF'}"`);
+        }
+        
+        // Look for the indented block with ⎿ (allow spaces before it)
+        if (i < responseLines.length && responseLines[i].includes('⎿')) {
+          const blockStart = i;
+          let blockEnd = i + 1; // Start from the next line after ⎿
+          
+          // Find the end of the block
+          while (blockEnd < responseLines.length) {
+            const blockLine = responseLines[blockEnd];
+            // Stop if we hit an empty line, another tool header, or a line that doesn't look like part of the block
+            if (blockLine.trim() === '' || 
+                blockLine.match(/^⏺/) || 
+                blockLine.match(/^[A-Z]/) || // New line starting with capital letter
+                (!blockLine.match(/^\s+/) && !blockLine.includes('...'))) {
+              break;
+            }
+            blockEnd++;
+          }
+          
+          const blockLines = responseLines.slice(blockStart, blockEnd);
+          const blockId = `text-block-${blockStart}-${i}`;
+          const isExpanded = this.state.isToolExpanded(blockId);
+          
+          // Check if there's already a "... X more lines" indicator
+          const lastLine = blockLines[blockLines.length - 1];
+          const moreMatch = lastLine && lastLine.match(/^\s*\.\.\.\s*(\d+)\s*more\s*lines?/);
+          
+          if (moreMatch) {
+            // Already has a more lines indicator - this is pre-summarized content
+            // Don't add expand/collapse hints as there's no actual content to show
+            blockLines.forEach(blockLine => {
+              outputLines.push(blockLine);
+            });
+          } else if (blockLines.length <= 20 || isExpanded) {
+            // Show all lines
+            blockLines.forEach(blockLine => {
+              outputLines.push(blockLine);
+            });
+            // Set current block for Ctrl+R only if it's expandable
+            if (blockLines.length > 20) {
+              this.state.setCurrentToolId(blockId);
+            }
+          } else {
+            // Show first 20 lines and collapse indicator
+            for (let j = 0; j < 20 && j < blockLines.length; j++) {
+              outputLines.push(blockLines[j]);
+            }
+            const remainingLines = blockLines.length - 20;
+            outputLines.push(`     … +${remainingLines} lines (ctrl+r to expand)`);
+            // Set current block for Ctrl+R
+            this.state.setCurrentToolId(blockId);
+          }
+          
+          i = blockEnd;
+          continue;
+        }
+      }
+      
+      // Regular line, just add it
+      outputLines.push(line);
+      i++;
+    }
+  }
+
+  /**
    * Format tool input parameters
    */
   formatToolInput(tool, boxWidth) {
@@ -2065,14 +2200,16 @@ class ViewRenderer {
         // Handle MultiEdit specially
         lines.push(`  ${this.theme.formatMuted('edits:')} ${tool.input.edits.length} changes`);
         
-        // Show all edits (no truncation)
-        tool.input.edits.forEach((edit, idx) => {
-          lines.push('');
-          lines.push(`  ${this.theme.formatAccent(`[Edit ${idx + 1}]`)}`);
+        // Show each edit as a mini-diff
+        tool.input.edits.forEach((edit, editIndex) => {
+          if (editIndex > 0) {
+            lines.push('');
+          }
           
-          // Show complete unified diff for each edit
-          const diffResult = this.createUnifiedDiff(edit.old_string, edit.new_string);
-          diffResult.forEach(diffLine => {
+          const diffLines = this.createUnifiedDiff(edit.old_string, edit.new_string);
+          const maxLines = 10;
+          
+          diffLines.slice(0, maxLines).forEach(diffLine => {
             let lineNumStr = '';
             if (diffLine.lineNum !== '...') {
               lineNumStr = String(diffLine.lineNum).padStart(4) + '│';
@@ -2080,14 +2217,18 @@ class ViewRenderer {
               lineNumStr = '    │';
             }
             
-            if (diffLine.type === 'added') {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
-            } else if (diffLine.type === 'removed') {
+            if (diffLine.type === 'removed') {
               lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatError('- ' + diffLine.content)}`);
+            } else if (diffLine.type === 'added') {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
             } else {
               lines.push(`       ${this.theme.formatDim(lineNumStr)}   ${diffLine.content}`);
             }
           });
+          
+          if (diffLines.length > maxLines) {
+            lines.push(`       ${this.theme.formatMuted(`... ${diffLines.length - maxLines} more lines`)}`);
+          }
         });
       }
       
@@ -2447,7 +2588,8 @@ class ViewRenderer {
           '←/→ h/l       Navigate left/right',
           'Enter         Select/Enter view',
           'Esc/q         Back/Exit',
-          'g/G           Top/Bottom (in detail view)'
+          'g/G           Top/Bottom (in detail view)',
+          'Ctrl+R        Expand/collapse tool output'
         ]
       },
       {
