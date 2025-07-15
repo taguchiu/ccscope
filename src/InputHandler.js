@@ -66,13 +66,13 @@ class InputHandler {
       if (typeof chunk === 'string' || chunk instanceof Buffer) {
         const str = chunk.toString();
         
-        // Check if this looks like mouse event output
+        // More specific mouse event detection to avoid blocking normal text
         const isMouseEventOutput = (
-          str.includes('65;') ||
-          str.includes('32;') ||
-          /\d+;\d+;\d+M/.test(str) ||
-          /\d+M\d+/.test(str) ||
-          (str.length > 50 && /[0-9;M]/.test(str))
+          // Only block if it's clearly a mouse event sequence
+          /^\d+;\d+;\d+M\d+;\d+;\d+M/.test(str) ||  // Multiple mouse events in sequence
+          (str.length > 100 && /^\d+;\d+;\d+M/.test(str)) ||  // Long mouse event strings
+          /^65;\d+;\d+M65;\d+;\d+M/.test(str) ||  // Repeated drag events
+          /^32;\d+;\d+M32;\d+;\d+M/.test(str)     // Repeated drag events
         );
         
         if (isMouseEventOutput) {
@@ -124,22 +124,15 @@ class InputHandler {
     process.stdin.on('data', (data) => {
       const dataStr = data.toString();
       
-      // Ultra-aggressive mouse event detection
-      // This catches ALL possible mouse event formats and patterns
+      // More precise mouse event detection
+      // Focus on clear mouse event patterns to avoid blocking normal text
       const isMouseEvent = (
         dataStr.includes('\x1b[') ||           // ANSI escape sequences
-        dataStr.includes(';') ||               // Semicolon separator
-        /[0-9;MmC]/.test(dataStr) ||          // Numbers, semicolons, M, m, C
-        dataStr.includes('M') ||               // Mouse button press
-        dataStr.includes('m') ||               // Mouse button release
         /^\d+;\d+;\d+[Mm]/.test(dataStr) ||   // Raw format: num;num;numM
-        /\d+;\d+;\d+[Mm]/.test(dataStr) ||    // Embedded format
-        /\d+M\d+/.test(dataStr) ||            // Compact format
-        /\d+;\d+M/.test(dataStr) ||           // Shortened format
-        /65;/.test(dataStr) ||                // Common drag button codes
-        /32;/.test(dataStr) ||                // Common drag button codes
-        /\d{2,3};/.test(dataStr) ||           // Coordinate patterns
-        dataStr.length > 50 && /[0-9;M]/.test(dataStr) // Long strings with mouse patterns
+        /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/.test(dataStr) || // Multiple mouse events
+        (dataStr.length > 100 && /^\d+;\d+;\d+M/.test(dataStr)) || // Long mouse sequences
+        /^65;\d+;\d+M/.test(dataStr) ||       // Drag events starting with 65
+        /^32;\d+;\d+M/.test(dataStr)          // Drag events starting with 32
       );
       
       if (isMouseEvent) {
@@ -256,22 +249,15 @@ class InputHandler {
     
     if (!key) return;
     
-    // Filter out mouse events that might leak through (ultra-aggressive)
+    // Filter out mouse events that might leak through (precise filtering)
     if (str) {
       const isMouseEvent = (
         str.includes('\x1b[') ||           // ANSI escape sequences
-        str.includes(';') ||               // Semicolon separator
-        /[0-9;MmC]/.test(str) ||          // Numbers, semicolons, M, m, C
-        str.includes('M') ||               // Mouse button press
-        str.includes('m') ||               // Mouse button release
         /^\d+;\d+;\d+[Mm]/.test(str) ||   // Raw format: num;num;numM
-        /\d+;\d+;\d+[Mm]/.test(str) ||    // Embedded format
-        /\d+M\d+/.test(str) ||            // Compact format
-        /\d+;\d+M/.test(str) ||           // Shortened format
-        /65;/.test(str) ||                // Common drag button codes
-        /32;/.test(str) ||                // Common drag button codes
-        /\d{2,3};/.test(str) ||           // Coordinate patterns
-        str.length > 50 && /[0-9;M]/.test(str) // Long strings with mouse patterns
+        /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/.test(str) || // Multiple mouse events
+        (str.length > 100 && /^\d+;\d+;\d+M/.test(str)) || // Long mouse sequences
+        /^65;\d+;\d+M/.test(str) ||       // Drag events starting with 65
+        /^32;\d+;\d+M/.test(str)          // Drag events starting with 32
       );
       
       if (isMouseEvent) {
