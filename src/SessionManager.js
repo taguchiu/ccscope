@@ -36,14 +36,12 @@ class SessionManager {
     const startTime = Date.now();
     
     try {
-      console.log('🔍 Searching Claude Code transcripts...');
+      process.stdout.write('Loading...');
       
       // Discover transcript files
       const transcriptFiles = await this.discoverTranscriptFiles();
-      console.log(`📁 ${transcriptFiles.length} files discovered`);
       
       // Parse sessions with progress
-      console.log('📊 Analyzing sessions...');
       this.sessions = await this.parseSessionsWithProgress(transcriptFiles);
       
       // Sort sessions by last activity
@@ -52,7 +50,9 @@ class SessionManager {
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
       
-      console.log(`✅ Analyzed ${this.sessions.length} sessions in ${this.scanDuration}ms`);
+      // Clear the progress line
+      const clearLine = '\r' + ' '.repeat(process.stdout.columns || 80) + '\r';
+      process.stdout.write(clearLine);
       
       return this.sessions;
       
@@ -77,7 +77,7 @@ class SessionManager {
         path.resolve(dir);
       
       try {
-        console.log(`🔍 Searching: ${expandedDir}...`);
+        // Silently search directories
         const files = await this.scanDirectory(expandedDir);
         transcriptFiles.push(...files);
       } catch (error) {
@@ -137,7 +137,16 @@ class SessionManager {
       const file = transcriptFiles[i];
       const progress = Math.round((i / transcriptFiles.length) * 100);
       
-      process.stdout.write(`\r📊 Analyzing sessions... ${i + 1}/${transcriptFiles.length} (${progress}%)`);
+      // Show simple progress bar only
+      if (i === 0) {
+        process.stdout.write('📊 Analyzing sessions... ');
+      }
+      
+      // Update progress bar
+      const barWidth = 30;
+      const filled = Math.round((progress / 100) * barWidth);
+      const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+      process.stdout.write(`\r📊 Analyzing sessions... [${bar}] ${progress}%`);
       
       try {
         const session = await this.parseTranscriptFile(file);
@@ -145,7 +154,7 @@ class SessionManager {
           sessions.push(session);
         }
       } catch (error) {
-        console.error(`\n❌ Error parsing ${file}:`, error.message);
+        // Silently skip error files
       }
     }
     
@@ -741,11 +750,8 @@ class SessionManager {
     // Sort by timestamp to maintain chronological order
     chronologicalItems.sort((a, b) => a.timestamp - b.timestamp);
     
-    // Remove timestamp property as it was just for sorting
-    return chronologicalItems.map(item => {
-      const { timestamp, ...contentItem } = item;
-      return contentItem;
-    });
+    // Keep timestamp property for display purposes in ViewRenderer
+    return chronologicalItems;
   }
 
   /**
@@ -929,6 +935,7 @@ class SessionManager {
     if (conversationPairs.length === 0) {
       return {
         duration: 0,
+        actualDuration: 0,
         avgResponseTime: 0,
         totalTools: 0,
         startTime: null,
@@ -943,13 +950,18 @@ class SessionManager {
     const startTime = conversationPairs[0].userTime;
     const endTime = conversationPairs[conversationPairs.length - 1].assistantTime;
     
-    // Calculate total duration as sum of all response times (in milliseconds)
-    const duration = responseTimes.reduce((sum, time) => sum + (time * 1000), 0);
+    // Calculate total response time (sum of all response times in milliseconds)
+    const totalResponseTime = responseTimes.reduce((sum, time) => sum + (time * 1000), 0);
+    
+    // Calculate actual session duration (from first message to last response)
+    const actualDuration = startTime && endTime ? 
+      new Date(endTime) - new Date(startTime) : 0;
     
     const avgResponseTime = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
     
     return {
-      duration: Math.max(0, duration), // Total response time in milliseconds
+      duration: Math.max(0, totalResponseTime), // Total response time in milliseconds
+      actualDuration: Math.max(0, actualDuration), // Actual session time in milliseconds
       avgResponseTime,
       totalTools,
       startTime,
@@ -965,7 +977,18 @@ class SessionManager {
     try {
       const start = new Date(startTime);
       const end = new Date(endTime);
-      return Math.max(0, (end - start) / 1000); // Convert to seconds
+      const seconds = Math.max(0, (end - start) / 1000); // Convert to seconds
+      
+      // Cap response time at 60 minutes (3600 seconds)
+      // This prevents long pauses (user walking away) from skewing statistics
+      const MAX_REASONABLE_RESPONSE_TIME = 3600; // 60 minutes
+      
+      if (seconds > MAX_REASONABLE_RESPONSE_TIME) {
+        // Silently cap without logging
+        return MAX_REASONABLE_RESPONSE_TIME;
+      }
+      
+      return seconds;
     } catch (error) {
       return 0;
     }
@@ -1178,6 +1201,7 @@ class SessionManager {
    */
   getDailyStatistics() {
     const dailyStats = new Map();
+    const dailyTimeRanges = new Map(); // Track first and last conversation times per day
     
     // Aggregate conversations by date
     for (const session of this.sessions) {
@@ -1208,8 +1232,11 @@ class SessionManager {
             sessions: new Set(),
             conversationCount: 0,
             totalDuration: 0,
-            toolUsageCount: 0,
-            thinkingTime: 0
+            toolUsageCount: 0
+          });
+          dailyTimeRanges.set(dateKey, {
+            firstTime: date,
+            lastTime: date
           });
         }
         
@@ -1217,14 +1244,21 @@ class SessionManager {
         dayStats.sessions.add(session.sessionId);
         dayStats.conversationCount++;
         // Use responseTime (in seconds) and convert to milliseconds for consistency
-        const durationInSeconds = conversation.responseTime || conversation.duration || 0;
+        const durationInSeconds = conversation.responseTime || 0;
         const durationInMs = durationInSeconds * 1000;
         dayStats.totalDuration += durationInMs;
         dayStats.toolUsageCount += conversation.toolCount || 0;
         
-        // Calculate thinking time from thinking rate
-        if (conversation.thinkingRate && durationInMs) {
-          dayStats.thinkingTime += (durationInMs * conversation.thinkingRate / 100);
+        // Update time range for the day
+        const timeRange = dailyTimeRanges.get(dateKey);
+        const convEndTime = conversation.assistantTime || conversation.endTime || timestamp;
+        const endDate = new Date(convEndTime);
+        
+        if (date < timeRange.firstTime) {
+          timeRange.firstTime = date;
+        }
+        if (endDate > timeRange.lastTime) {
+          timeRange.lastTime = endDate;
         }
       }
     }

@@ -73,12 +73,8 @@ class CCScopeApplication {
    */
   showLoadingScreen() {
     console.clear();
-    console.log(this.themeManager.formatHeader('🔍 Claude Code Scope - Loading...'));
-    console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
-    console.log('');
-    console.log(this.themeManager.formatInfo('Initializing conversation browser...'));
-    console.log(this.themeManager.formatMuted('Please wait while we discover your Claude Code transcripts'));
-    console.log('');
+    // Simple loading indicator
+    process.stdout.write('🔍 Claude Code Scope - Loading... ');
   }
 
   /**
@@ -116,17 +112,10 @@ class CCScopeApplication {
     console.log(this.themeManager.formatHeader('🎉 Welcome to Claude Code Scope'));
     console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
     console.log('');
-    console.log(this.themeManager.formatSuccess(`📊 Found ${stats.totalSessions} sessions with ${stats.totalConversations} conversations`));
+    console.log(this.themeManager.formatSuccess(`✅ Ready: ${stats.totalSessions} sessions, ${stats.totalConversations} conversations`));
     
-    console.log('');
-    console.log(this.themeManager.formatInfo('🎯 Navigation: ↑/↓ to browse • Enter to select • h for help • q to quit'));
-    console.log('');
-    console.log(this.themeManager.formatMuted('Starting in 2 seconds...'));
-    
-    // Auto-start after 2 seconds
-    setTimeout(() => {
-      this.viewRenderer.render();
-    }, 2000);
+    // Start immediately
+    this.viewRenderer.render();
   }
 
   /**

@@ -1775,7 +1775,7 @@ class ViewRenderer {
           // Add tool execution section - Claude Code style
           lines.push('');
           
-          // Create tool header with parameters
+          // Create tool header with parameters and timestamp
           let toolHeader = `⏺ ${item.name}`;
           if (item.input) {
             // Add key parameters to header
@@ -1784,6 +1784,13 @@ class ViewRenderer {
               toolHeader += `(${keyParams})`;
             }
           }
+          
+          // Add timestamp if available
+          const toolTime = item.timestamp ? this.theme.formatDateTime(item.timestamp) : '';
+          if (toolTime) {
+            toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          }
+          
           lines.push(this.theme.formatSuccess(toolHeader));
           
           // Format tool input details
@@ -1839,12 +1846,17 @@ class ViewRenderer {
         conversation.toolUses.forEach(tool => {
           lines.push('');
           
+          // Format timestamp
+          const toolTime = tool.timestamp ? this.theme.formatDateTime(tool.timestamp) : '';
           let toolHeader = `⏺ ${tool.toolName}`;
           if (tool.input) {
             const keyParams = this.getKeyParams(tool.toolName, tool.input);
             if (keyParams) {
               toolHeader += `(${keyParams})`;
             }
+          }
+          if (toolTime) {
+            toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
           lines.push(this.theme.formatSuccess(toolHeader));
           
@@ -1936,8 +1948,12 @@ class ViewRenderer {
         lines.push(''); // Space between tools
       }
       
-      // Tool header with number
-      lines.push(this.theme.formatAccent(`  [${index + 1}] ${tool.toolName}`));
+      // Tool header with number and timestamp
+      const toolTime = tool.timestamp ? this.theme.formatDateTime(tool.timestamp) : '';
+      const toolHeader = toolTime ? 
+        `  [${index + 1}] ${tool.toolName} ${this.theme.formatDim(`[${toolTime}]`)}` : 
+        `  [${index + 1}] ${tool.toolName}`;
+      lines.push(this.theme.formatAccent(toolHeader));
       
       // Tool parameters
       if (tool.input) {
@@ -2780,8 +2796,16 @@ class ViewRenderer {
     // Footer
     console.log('');
     console.log(this.theme.formatSeparator(this.terminalWidth));
-    const position = `${selectedIndex + 1}/${searchResults.length}`;
-    console.log(this.theme.formatDim(`Result ${position} • Press h for help`));
+    
+    // Use same controls as conversation detail
+    const controls = [
+      this.theme.formatMuted('↑/↓') + ' to select result',
+      this.theme.formatMuted('Enter') + ' to view detail',
+      this.theme.formatMuted('←/→') + ' navigate results',
+      this.theme.formatMuted('Esc') + ' back',
+      this.theme.formatMuted('q') + ' exit'
+    ];
+    console.log(controls.join(' · '));
   }
 
   /**
