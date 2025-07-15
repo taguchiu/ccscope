@@ -28,6 +28,9 @@ class InputHandler {
     }
     process.stdin.resume();
     
+    // Enable mouse events
+    this.enableMouseEvents();
+    
     // Input state
     this.inputBuffer = '';
     this.inputMode = 'normal'; // normal, search, filter, select_project
@@ -49,12 +52,55 @@ class InputHandler {
   }
 
   /**
+   * Enable mouse events
+   */
+  enableMouseEvents() {
+    if (process.stdin.isTTY) {
+      // Enable mouse tracking
+      process.stdout.write('\x1b[?1000h'); // Enable mouse button tracking
+      process.stdout.write('\x1b[?1002h'); // Enable mouse button and drag tracking
+      process.stdout.write('\x1b[?1015h'); // Enable urxvt mouse mode
+      process.stdout.write('\x1b[?1006h'); // Enable SGR mouse mode
+    }
+  }
+
+  /**
+   * Disable mouse events
+   */
+  disableMouseEvents() {
+    if (process.stdin.isTTY) {
+      process.stdout.write('\x1b[?1006l'); // Disable SGR mouse mode
+      process.stdout.write('\x1b[?1015l'); // Disable urxvt mouse mode
+      process.stdout.write('\x1b[?1002l'); // Disable mouse button and drag tracking
+      process.stdout.write('\x1b[?1000l'); // Disable mouse button tracking
+    }
+  }
+
+  /**
    * Setup event listeners
    */
   setupEventListeners() {
     // Handle keypress events
     process.stdin.on('keypress', (str, key) => {
       this.handleKeyPress(str, key);
+    });
+    
+    // Handle raw data for mouse events with complete isolation
+    process.stdin.on('data', (data) => {
+      const dataStr = data.toString();
+      
+      // Completely consume any data that might be mouse events
+      // This prevents any mouse event artifacts from appearing on screen
+      if (dataStr.includes('\x1b[') || 
+          dataStr.includes(';') || 
+          /[0-9;MmC]/.test(dataStr) ||
+          dataStr.includes('M') ||
+          dataStr.includes('m')) {
+        
+        this.handleMouseEvent(data);
+        // Critical: consume completely to prevent leakage
+        return;
+      }
     });
 
     // Handle terminal resize
@@ -71,6 +117,74 @@ class InputHandler {
   }
 
   /**
+   * Handle mouse events from raw data
+   */
+  handleMouseEvent(data) {
+    const dataStr = data.toString();
+    
+    // Extract scroll wheel events only (button codes 64 and 65)
+    const scrollMatches = dataStr.matchAll(/\x1b\[<(64|65);(\d+);(\d+)M/g);
+    
+    for (const match of scrollMatches) {
+      const buttonCode = parseInt(match[1], 10);
+      
+      if (buttonCode === 64) {
+        this.handleScrollUp();
+      } else if (buttonCode === 65) {
+        this.handleScrollDown();
+      }
+    }
+    
+    // Always consume all mouse events to prevent artifacts
+    // This is critical to prevent mouse event strings from leaking to display
+    return true;
+  }
+
+  /**
+   * Handle scroll up event
+   */
+  handleScrollUp() {
+    const currentView = this.state.getCurrentView();
+    
+    // Only handle scrolling in detail views
+    if (currentView === 'full_detail') {
+      this.state.scrollUp(3); // Scroll up 3 lines
+      this.render();
+    } else if (currentView === 'conversation_detail') {
+      this.state.navigateUp();
+      this.render();
+    } else if (currentView === 'session_list') {
+      this.state.navigateUp();
+      this.render();
+    } else if (currentView === 'search_results') {
+      this.state.navigateUp();
+      this.render();
+    }
+  }
+
+  /**
+   * Handle scroll down event
+   */
+  handleScrollDown() {
+    const currentView = this.state.getCurrentView();
+    
+    // Only handle scrolling in detail views
+    if (currentView === 'full_detail') {
+      this.state.scrollDown(3); // Scroll down 3 lines
+      this.render();
+    } else if (currentView === 'conversation_detail') {
+      this.state.navigateDown();
+      this.render();
+    } else if (currentView === 'session_list') {
+      this.state.navigateDown();
+      this.render();
+    } else if (currentView === 'search_results') {
+      this.state.navigateDown();
+      this.render();
+    }
+  }
+
+  /**
    * Handle key press events
    */
   handleKeyPress(str, key) {
@@ -81,6 +195,15 @@ class InputHandler {
     }
     
     if (!key) return;
+    
+    // Filter out mouse events that might leak through (most aggressive)
+    if (str && (str.includes('\x1b[') || 
+                str.includes(';') || 
+                /[0-9;MmC]/.test(str) ||
+                str.includes('M') ||
+                str.includes('m'))) {
+      return;
+    }
     
     // Clear debounce timer
     if (this.debounceTimer) {
@@ -740,6 +863,9 @@ class InputHandler {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
+    
+    // Disable mouse events
+    this.disableMouseEvents();
     
     // Reset terminal
     process.stdout.write('\x1b[0m'); // Reset colors

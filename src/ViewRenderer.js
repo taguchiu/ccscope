@@ -1252,7 +1252,7 @@ class ViewRenderer {
    */
   renderConversationDetailControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓') + ' to select conversation',
+      this.theme.formatMuted('↑/↓/wheel') + ' to select conversation',
       this.theme.formatMuted('Enter') + ' to view detail',
       this.theme.formatMuted('←/→') + ' switch session',
       this.theme.formatMuted('r') + ' resume',
@@ -2586,6 +2586,7 @@ class ViewRenderer {
         items: [
           '↑/↓ k/j       Navigate up/down',
           '←/→ h/l       Navigate left/right',
+          'Mouse wheel   Scroll up/down (all views)',
           'Enter         Select/Enter view',
           'Esc/q         Back/Exit',
           'g/G           Top/Bottom (in detail view)',
