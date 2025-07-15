@@ -58,22 +58,17 @@ class MouseEventFilter {
 
   /**
    * Check if keypress string contains mouse events
-   * Used for keypress filtering
+   * Used for keypress filtering - minimal filtering to preserve all keyboard input
    */
   isMouseEventKeypress(str) {
     if (!str) return false;
     
+    // For keypress filtering, only block very obvious and long mouse event patterns
+    // This ensures keyboard shortcuts like Ctrl+R are never blocked
     return (
-      this.patterns.ansiEscape.test(str) ||
-      this.patterns.rawSingle.test(str) ||
+      // Only block multiple mouse events or very long sequences
       this.patterns.rawMultiple.test(str) ||
-      this.patterns.longSequence(str) ||
-      this.patterns.dragLeft.test(str) ||
-      this.patterns.dragMiddle.test(str) ||
-      this.patterns.leftClick.test(str) ||
-      this.patterns.middleClick.test(str) ||
-      this.patterns.rightClick.test(str) ||
-      this.patterns.selectionRelease.test(str)
+      (str.length > 50 && /^\d+;\d+;\d+M\d+;\d+;\d+M/.test(str))
     );
   }
 
