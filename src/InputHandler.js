@@ -72,7 +72,11 @@ class InputHandler {
           /^\d+;\d+;\d+M\d+;\d+;\d+M/.test(str) ||  // Multiple mouse events in sequence
           (str.length > 100 && /^\d+;\d+;\d+M/.test(str)) ||  // Long mouse event strings
           /^65;\d+;\d+M65;\d+;\d+M/.test(str) ||  // Repeated drag events
-          /^32;\d+;\d+M32;\d+;\d+M/.test(str)     // Repeated drag events
+          /^32;\d+;\d+M32;\d+;\d+M/.test(str) ||  // Repeated drag events
+          /^0;\d+;\d+M0;\d+;\d+M/.test(str) ||    // Repeated click events
+          /^1;\d+;\d+M1;\d+;\d+M/.test(str) ||    // Repeated middle click events
+          /^2;\d+;\d+M2;\d+;\d+M/.test(str) ||    // Repeated right click events
+          /^3;\d+;\d+M3;\d+;\d+M/.test(str)       // Repeated selection release events
         );
         
         if (isMouseEventOutput) {
@@ -132,7 +136,11 @@ class InputHandler {
         /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/.test(dataStr) || // Multiple mouse events
         (dataStr.length > 100 && /^\d+;\d+;\d+M/.test(dataStr)) || // Long mouse sequences
         /^65;\d+;\d+M/.test(dataStr) ||       // Drag events starting with 65
-        /^32;\d+;\d+M/.test(dataStr)          // Drag events starting with 32
+        /^32;\d+;\d+M/.test(dataStr) ||       // Drag events starting with 32
+        /^0;\d+;\d+M/.test(dataStr) ||        // Left click selection events
+        /^1;\d+;\d+M/.test(dataStr) ||        // Middle click events
+        /^2;\d+;\d+M/.test(dataStr) ||        // Right click events
+        /^3;\d+;\d+M/.test(dataStr)           // Selection release events
       );
       
       if (isMouseEvent) {
@@ -257,7 +265,11 @@ class InputHandler {
         /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/.test(str) || // Multiple mouse events
         (str.length > 100 && /^\d+;\d+;\d+M/.test(str)) || // Long mouse sequences
         /^65;\d+;\d+M/.test(str) ||       // Drag events starting with 65
-        /^32;\d+;\d+M/.test(str)          // Drag events starting with 32
+        /^32;\d+;\d+M/.test(str) ||       // Drag events starting with 32
+        /^0;\d+;\d+M/.test(str) ||        // Left click selection events
+        /^1;\d+;\d+M/.test(str) ||        // Middle click events
+        /^2;\d+;\d+M/.test(str) ||        // Right click events
+        /^3;\d+;\d+M/.test(str)           // Selection release events
       );
       
       if (isMouseEvent) {
