@@ -1,10 +1,12 @@
 /**
  * InputHandler
- * Handles keyboard input processing and key bindings
+ * Handles keyboard input processing, key bindings, and mouse event filtering
+ * Uses MouseEventFilter for centralized mouse event detection and filtering
  */
 
 const readline = require('readline');
 const config = require('./config');
+const MouseEventFilter = require('./MouseEventFilter');
 
 class InputHandler {
   constructor(stateManager, sessionManager, viewRenderer, themeManager) {
@@ -47,6 +49,10 @@ class InputHandler {
     // Debounce timer
     this.debounceTimer = null;
     
+    // Mouse event filter for centralized mouse event detection
+    // Handles all mouse event patterns (scroll, drag, click, selection)
+    this.mouseFilter = new MouseEventFilter();
+    
     // Setup output filtering
     this.setupOutputFiltering();
     
@@ -56,30 +62,20 @@ class InputHandler {
 
   /**
    * Setup output filtering to prevent mouse events from appearing
+   * Intercepts stdout.write to filter out mouse event artifacts
    */
   setupOutputFiltering() {
     // Store original stdout.write
     const originalWrite = process.stdout.write;
+    const mouseFilter = this.mouseFilter;
     
     // Override stdout.write to filter mouse events
     process.stdout.write = function(chunk, encoding, callback) {
       if (typeof chunk === 'string' || chunk instanceof Buffer) {
         const str = chunk.toString();
         
-        // More specific mouse event detection to avoid blocking normal text
-        const isMouseEventOutput = (
-          // Only block if it's clearly a mouse event sequence
-          /^\d+;\d+;\d+M\d+;\d+;\d+M/.test(str) ||  // Multiple mouse events in sequence
-          (str.length > 100 && /^\d+;\d+;\d+M/.test(str)) ||  // Long mouse event strings
-          /^65;\d+;\d+M65;\d+;\d+M/.test(str) ||  // Repeated drag events
-          /^32;\d+;\d+M32;\d+;\d+M/.test(str) ||  // Repeated drag events
-          /^0;\d+;\d+M0;\d+;\d+M/.test(str) ||    // Repeated click events
-          /^1;\d+;\d+M1;\d+;\d+M/.test(str) ||    // Repeated middle click events
-          /^2;\d+;\d+M2;\d+;\d+M/.test(str) ||    // Repeated right click events
-          /^3;\d+;\d+M3;\d+;\d+M/.test(str)       // Repeated selection release events
-        );
-        
-        if (isMouseEventOutput) {
+        // Use centralized mouse event detection for output filtering
+        if (mouseFilter.isMouseEventOutput(str)) {
           // Don't write mouse event output to stdout
           return true;
         }
@@ -128,22 +124,8 @@ class InputHandler {
     process.stdin.on('data', (data) => {
       const dataStr = data.toString();
       
-      // More precise mouse event detection
-      // Focus on clear mouse event patterns to avoid blocking normal text
-      const isMouseEvent = (
-        dataStr.includes('\x1b[') ||           // ANSI escape sequences
-        /^\d+;\d+;\d+[Mm]/.test(dataStr) ||   // Raw format: num;num;numM
-        /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/.test(dataStr) || // Multiple mouse events
-        (dataStr.length > 100 && /^\d+;\d+;\d+M/.test(dataStr)) || // Long mouse sequences
-        /^65;\d+;\d+M/.test(dataStr) ||       // Drag events starting with 65
-        /^32;\d+;\d+M/.test(dataStr) ||       // Drag events starting with 32
-        /^0;\d+;\d+M/.test(dataStr) ||        // Left click selection events
-        /^1;\d+;\d+M/.test(dataStr) ||        // Middle click events
-        /^2;\d+;\d+M/.test(dataStr) ||        // Right click events
-        /^3;\d+;\d+M/.test(dataStr)           // Selection release events
-      );
-      
-      if (isMouseEvent) {
+      // Use centralized mouse event detection for input filtering
+      if (this.mouseFilter.isMouseEventInput(dataStr)) {
         this.handleMouseEvent(data);
         // Critical: consume completely to prevent leakage
         return;
@@ -165,33 +147,19 @@ class InputHandler {
 
   /**
    * Handle mouse events from raw data
+   * Processes scroll events and consumes all mouse events to prevent artifacts
    */
   handleMouseEvent(data) {
     const dataStr = data.toString();
     
-    // Handle both SGR format (\x1b[<buttoncode;x;yM) and raw format (buttoncode;x;yM)
-    // Extract scroll wheel events only (button codes 64 and 65)
-    const sgrScrollMatches = dataStr.matchAll(/\x1b\[<(64|65);(\d+);(\d+)M/g);
-    const rawScrollMatches = dataStr.matchAll(/(?:^|[^0-9])(64|65);(\d+);(\d+)M/g);
+    // Use centralized scroll event extraction from MouseEventFilter
+    const scrollEvents = this.mouseFilter.extractScrollEvents(dataStr);
     
-    // Process SGR format scroll events
-    for (const match of sgrScrollMatches) {
-      const buttonCode = parseInt(match[1], 10);
-      
-      if (buttonCode === 64) {
+    // Process scroll events
+    for (const event of scrollEvents) {
+      if (event.direction === 'up') {
         this.handleScrollUp();
-      } else if (buttonCode === 65) {
-        this.handleScrollDown();
-      }
-    }
-    
-    // Process raw format scroll events
-    for (const match of rawScrollMatches) {
-      const buttonCode = parseInt(match[1], 10);
-      
-      if (buttonCode === 64) {
-        this.handleScrollUp();
-      } else if (buttonCode === 65) {
+      } else if (event.direction === 'down') {
         this.handleScrollDown();
       }
     }
@@ -257,24 +225,9 @@ class InputHandler {
     
     if (!key) return;
     
-    // Filter out mouse events that might leak through (precise filtering)
-    if (str) {
-      const isMouseEvent = (
-        str.includes('\x1b[') ||           // ANSI escape sequences
-        /^\d+;\d+;\d+[Mm]/.test(str) ||   // Raw format: num;num;numM
-        /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/.test(str) || // Multiple mouse events
-        (str.length > 100 && /^\d+;\d+;\d+M/.test(str)) || // Long mouse sequences
-        /^65;\d+;\d+M/.test(str) ||       // Drag events starting with 65
-        /^32;\d+;\d+M/.test(str) ||       // Drag events starting with 32
-        /^0;\d+;\d+M/.test(str) ||        // Left click selection events
-        /^1;\d+;\d+M/.test(str) ||        // Middle click events
-        /^2;\d+;\d+M/.test(str) ||        // Right click events
-        /^3;\d+;\d+M/.test(str)           // Selection release events
-      );
-      
-      if (isMouseEvent) {
-        return;
-      }
+    // Filter out mouse events that might leak through
+    if (this.mouseFilter.isMouseEventKeypress(str)) {
+      return;
     }
     
     // Clear debounce timer
