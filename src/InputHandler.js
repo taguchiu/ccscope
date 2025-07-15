@@ -90,12 +90,14 @@ class InputHandler {
       const dataStr = data.toString();
       
       // Completely consume any data that might be mouse events
-      // This prevents any mouse event artifacts from appearing on screen
+      // This includes drag events, scroll events, and any mouse-related data
       if (dataStr.includes('\x1b[') || 
           dataStr.includes(';') || 
           /[0-9;MmC]/.test(dataStr) ||
           dataStr.includes('M') ||
-          dataStr.includes('m')) {
+          dataStr.includes('m') ||
+          /^\d+;\d+;\d+M/.test(dataStr) ||      // Raw drag format
+          /\d+;\d+;\d+[Mm]/.test(dataStr)) {    // Any mouse event format
         
         this.handleMouseEvent(data);
         // Critical: consume completely to prevent leakage
@@ -122,10 +124,24 @@ class InputHandler {
   handleMouseEvent(data) {
     const dataStr = data.toString();
     
+    // Handle both SGR format (\x1b[<buttoncode;x;yM) and raw format (buttoncode;x;yM)
     // Extract scroll wheel events only (button codes 64 and 65)
-    const scrollMatches = dataStr.matchAll(/\x1b\[<(64|65);(\d+);(\d+)M/g);
+    const sgrScrollMatches = dataStr.matchAll(/\x1b\[<(64|65);(\d+);(\d+)M/g);
+    const rawScrollMatches = dataStr.matchAll(/(?:^|[^0-9])(64|65);(\d+);(\d+)M/g);
     
-    for (const match of scrollMatches) {
+    // Process SGR format scroll events
+    for (const match of sgrScrollMatches) {
+      const buttonCode = parseInt(match[1], 10);
+      
+      if (buttonCode === 64) {
+        this.handleScrollUp();
+      } else if (buttonCode === 65) {
+        this.handleScrollDown();
+      }
+    }
+    
+    // Process raw format scroll events
+    for (const match of rawScrollMatches) {
       const buttonCode = parseInt(match[1], 10);
       
       if (buttonCode === 64) {
@@ -201,7 +217,9 @@ class InputHandler {
                 str.includes(';') || 
                 /[0-9;MmC]/.test(str) ||
                 str.includes('M') ||
-                str.includes('m'))) {
+                str.includes('m') ||
+                /^\d+;\d+;\d+M/.test(str) ||      // Raw drag format
+                /\d+;\d+;\d+[Mm]/.test(str))) {   // Any mouse event format
       return;
     }
     
