@@ -47,8 +47,43 @@ class InputHandler {
     // Debounce timer
     this.debounceTimer = null;
     
+    // Setup output filtering
+    this.setupOutputFiltering();
+    
     // Bind event listeners
     this.setupEventListeners();
+  }
+
+  /**
+   * Setup output filtering to prevent mouse events from appearing
+   */
+  setupOutputFiltering() {
+    // Store original stdout.write
+    const originalWrite = process.stdout.write;
+    
+    // Override stdout.write to filter mouse events
+    process.stdout.write = function(chunk, encoding, callback) {
+      if (typeof chunk === 'string' || chunk instanceof Buffer) {
+        const str = chunk.toString();
+        
+        // Check if this looks like mouse event output
+        const isMouseEventOutput = (
+          str.includes('65;') ||
+          str.includes('32;') ||
+          /\d+;\d+;\d+M/.test(str) ||
+          /\d+M\d+/.test(str) ||
+          (str.length > 50 && /[0-9;M]/.test(str))
+        );
+        
+        if (isMouseEventOutput) {
+          // Don't write mouse event output to stdout
+          return true;
+        }
+      }
+      
+      // Call original write for non-mouse events
+      return originalWrite.call(this, chunk, encoding, callback);
+    };
   }
 
   /**
@@ -89,16 +124,25 @@ class InputHandler {
     process.stdin.on('data', (data) => {
       const dataStr = data.toString();
       
-      // Completely consume any data that might be mouse events
-      // This includes drag events, scroll events, and any mouse-related data
-      if (dataStr.includes('\x1b[') || 
-          dataStr.includes(';') || 
-          /[0-9;MmC]/.test(dataStr) ||
-          dataStr.includes('M') ||
-          dataStr.includes('m') ||
-          /^\d+;\d+;\d+M/.test(dataStr) ||      // Raw drag format
-          /\d+;\d+;\d+[Mm]/.test(dataStr)) {    // Any mouse event format
-        
+      // Ultra-aggressive mouse event detection
+      // This catches ALL possible mouse event formats and patterns
+      const isMouseEvent = (
+        dataStr.includes('\x1b[') ||           // ANSI escape sequences
+        dataStr.includes(';') ||               // Semicolon separator
+        /[0-9;MmC]/.test(dataStr) ||          // Numbers, semicolons, M, m, C
+        dataStr.includes('M') ||               // Mouse button press
+        dataStr.includes('m') ||               // Mouse button release
+        /^\d+;\d+;\d+[Mm]/.test(dataStr) ||   // Raw format: num;num;numM
+        /\d+;\d+;\d+[Mm]/.test(dataStr) ||    // Embedded format
+        /\d+M\d+/.test(dataStr) ||            // Compact format
+        /\d+;\d+M/.test(dataStr) ||           // Shortened format
+        /65;/.test(dataStr) ||                // Common drag button codes
+        /32;/.test(dataStr) ||                // Common drag button codes
+        /\d{2,3};/.test(dataStr) ||           // Coordinate patterns
+        dataStr.length > 50 && /[0-9;M]/.test(dataStr) // Long strings with mouse patterns
+      );
+      
+      if (isMouseEvent) {
         this.handleMouseEvent(data);
         // Critical: consume completely to prevent leakage
         return;
@@ -212,15 +256,27 @@ class InputHandler {
     
     if (!key) return;
     
-    // Filter out mouse events that might leak through (most aggressive)
-    if (str && (str.includes('\x1b[') || 
-                str.includes(';') || 
-                /[0-9;MmC]/.test(str) ||
-                str.includes('M') ||
-                str.includes('m') ||
-                /^\d+;\d+;\d+M/.test(str) ||      // Raw drag format
-                /\d+;\d+;\d+[Mm]/.test(str))) {   // Any mouse event format
-      return;
+    // Filter out mouse events that might leak through (ultra-aggressive)
+    if (str) {
+      const isMouseEvent = (
+        str.includes('\x1b[') ||           // ANSI escape sequences
+        str.includes(';') ||               // Semicolon separator
+        /[0-9;MmC]/.test(str) ||          // Numbers, semicolons, M, m, C
+        str.includes('M') ||               // Mouse button press
+        str.includes('m') ||               // Mouse button release
+        /^\d+;\d+;\d+[Mm]/.test(str) ||   // Raw format: num;num;numM
+        /\d+;\d+;\d+[Mm]/.test(str) ||    // Embedded format
+        /\d+M\d+/.test(str) ||            // Compact format
+        /\d+;\d+M/.test(str) ||           // Shortened format
+        /65;/.test(str) ||                // Common drag button codes
+        /32;/.test(str) ||                // Common drag button codes
+        /\d{2,3};/.test(str) ||           // Coordinate patterns
+        str.length > 50 && /[0-9;M]/.test(str) // Long strings with mouse patterns
+      );
+      
+      if (isMouseEvent) {
+        return;
+      }
     }
     
     // Clear debounce timer
