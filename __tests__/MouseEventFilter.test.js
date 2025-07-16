@@ -18,8 +18,8 @@ describe('MouseEventFilter', () => {
 
   describe('isMouseEventInput', () => {
     test('detects ANSI escape sequences', () => {
-      expect(filter.isMouseEventInput('\\x1b[M')).toBe(true);
-      expect(filter.isMouseEventInput('\\x1b[<0;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[<0;10;20M')).toBe(true);
     });
 
     test('detects raw single mouse events', () => {
@@ -157,7 +157,7 @@ describe('MouseEventFilter', () => {
 
   describe('matchesPattern', () => {
     test('matches existing patterns', () => {
-      expect(filter.matchesPattern('\\x1b[', 'ansiEscape')).toBe(true);
+      expect(filter.matchesPattern('\x1b[', 'ansiEscape')).toBe(true);
       expect(filter.matchesPattern('0;10;20M', 'rawSingle')).toBe(true);
       expect(filter.matchesPattern('65;10;20M', 'dragLeft')).toBe(true);
     });

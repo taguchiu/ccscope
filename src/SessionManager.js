@@ -1096,7 +1096,9 @@ class SessionManager {
       hash = ((hash << 5) - hash) + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
-    return Math.abs(hash).toString(16);
+    const hexHash = Math.abs(hash).toString(16);
+    // Pad with zeros to ensure at least 8 characters
+    return hexHash.padStart(8, '0');
   }
 
   /**

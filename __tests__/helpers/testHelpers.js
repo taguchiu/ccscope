@@ -19,6 +19,10 @@ function createMockSessionData() {
         tools: [
           { name: 'Read', type: 'file_operation' },
           { name: 'Edit', type: 'file_operation' }
+        ],
+        toolsUsed: [
+          { name: 'Read', type: 'file_operation' },
+          { name: 'Edit', type: 'file_operation' }
         ]
       },
       {
@@ -27,10 +31,13 @@ function createMockSessionData() {
         userMessage: 'Another test message',
         assistantMessage: 'Another response',
         responseTime: 2500,
-        tools: []
+        tools: [],
+        toolsUsed: []
       }
     ],
     totalDuration: 4000,
+    duration: 4000,
+    totalConversations: 2,
     startTime: new Date('2024-01-01T10:00:00Z'),
     lastActivity: new Date('2024-01-01T10:05:00Z'),
     metrics: {
