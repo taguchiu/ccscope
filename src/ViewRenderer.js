@@ -614,7 +614,7 @@ class ViewRenderer {
     this.renderConversationList(conversations, selectedConversationIndex);
     
     // Selected conversation preview (always render to maintain layout)
-    if (conversations[selectedConversationIndex]) {
+    if (conversations && conversations[selectedConversationIndex]) {
       this.renderConversationPreview(conversations[selectedConversationIndex]);
     } else {
       // Empty preview to maintain layout
@@ -633,6 +633,12 @@ class ViewRenderer {
    * Render conversation detail header
    */
   renderConversationDetailHeader(session, stats, sortOrder = 'dateTime', sortDirection = 'desc') {
+    // Handle null session
+    if (!session) {
+      console.log(this.theme.formatError('No session data available'));
+      return;
+    }
+    
     // Title
     const title = this.theme.formatHeader('🔍 Claude Code Scope');
     console.log(title);
@@ -643,7 +649,7 @@ class ViewRenderer {
     console.log(statsLine);
     
     // Selected session info with file
-    const sessionInfo = `Selected: [${session.sessionId}] ${session.projectName}`;
+    const sessionInfo = `Selected: [${session.sessionId || 'unknown'}] ${session.projectName || 'unknown'}`;
     console.log(this.theme.formatInfo(sessionInfo));
     
     if (session.filePath) {
@@ -668,6 +674,12 @@ class ViewRenderer {
    * Render conversation list
    */
   renderConversationList(conversations, selectedIndex) {
+    // Handle null or empty conversations
+    if (!conversations || conversations.length === 0) {
+      console.log(this.theme.formatMuted('No conversations available'));
+      return;
+    }
+    
     // Headers
     const headers = [
       'No.'.padEnd(3),

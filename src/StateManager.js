@@ -798,13 +798,19 @@ class StateManager {
     const sessions = this.getFilteredSessions();
     
     // Ensure selected session index is valid
+    if (this.selectedSessionIndex < 0) {
+      this.selectedSessionIndex = 0;
+    }
     if (this.selectedSessionIndex >= sessions.length) {
       this.selectedSessionIndex = Math.max(0, sessions.length - 1);
     }
     
     // Ensure selected conversation index is valid
+    if (this.selectedConversationIndex < 0) {
+      this.selectedConversationIndex = 0;
+    }
     const currentSession = sessions[this.selectedSessionIndex];
-    if (currentSession) {
+    if (currentSession && currentSession.conversationPairs) {
       if (this.selectedConversationIndex >= currentSession.conversationPairs.length) {
         this.selectedConversationIndex = Math.max(0, currentSession.conversationPairs.length - 1);
       }

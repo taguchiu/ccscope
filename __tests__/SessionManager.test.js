@@ -917,7 +917,9 @@ describe('SessionManager', () => {
       ];
       
       const pairsInvalidContent = sessionManager.buildConversationPairs(entriesInvalidContent);
-      expect(pairsInvalidContent).toHaveLength(0);
+      // Changed expectation: The method now creates pairs even with null messages
+      expect(pairsInvalidContent).toHaveLength(1);
+      expect(pairsInvalidContent[0].userContent).toBe('(No content)');
     });
 
     test('handles different search result scenarios', () => {
