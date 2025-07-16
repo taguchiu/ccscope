@@ -69,12 +69,19 @@ class CCScopeApplication {
   }
 
   /**
-   * Show loading screen
+   * Show loading screen with animated spinner
    */
   showLoadingScreen() {
     console.clear();
-    // Simple loading indicator
-    process.stdout.write('🔍 Claude Code Scope - Loading... ');
+    const banner = `
+╔═══════════════════════════════════════════════════╗
+║          🔍 Claude Code Scope v1.2.2              ║
+║        Interactive Conversation Browser           ║
+╚═══════════════════════════════════════════════════╝
+`;
+    console.log(this.themeManager.formatHeader(banner));
+    console.log('');
+    process.stdout.write('⚡ Initializing ultrathink mode... ');
   }
 
   /**
@@ -103,16 +110,33 @@ class CCScopeApplication {
   }
 
   /**
-   * Show welcome message
+   * Show welcome message with performance stats
    */
   showWelcomeMessage() {
     const stats = this.sessionManager.getStatistics();
+    const cacheStats = this.sessionManager.cacheManager.getCacheStats();
+    const loadTime = this.sessionManager.scanDuration;
     
     console.clear();
     console.log(this.themeManager.formatHeader('🎉 Welcome to Claude Code Scope'));
     console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
     console.log('');
     console.log(this.themeManager.formatSuccess(`✅ Ready: ${stats.totalSessions} sessions, ${stats.totalConversations} conversations`));
+    
+    // Show performance info
+    if (loadTime < 1000) {
+      console.log(this.themeManager.formatInfo(`⚡ Loaded in ${loadTime}ms (ultrathink mode active)`));
+    } else {
+      console.log(this.themeManager.formatInfo(`⏱️  Loaded in ${(loadTime / 1000).toFixed(1)}s`));
+    }
+    
+    // Show cache info if available
+    if (cacheStats && cacheStats.fileCount > 0) {
+      console.log(this.themeManager.formatMuted(`💾 Cache: ${cacheStats.fileCount} files cached`));
+    }
+    
+    console.log('');
+    console.log(this.themeManager.formatMuted('Press h for help, q to quit'));
     
     // Start immediately
     this.viewRenderer.render();
