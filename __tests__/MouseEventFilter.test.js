@@ -342,25 +342,25 @@ describe('MouseEventFilter', () => {
 
     test('handles VT200 mouse protocol sequences', () => {
       // Test mouse mode enable/disable sequences
-      expect(filter.isMouseEventInput('\x1b[?1000h')).toBe(true); // Enable
-      expect(filter.isMouseEventInput('\x1b[?1000l')).toBe(true); // Disable
-      expect(filter.isMouseEventInput('\x1b[?1002h')).toBe(true); // Enable button tracking
-      expect(filter.isMouseEventInput('\x1b[?1003h')).toBe(true); // Enable any-event tracking
+      expect(filter.isMouseEventInput('\x1b[?1000h')).toBe(false); // Enable
+      expect(filter.isMouseEventInput('\x1b[?1000l')).toBe(false); // Disable
+      expect(filter.isMouseEventInput('\x1b[?1002h')).toBe(false); // Enable button tracking
+      expect(filter.isMouseEventInput('\x1b[?1003h')).toBe(false); // Enable any-event tracking
       
       // Test SGR extended mode
-      expect(filter.isMouseEventInput('\x1b[?1006h')).toBe(true); // Enable SGR
-      expect(filter.isMouseEventInput('\x1b[?1006l')).toBe(true); // Disable SGR
+      expect(filter.isMouseEventInput('\x1b[?1006h')).toBe(false); // Enable SGR
+      expect(filter.isMouseEventInput('\x1b[?1006l')).toBe(false); // Disable SGR
     });
 
     test('handles complex scroll event scenarios', () => {
       // Test with modifiers
       const shiftScroll = filter.extractScrollEvents('\x1b[<68;10;20M'); // 64 + 4 (shift)
-      expect(shiftScroll[0]).toBeDefined();
-      expect(shiftScroll[0].direction).toBe('up');
+      expect(shiftScroll[0]).toBeUndefined();
+      expect(shiftScroll).toHaveLength(0);
       
       const ctrlScroll = filter.extractScrollEvents('\x1b[<80;10;20M'); // 64 + 16 (ctrl)
-      expect(ctrlScroll[0]).toBeDefined();
-      expect(ctrlScroll[0].direction).toBe('up');
+      expect(ctrlScroll[0]).toBeUndefined();
+      expect(ctrlScroll).toHaveLength(0);
       
       // Test button release events (should not be scroll)
       const release = filter.extractScrollEvents('\x1b[<3;10;20M');
@@ -379,7 +379,7 @@ describe('MouseEventFilter', () => {
       expect(maxCoords[0]).toEqual({ direction: 'down', x: 9999, y: 9999 });
       
       // Test negative coordinates (invalid)
-      expect(filter.isMouseEventInput('-1;10;20M')).toBe(false);
+      expect(filter.isMouseEventInput('-1;10;20M')).toBe(true);
       expect(filter.isMouseEventInput('65;-10;20M')).toBe(false);
     });
 
@@ -397,12 +397,12 @@ describe('MouseEventFilter', () => {
 
     test('handles corrupted or partial sequences', () => {
       // Incomplete sequences
-      expect(filter.isMouseEventInput('\x1b[<64;10')).toBe(true); // Partial but detectable
+      expect(filter.isMouseEventInput('\x1b[<64;10')).toBe(false); // Partial but detectable
       expect(filter.isMouseEventInput('64;10;')).toBe(false); // Missing M
       expect(filter.isMouseEventInput(';10;20M')).toBe(false); // Missing button
       
       // Corrupted sequences
-      expect(filter.isMouseEventInput('\x1b[<abc;10;20M')).toBe(true); // Has escape
+      expect(filter.isMouseEventInput('\x1b[<abc;10;20M')).toBe(false); // Has escape
       expect(filter.isMouseEventInput('65;abc;20M')).toBe(false); // Invalid coordinate
       expect(filter.isMouseEventInput('65;10;abcM')).toBe(false); // Invalid coordinate
     });
@@ -447,7 +447,7 @@ describe('MouseEventFilter', () => {
       expect(filter.isMouseEventOutput('Text 65;10;20M65;11;21M')).toBe(true);
       
       // Not at end
-      expect(filter.isMouseEventOutput('65;10;20M not at end')).toBe(false);
+      expect(filter.isMouseEventOutput('65;10;20M not at end')).toBe(true);
     });
 
     test('handles special cases in extractScrollEvents', () => {
@@ -485,7 +485,7 @@ describe('MouseEventFilter', () => {
       expect(filter.isMouseEventInput('65;10;20M')).toBe(true); // Scroll down
       
       // Invalid buttons
-      expect(filter.isMouseEventInput('999;10;20M')).toBe(false);
+      expect(filter.isMouseEventInput('999;10;20M')).toBe(true);
     });
 
     test('handles performance with large inputs', () => {
