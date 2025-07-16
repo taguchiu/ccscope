@@ -3347,6 +3347,88 @@ class ViewRenderer {
     return Math.max(1, this.terminalHeight - headerLines - footerLines - buffer);
   }
 
+  /**
+   * Render daily statistics
+   */
+  renderDailyStatistics(dailyStats) {
+    console.clear();
+    
+    const title = '📊 Daily Conversation Statistics';
+    console.log(this.theme.formatHeader(title));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log();
+    
+    if (!dailyStats || dailyStats.days.length === 0) {
+      console.log(this.theme.formatMuted('No sessions found'));
+      return;
+    }
+    
+    // Header
+    const header = 'Date       Sessions  Conversations  Duration    Avg Duration  Tools';
+    console.log(this.theme.formatAccent(header));
+    console.log(this.theme.formatSeparator(header.length));
+    
+    // Data rows
+    dailyStats.days.forEach(day => {
+      const row = [
+        day.date.padEnd(10),
+        String(day.sessionCount).padStart(8),
+        String(day.conversationCount).padStart(13),
+        this.theme.formatDuration(day.totalDuration).padStart(10),
+        this.theme.formatDuration(day.avgDuration).padStart(12),
+        String(day.toolUsageCount).padStart(6)
+      ].join('  ');
+      
+      console.log(row);
+    });
+    
+    // Summary
+    console.log();
+    console.log(this.theme.formatSeparator(header.length));
+    console.log(this.theme.formatInfo(`Total: ${dailyStats.totalSessions} sessions, ${dailyStats.totalConversations} conversations`));
+  }
+
+  /**
+   * Render project statistics
+   */
+  renderProjectStatistics(projectStats) {
+    console.clear();
+    
+    const title = '📊 Project Statistics';
+    console.log(this.theme.formatHeader(title));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log();
+    
+    if (!projectStats || projectStats.projects.length === 0) {
+      console.log(this.theme.formatMuted('No projects found'));
+      return;
+    }
+    
+    // Header
+    const header = 'Project                           Sessions  Conv.  Duration    Thinking';
+    console.log(this.theme.formatAccent(header));
+    console.log(this.theme.formatSeparator(header.length));
+    
+    // Data rows
+    projectStats.projects.forEach(project => {
+      const projectName = this.theme.truncate(project.name || 'Unknown', 32);
+      const row = [
+        projectName.padEnd(32),
+        String(project.sessionCount).padStart(8),
+        String(project.conversationCount).padStart(6),
+        this.theme.formatDuration(project.totalDuration).padStart(10),
+        this.theme.formatThinkingRate(project.avgThinkingRate).padStart(8)
+      ].join('  ');
+      
+      console.log(row);
+    });
+    
+    // Summary
+    console.log();
+    console.log(this.theme.formatSeparator(header.length));
+    console.log(this.theme.formatInfo(`Total: ${projectStats.totalProjects} projects`));
+  }
+
 }
 
 module.exports = ViewRenderer;
