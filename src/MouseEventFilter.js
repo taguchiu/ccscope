@@ -12,16 +12,16 @@ class MouseEventFilter {
       ansiEscape: /\x1b\[/,
       
       // Raw mouse event formats
-      rawSingle: /^\d+;\d+;\d+[Mm]/,
+      rawSingle: /\d+;\d+;\d+[Mm]/,
       rawMultiple: /\d+;\d+;\d+[Mm]\d+;\d+;\d+[Mm]/,
       
       // Specific button codes
-      dragLeft: /^65;\d+;\d+M/,      // Left drag
-      dragMiddle: /^32;\d+;\d+M/,    // Middle drag
-      leftClick: /^0;\d+;\d+M/,      // Left click (selection)
-      middleClick: /^1;\d+;\d+M/,    // Middle click
-      rightClick: /^2;\d+;\d+M/,     // Right click
-      selectionRelease: /^3;\d+;\d+M/, // Selection release
+      dragLeft: /65;\d+;\d+M/,       // Left drag
+      dragMiddle: /32;\d+;\d+M/,     // Middle drag
+      leftClick: /0;\d+;\d+M/,       // Left click (selection)
+      middleClick: /1;\d+;\d+M/,     // Middle click
+      rightClick: /2;\d+;\d+M/,      // Right click
+      selectionRelease: /3;\d+;\d+M/, // Selection release
       
       // Scroll wheel events (for artifact detection only)
       scrollUp: /^64;\d+;\d+M/,      // Scroll up
@@ -79,6 +79,7 @@ class MouseEventFilter {
   isMouseEventOutput(str) {
     return (
       this.patterns.multipleEvents.test(str) ||
+      this.patterns.rawSingle.test(str) ||
       this.patterns.longSequence(str) ||
       this.patterns.repeatedDrag.test(str) ||
       this.patterns.repeatedClick.test(str) ||
@@ -115,7 +116,7 @@ class MouseEventFilter {
     }
     
     // Raw format: buttoncode;x;yM (only process if not part of SGR sequence)
-    const rawMatches = processedStr.matchAll(/(?:^|[^0-9])(64|65);(\d+);(\d+)M/g);
+    const rawMatches = processedStr.matchAll(/(64|65);(\d+);(\d+)M/g);
     for (const match of rawMatches) {
       const buttonCode = parseInt(match[1], 10);
       const x = parseInt(match[2], 10);

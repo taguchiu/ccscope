@@ -860,8 +860,16 @@ class InputHandler {
     this.disableMouseEvents();
     
     // Reset terminal
-    process.stdout.write('\x1b[0m'); // Reset colors
-    process.stdout.write('\x1b[?25h'); // Show cursor
+    if (process.stdout && process.stdout.write) {
+      process.stdout.write('\x1b[0m'); // Reset colors
+      process.stdout.write('\x1b[?25h'); // Show cursor
+    }
+    
+    // Restore raw mode
+    if (process.stdin && process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+    }
+    
     console.log('\n👋 Goodbye!');
   }
 

@@ -683,8 +683,8 @@ class StateManager {
       
       switch (this.conversationSortOrder) {
         case 'dateTime':
-          aValue = new Date(a.timestamp || 0);
-          bValue = new Date(b.timestamp || 0);
+          aValue = new Date(a.timestamp || a.userTime || 0);
+          bValue = new Date(b.timestamp || b.userTime || 0);
           break;
         case 'duration':
           aValue = a.responseTime || 0;
@@ -1026,6 +1026,7 @@ class StateManager {
     this.currentView = state.currentView || 'session_list';
     this.selectedSessionIndex = state.selectedSessionIndex || 0;
     this.selectedConversationIndex = state.selectedConversationIndex || 0;
+    this.scrollOffset = state.scrollOffset || 0;
     this.searchQuery = state.searchQuery || '';
     this.activeFilters = state.activeFilters || {
       project: null
