@@ -45,7 +45,6 @@ class SessionManager {
     
     try {
       // Try to load from cache first
-      process.stdout.write('⚡ Loading cache...');
       const cachedData = this.cacheManager.loadCache();
       
       // Discover transcript files
@@ -53,21 +52,16 @@ class SessionManager {
       
       // Early return if no files found
       if (transcriptFiles.length === 0) {
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-        console.log('ℹ️ No transcript files found');
         this.sessions = [];
         return this.sessions;
       }
-      
-      // Clear status line
-      process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
       
       let sessions = [];
       let filesToParse = [];
       const fileHashes = {};
       
       if (cachedData) {
-        process.stdout.write('✨ Using cached data...');
+        // Using cached data
         
         // Check which files need updating
         for (const filePath of transcriptFiles) {
@@ -87,8 +81,7 @@ class SessionManager {
         );
         
         if (filesToParse.length > 0) {
-          process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-          process.stdout.write(`🔄 Updating ${filesToParse.length} changed files...`);
+          // Updating changed files
         }
       } else {
         filesToParse = transcriptFiles;
@@ -96,7 +89,7 @@ class SessionManager {
           const hash = this.cacheManager.getFileHash(filePath);
           fileHashes[filePath] = { hash };
         }
-        process.stdout.write(`📊 Analyzing ${transcriptFiles.length} files...`);
+        // Analyzing files
       }
       
       // Parse new or updated files
@@ -112,8 +105,6 @@ class SessionManager {
       
       // Save to cache
       if (sessions.length > 0) {
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-        process.stdout.write('💾 Saving cache...');
         this.cacheManager.saveCache(sessions, fileHashes);
       }
       
@@ -241,11 +232,7 @@ class SessionManager {
     let processed = 0;
     
     // Only show progress for significant work
-    const showProgress = transcriptFiles.length > 5;
-    
-    if (showProgress && !isIncremental) {
-      process.stdout.write('📊 Analyzing sessions... ');
-    }
+    const showProgress = false; // Disable all progress output
     
     // Process files in batches for better performance
     for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
