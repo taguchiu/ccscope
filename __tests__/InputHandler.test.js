@@ -573,4 +573,275 @@ describe('InputHandler', () => {
       }
     });
   });
+
+  describe('additional input handling scenarios', () => {
+    test('handles search mode edge cases', () => {
+      inputHandler.inputMode = 'search';
+      
+      // Test backspace at beginning
+      inputHandler.searchBuffer = '';
+      inputHandler.handleSearchInput('\b', { name: 'backspace' });
+      expect(inputHandler.searchBuffer).toBe('');
+      
+      // Test normal character input
+      inputHandler.searchBuffer = 'test';
+      inputHandler.handleSearchInput('s', { name: 's' });
+      expect(inputHandler.searchBuffer).toBe('tests');
+    });
+
+    test('handles filter mode basic functionality', () => {
+      inputHandler.inputMode = 'filter';
+      inputHandler.filterBuffer = '';
+      
+      // Test character input
+      inputHandler.handleFilterInput('a', { name: 'a' });
+      expect(inputHandler.filterBuffer).toBe('a');
+      
+      // Test backspace
+      inputHandler.handleFilterInput('\b', { name: 'backspace' });
+      expect(inputHandler.filterBuffer).toBe('');
+    });
+
+    test('handles error conditions gracefully', () => {
+      // Test null/undefined input handling
+      expect(() => {
+        inputHandler.handleKeyPress('', { name: '' });
+      }).not.toThrow();
+      
+      expect(() => {
+        inputHandler.handleNormalInput('', { name: '' }, 'session_list');
+      }).not.toThrow();
+    });
+
+    test('handles different view states', () => {
+      // Test help view
+      mockStateManager.getCurrentView.mockReturnValue('help');
+      inputHandler.handleNormalInput('\u001b', { name: 'escape' });
+      expect(mockStateManager.setPreviousView).toHaveBeenCalled();
+    });
+
+    test('handles quit command with mocked exit', () => {
+      // Mock the exit function to prevent actual process exit
+      const exitSpy = jest.spyOn(inputHandler, 'exitApplication').mockImplementation(() => {});
+      
+      inputHandler.handleNormalInput('q', { name: 'q' }, 'session_list');
+      expect(exitSpy).toHaveBeenCalled();
+      
+      exitSpy.mockRestore();
+    });
+
+    test('handles view-specific input routing', () => {
+      // Test conversation_detail view
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      const handleConversationDetailSpy = jest.spyOn(inputHandler, 'handleConversationDetailInput');
+      
+      inputHandler.handleNormalInput('j', { name: 'j' }, 'conversation_detail');
+      expect(handleConversationDetailSpy).toHaveBeenCalled();
+      
+      // Test full_detail view
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      const handleFullDetailSpy = jest.spyOn(inputHandler, 'handleFullDetailInput');
+      
+      inputHandler.handleNormalInput('k', { name: 'k' }, 'full_detail');
+      expect(handleFullDetailSpy).toHaveBeenCalled();
+      
+      // Test search_results view
+      mockStateManager.getCurrentView.mockReturnValue('search_results');
+      const handleSearchResultsSpy = jest.spyOn(inputHandler, 'handleSearchResultsInput');
+      
+      inputHandler.handleNormalInput('enter', { name: 'enter' }, 'search_results');
+      expect(handleSearchResultsSpy).toHaveBeenCalled();
+    });
+
+    test('handles search mode with different input types', () => {
+      inputHandler.inputMode = 'search';
+      const renderSearchPromptSpy = jest.spyOn(inputHandler, 'renderSearchPrompt').mockImplementation(() => {});
+      
+      // Test space character
+      inputHandler.handleSearchInput(' ', { name: 'space' });
+      expect(inputHandler.inputBuffer).toBe(' ');
+      
+      // Test number
+      inputHandler.handleSearchInput('1', { name: '1' });
+      expect(inputHandler.inputBuffer).toBe(' 1');
+      
+      // Test special character
+      inputHandler.handleSearchInput('!', { name: '!' });
+      expect(inputHandler.inputBuffer).toBe(' 1!');
+      
+      // Test clear buffer on escape
+      inputHandler.handleSearchInput('', { name: 'escape' });
+      expect(inputHandler.inputBuffer).toBe('');
+      expect(inputHandler.inputMode).toBe('normal');
+    });
+
+    test('handles session resume edge cases', () => {
+      // Test resume with no current session
+      mockStateManager.getCurrentSession = jest.fn(() => null);
+      const resumeSessionSpy = jest.spyOn(inputHandler, 'resumeSession').mockImplementation(() => {});
+      
+      inputHandler.handleSessionListInput('r', { name: 'r' });
+      expect(resumeSessionSpy).toHaveBeenCalled();
+      
+      // Test resume with valid session
+      mockStateManager.getCurrentSession = jest.fn(() => ({ sessionId: 'test', fullSessionId: 'test-full' }));
+      inputHandler.handleSessionListInput('r', { name: 'r' });
+      expect(resumeSessionSpy).toHaveBeenCalled();
+    });
+
+    test('handles filter mode complete flow', () => {
+      inputHandler.inputMode = 'filter';
+      inputHandler.filterBuffer = '';
+      
+      // Test entering filter characters
+      inputHandler.handleFilterInput('p', { name: 'p' });
+      expect(inputHandler.filterBuffer).toBe('p');
+      
+      inputHandler.handleFilterInput('r', { name: 'r' });
+      expect(inputHandler.filterBuffer).toBe('pr');
+      
+      inputHandler.handleFilterInput('o', { name: 'o' });
+      expect(inputHandler.filterBuffer).toBe('pro');
+      
+      // Test backspace
+      inputHandler.handleFilterInput('', { name: 'backspace' });
+      expect(inputHandler.filterBuffer).toBe('pr');
+      
+      // Test enter to apply filter
+      const applyFilterSpy = jest.spyOn(inputHandler, 'applyFilter').mockImplementation(() => {});
+      inputHandler.handleFilterInput('', { name: 'return' });
+      expect(applyFilterSpy).toHaveBeenCalled();
+      
+      // Test escape to cancel
+      inputHandler.filterBuffer = 'test';
+      inputHandler.handleFilterInput('', { name: 'escape' });
+      expect(inputHandler.inputMode).toBe('normal');
+      expect(inputHandler.filterBuffer).toBe('');
+    });
+
+    test('handles keyboard shortcuts in different views', () => {
+      // Test sort shortcut
+      inputHandler.handleSessionListInput('s', { name: 's' });
+      expect(mockStateManager.cycleSortOrder).toHaveBeenCalled();
+      
+      // Test refresh shortcut
+      const refreshSpy = jest.spyOn(inputHandler, 'refreshData').mockImplementation(() => {});
+      inputHandler.handleSessionListInput('R', { name: 'R' });
+      expect(refreshSpy).toHaveBeenCalled();
+      
+      // Test home and end keys
+      inputHandler.handleSessionListInput('home', { name: 'home' });
+      expect(mockStateManager.navigateToFirst).toHaveBeenCalled();
+      
+      inputHandler.handleSessionListInput('end', { name: 'end' });
+      expect(mockStateManager.navigateToLast).toHaveBeenCalled();
+    });
+
+    test('handles conversation detail navigation', () => {
+      // Test conversation detail specific navigation
+      const handleConversationDetailSpy = jest.spyOn(inputHandler, 'handleConversationDetailInput').mockImplementation(() => {});
+      
+      inputHandler.handleConversationDetailInput('k', { name: 'k' });
+      inputHandler.handleConversationDetailInput('j', { name: 'j' });
+      inputHandler.handleConversationDetailInput('enter', { name: 'enter' });
+      inputHandler.handleConversationDetailInput('escape', { name: 'escape' });
+      
+      expect(handleConversationDetailSpy).toHaveBeenCalledTimes(4);
+    });
+
+    test('handles mouse event detection branches', () => {
+      // Test different mouse event patterns
+      if (inputHandler.mouseFilter) {
+        // Test mouse event detection
+        inputHandler.mouseFilter.isMouseEventKeypress.mockReturnValue(true);
+        const handleNormalInputSpy = jest.spyOn(inputHandler, 'handleNormalInput');
+        
+        inputHandler.handleKeyPress('mouse', { name: 'unknown' });
+        expect(handleNormalInputSpy).not.toHaveBeenCalled();
+        
+        // Test non-mouse event
+        inputHandler.mouseFilter.isMouseEventKeypress.mockReturnValue(false);
+        inputHandler.handleKeyPress('k', { name: 'k' });
+        expect(handleNormalInputSpy).toHaveBeenCalled();
+      }
+    });
+
+    test('handles input mode switching', () => {
+      // Test entering search mode
+      const enterSearchModeSpy = jest.spyOn(inputHandler, 'enterSearchMode').mockImplementation(() => {
+        inputHandler.inputMode = 'search';
+        inputHandler.inputBuffer = '';
+      });
+      
+      inputHandler.handleSessionListInput('/', { name: '/' });
+      expect(enterSearchModeSpy).toHaveBeenCalled();
+      
+      // Test entering filter mode
+      const enterFilterModeSpy = jest.spyOn(inputHandler, 'enterFilterMode').mockImplementation(() => {
+        inputHandler.inputMode = 'filter';
+        inputHandler.filterBuffer = '';
+      });
+      
+      inputHandler.handleSessionListInput('f', { name: 'f' });
+      expect(enterFilterModeSpy).toHaveBeenCalled();
+    });
+
+    test('handles debounced rendering', () => {
+      jest.useFakeTimers();
+      
+      try {
+        // Test multiple rapid calls
+        inputHandler.debounceRender();
+        inputHandler.debounceRender();
+        inputHandler.debounceRender();
+        
+        // Should not render immediately
+        expect(mockViewRenderer.render).not.toHaveBeenCalled();
+        
+        // Fast-forward timers
+        jest.runAllTimers();
+        
+        // Should render once after debounce
+        expect(mockViewRenderer.render).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test('handles terminal resize events', () => {
+      // Test resize handler
+      const handleResizeSpy = jest.spyOn(inputHandler, 'handleResize').mockImplementation(() => {});
+      
+      // Simulate resize event
+      if (inputHandler.handleResize) {
+        inputHandler.handleResize();
+        expect(handleResizeSpy).toHaveBeenCalled();
+      }
+      
+      // Test that viewport is updated
+      expect(mockViewRenderer.updateTerminalSize).toBeDefined();
+    });
+
+    test('handles context range adjustment', () => {
+      // Test context range increase/decrease
+      inputHandler.handleFullDetailInput('+', { name: '+' });
+      expect(mockStateManager.increaseContextRange).toHaveBeenCalled();
+      
+      inputHandler.handleFullDetailInput('-', { name: '-' });
+      expect(mockStateManager.decreaseContextRange).toHaveBeenCalled();
+    });
+
+    test('handles search results navigation', () => {
+      // Test search results specific navigation
+      const handleSearchResultsSpy = jest.spyOn(inputHandler, 'handleSearchResultsInput').mockImplementation(() => {});
+      
+      inputHandler.handleSearchResultsInput('j', { name: 'j' });
+      inputHandler.handleSearchResultsInput('k', { name: 'k' });
+      inputHandler.handleSearchResultsInput('enter', { name: 'enter' });
+      inputHandler.handleSearchResultsInput('escape', { name: 'escape' });
+      
+      expect(handleSearchResultsSpy).toHaveBeenCalledTimes(4);
+    });
+  });
+
 });

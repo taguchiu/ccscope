@@ -198,5 +198,146 @@ describe('MouseEventFilter', () => {
       expect(filter.isMouseEventInput(mixed)).toBe(true);
       expect(filter.isMouseEventOutput(mixed)).toBe(true);
     });
+
+    test('handles different input types', () => {
+      // Test with null/undefined
+      expect(filter.isMouseEventInput(null)).toBe(false);
+      expect(filter.isMouseEventInput(undefined)).toBe(false);
+      expect(filter.isMouseEventOutput(null)).toBe(false);
+      expect(filter.isMouseEventOutput(undefined)).toBe(false);
+      
+      // Test with numbers
+      expect(filter.isMouseEventInput(123)).toBe(false);
+      expect(filter.isMouseEventOutput(123)).toBe(false);
+      
+      // Test with empty string
+      expect(filter.isMouseEventInput('')).toBe(false);
+      expect(filter.isMouseEventOutput('')).toBe(false);
+    });
+
+    test('handles different mouse event formats', () => {
+      // Test ANSI escape sequences
+      expect(filter.isMouseEventInput('\x1b[M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[<0;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[<0;10;20m')).toBe(true);
+      
+      // Test raw sequences
+      expect(filter.isMouseEventInput('0;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('65;10;20M')).toBe(true);
+      
+      // Test invalid formats
+      expect(filter.isMouseEventInput('\x1b[Z')).toBe(false);
+      expect(filter.isMouseEventInput('abc;10;20M')).toBe(false);
+    });
+
+    test('handles scroll event extraction with edge cases', () => {
+      // Test with no scroll events
+      expect(filter.extractScrollEvents('normal text')).toEqual([]);
+      expect(filter.extractScrollEvents('')).toEqual([]);
+      expect(filter.extractScrollEvents(null)).toEqual([]);
+      
+      // Test with mixed events
+      const mixed = '\x1b[<64;10;20M normal text \x1b[<65;15;25M';
+      const events = filter.extractScrollEvents(mixed);
+      expect(events).toHaveLength(2);
+      expect(events[0].direction).toBe('up');
+      expect(events[1].direction).toBe('down');
+    });
+
+    test('handles pattern matching with different input types', () => {
+      // Test with existing patterns
+      expect(filter.matchesPattern('\x1b[', 'ansiEscape')).toBe(true);
+      expect(filter.matchesPattern('0;10;20M', 'rawSingle')).toBe(true);
+      
+      // Test with non-existent patterns
+      expect(filter.matchesPattern('test', 'nonExistent')).toBe(false);
+      
+      // Test with function patterns
+      const longString = '0;10;20M'.repeat(20);
+      expect(filter.matchesPattern(longString, 'longSequence')).toBe(true);
+      
+      const shortString = '0;10;20M';
+      expect(filter.matchesPattern(shortString, 'longSequence')).toBe(false);
+    });
+
+    test('handles complex mouse event combinations', () => {
+      // Test multiple events in sequence
+      const multipleEvents = '65;10;20M65;11;21M65;12;22M';
+      expect(filter.isMouseEventInput(multipleEvents)).toBe(true);
+      expect(filter.isMouseEventKeypress(multipleEvents)).toBe(true);
+      expect(filter.isMouseEventOutput(multipleEvents)).toBe(true);
+      
+      // Test events with text
+      const eventsWithText = 'prefix 65;10;20M middle 32;15;25M suffix';
+      expect(filter.isMouseEventInput(eventsWithText)).toBe(true);
+      expect(filter.isMouseEventOutput(eventsWithText)).toBe(true);
+    });
+
+    test('handles different button codes', () => {
+      // Test drag events
+      expect(filter.isMouseEventInput('65;10;20M')).toBe(true); // Left drag
+      expect(filter.isMouseEventInput('32;10;20M')).toBe(true); // Middle drag
+      
+      // Test click events
+      expect(filter.isMouseEventInput('0;10;20M')).toBe(true);  // Left click
+      expect(filter.isMouseEventInput('1;10;20M')).toBe(true);  // Middle click
+      expect(filter.isMouseEventInput('2;10;20M')).toBe(true);  // Right click
+      expect(filter.isMouseEventInput('3;10;20M')).toBe(true);  // Release
+      
+      // Test scroll events
+      expect(filter.isMouseEventInput('64;10;20M')).toBe(true); // Scroll up
+      expect(filter.isMouseEventInput('65;10;20M')).toBe(true); // Scroll down
+    });
+
+    test('handles performance with repetitive events', () => {
+      // Test with many repeated events
+      const manyEvents = '65;10;20M'.repeat(100);
+      expect(filter.isMouseEventInput(manyEvents)).toBe(true);
+      expect(filter.isMouseEventKeypress(manyEvents)).toBe(true);
+      expect(filter.isMouseEventOutput(manyEvents)).toBe(true);
+      
+      // Test extraction performance
+      const scrollEvents = '64;10;20M'.repeat(50) + '65;10;20M'.repeat(50);
+      const extracted = filter.extractScrollEvents(scrollEvents);
+      expect(extracted.length).toBe(100);
+    });
+
+    test('handles boundary conditions', () => {
+      // Test at string boundaries
+      expect(filter.isMouseEventInput('65;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('text65;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('65;10;20Mtext')).toBe(true);
+      
+      // Test with minimum valid coordinates
+      expect(filter.isMouseEventInput('0;0;0M')).toBe(true);
+      expect(filter.isMouseEventInput('65;1;1M')).toBe(true);
+      
+      // Test with large coordinates
+      expect(filter.isMouseEventInput('65;999;999M')).toBe(true);
+    });
+
+    test('handles filtering logic branches', () => {
+      // Test keypress filtering - should filter multiple events but not single
+      expect(filter.isMouseEventKeypress('65;10;20M')).toBe(false); // Single event
+      expect(filter.isMouseEventKeypress('65;10;20M65;11;21M')).toBe(true); // Multiple events
+      
+      // Test output filtering - should filter multiple events and long sequences
+      expect(filter.isMouseEventOutput('65;10;20M')).toBe(false); // Single event
+      expect(filter.isMouseEventOutput('65;10;20M65;11;21M')).toBe(true); // Multiple events
+      
+      const longSequence = '65;10;20M'.repeat(20);
+      expect(filter.isMouseEventOutput(longSequence)).toBe(true); // Long sequence
+    });
+
+    test('handles different escape sequence variations', () => {
+      // Test different ANSI escape formats
+      expect(filter.isMouseEventInput('\x1b[M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[<0;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[<0;10;20m')).toBe(true);
+      
+      // Test with different prefixes
+      expect(filter.isMouseEventInput('\x1b[>0;10;20M')).toBe(true);
+      expect(filter.isMouseEventInput('\x1b[?0;10;20M')).toBe(true);
+    });
   });
 });

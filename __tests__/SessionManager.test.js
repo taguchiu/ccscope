@@ -466,4 +466,499 @@ describe('SessionManager', () => {
       expect(projectStats.conversationCount).toBeGreaterThan(0);
     });
   });
+
+  describe('additional edge cases for branch coverage', () => {
+    test('handles different file formats and patterns', () => {
+      // Test extractFullSessionId with various filename patterns
+      const uuid = sessionManager.extractFullSessionId('conversation-12345678-90ab-cdef-1234-567890abcdef.jsonl');
+      expect(uuid).toBe('12345678-90ab-cdef-1234-567890abcdef');
+      
+      // Test with 32+ character hex string (minimum length for hex pattern)
+      const hex = sessionManager.extractFullSessionId('conversation-deadbeef123456789abcdef012345678.jsonl');
+      expect(hex).toBe('deadbeef123456789abcdef012345678');
+      
+      const invalid = sessionManager.extractFullSessionId('invalid-filename.jsonl');
+      expect(invalid).toBeNull();
+    });
+
+    test('handles various transcript entry formats', () => {
+      // Test buildConversationPairs with complex message structures
+      const entries = [
+        {
+          type: 'user',
+          timestamp: '2024-01-01T10:00:00Z',
+          message: { content: 'Test user message' }
+        },
+        {
+          type: 'assistant',
+          timestamp: '2024-01-01T10:01:00Z',
+          message: {
+            content: [
+              { type: 'text', text: 'Response text' },
+              { type: 'tool_use', name: 'Read', input: { path: '/test' } }
+            ]
+          }
+        },
+        {
+          type: 'tool_result',
+          timestamp: '2024-01-01T10:01:30Z',
+          message: { content: 'Tool result' }
+        }
+      ];
+      
+      const pairs = sessionManager.buildConversationPairs(entries);
+      expect(pairs).toHaveLength(1);
+      expect(pairs[0].toolsUsed).toHaveLength(1);
+    });
+
+    test('handles search with edge cases', () => {
+      // Test different search patterns without setup (will return empty results)
+      const results1 = sessionManager.searchConversations('nonexistent');
+      const results2 = sessionManager.searchConversations('');
+      
+      expect(results1).toHaveLength(0);
+      expect(results2).toHaveLength(0);
+    });
+
+    test('handles various tool extraction patterns', () => {
+      // Test extractToolUses with different content structures
+      const entry = {
+        type: 'assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        message: {
+          content: [
+            { type: 'text', text: 'Some text' },
+            { type: 'tool_use', name: 'Read', input: { file_path: '/test.js' } },
+            { type: 'tool_use', name: 'Edit', input: { file_path: '/test.js', old_string: 'old', new_string: 'new' } }
+          ]
+        }
+      };
+      
+      const tools = sessionManager.extractToolUses(entry);
+      expect(tools).toHaveLength(2);
+      expect(tools[0].toolName).toBe('Read');
+      expect(tools[1].toolName).toBe('Edit');
+      
+      // Test with string content (no tools)
+      const stringEntry = { 
+        type: 'assistant',
+        message: { content: 'Just a string message' } 
+      };
+      const noTools = sessionManager.extractToolUses(stringEntry);
+      expect(noTools).toHaveLength(0);
+    });
+
+    test('calculates metrics with various conversation patterns', () => {
+      // Test with conversations that have response times and tool counts
+      const pairs = [
+        {
+          responseTime: 5,
+          toolCount: 0,
+          userTime: new Date('2024-01-01T10:00:00Z'),
+          assistantTime: new Date('2024-01-01T10:00:05Z')
+        },
+        {
+          responseTime: 10,
+          toolCount: 2,
+          userTime: new Date('2024-01-01T11:00:00Z'),
+          assistantTime: new Date('2024-01-01T11:00:10Z')
+        }
+      ];
+      
+      const metrics = sessionManager.calculateSessionMetrics(pairs);
+      expect(metrics.duration).toBe(15000); // (5+10)*1000
+      expect(metrics.avgResponseTime).toBe(7.5); // (5+10)/2
+      expect(metrics.totalTools).toBe(2);
+    });
+
+    test('handles file system edge cases', async () => {
+      // Test scanDirectory with non-existent directory - should return empty array
+      const files = await sessionManager.scanDirectory('/nonexistent/path');
+      expect(files).toEqual([]);
+      
+      // Test parseTranscriptFile with non-existent file - should throw error
+      await expect(sessionManager.parseTranscriptFile('/nonexistent/file.jsonl')).rejects.toThrow();
+    });
+
+    test('handles basic search edge cases', () => {
+      // Test empty search
+      const results1 = sessionManager.searchConversations('');
+      expect(results1).toBeInstanceOf(Array);
+      
+      // Test single character search
+      const results2 = sessionManager.searchConversations('a');
+      expect(results2).toBeInstanceOf(Array);
+      
+      // Test whitespace search
+      const results3 = sessionManager.searchConversations('   ');
+      expect(results3).toBeInstanceOf(Array);
+    });
+
+    test('handles session data validation', () => {
+      // Test with empty sessions array
+      expect(sessionManager.sessions).toBeInstanceOf(Array);
+      
+      // Test getting session count
+      const count = sessionManager.sessions.length;
+      expect(count).toBeGreaterThanOrEqual(0);
+    });
+
+    test('handles basic data operations', () => {
+      // Test basic session operations
+      const sessionCount = sessionManager.sessions.length;
+      expect(sessionCount).toBeGreaterThanOrEqual(0);
+      
+      // Test search functionality
+      const searchResults = sessionManager.searchConversations('test');
+      expect(searchResults).toBeInstanceOf(Array);
+    });
+
+    test('handles different search query formats', () => {
+      // Test OR queries with different cases
+      const orResults1 = sessionManager.searchConversations('test OR example');
+      expect(orResults1).toBeInstanceOf(Array);
+      
+      const orResults2 = sessionManager.searchConversations('test or example');
+      expect(orResults2).toBeInstanceOf(Array);
+      
+      const orResults3 = sessionManager.searchConversations('test | example');
+      expect(orResults3).toBeInstanceOf(Array);
+      
+      // Test regex search with different options
+      const regexResults1 = sessionManager.searchConversations('test.*message', { regex: true });
+      expect(regexResults1).toBeInstanceOf(Array);
+      
+      const regexResults2 = sessionManager.searchConversations('invalid[regex', { regex: true });
+      expect(regexResults2).toBeInstanceOf(Array); // Should handle invalid regex
+      
+      // Test case sensitive search
+      const caseResults = sessionManager.searchConversations('Test', { caseSensitive: true });
+      expect(caseResults).toBeInstanceOf(Array);
+    });
+
+    test('handles extractFullSessionId with different patterns', () => {
+      // Test UUID pattern
+      const uuid = sessionManager.extractFullSessionId('/path/12345678-90ab-cdef-1234-567890abcdef.jsonl');
+      expect(uuid).toBe('12345678-90ab-cdef-1234-567890abcdef');
+      
+      // Test hex pattern (32+ chars)
+      const hex = sessionManager.extractFullSessionId('/path/deadbeef123456789abcdef012345678.jsonl');
+      expect(hex).toBe('deadbeef123456789abcdef012345678');
+      
+      // Test short hex (less than 32 chars) - should return null
+      const shortHex = sessionManager.extractFullSessionId('/path/deadbeef12345.jsonl');
+      expect(shortHex).toBeNull();
+      
+      // Test no pattern match
+      const noMatch = sessionManager.extractFullSessionId('/path/regular-filename.jsonl');
+      expect(noMatch).toBeNull();
+      
+      // Test empty filename
+      const empty = sessionManager.extractFullSessionId('');
+      expect(empty).toBeNull();
+    });
+
+    test('handles buildConversationPairs with edge cases', () => {
+      // Test with empty entries
+      const emptyPairs = sessionManager.buildConversationPairs([]);
+      expect(emptyPairs).toEqual([]);
+      
+      // Test with only user entries
+      const userOnlyEntries = [
+        { type: 'user', timestamp: '2024-01-01T10:00:00Z', message: { content: 'Test' } }
+      ];
+      const userOnlyPairs = sessionManager.buildConversationPairs(userOnlyEntries);
+      expect(userOnlyPairs).toEqual([]); // No pairs without assistant responses
+      
+      // Test with only assistant entries
+      const assistantOnlyEntries = [
+        { type: 'assistant', timestamp: '2024-01-01T10:00:00Z', message: { content: 'Response' } }
+      ];
+      const assistantOnlyPairs = sessionManager.buildConversationPairs(assistantOnlyEntries);
+      expect(assistantOnlyPairs).toEqual([]); // No pairs without user messages
+      
+      // Test with tool_result entries (should be filtered)
+      const entriesWithToolResults = [
+        { type: 'user', timestamp: '2024-01-01T10:00:00Z', message: { content: 'Test' } },
+        { type: 'tool_result', timestamp: '2024-01-01T10:00:01Z', message: { content: 'Tool output' } },
+        { type: 'assistant', timestamp: '2024-01-01T10:00:02Z', message: { content: 'Response' } }
+      ];
+      const filteredPairs = sessionManager.buildConversationPairs(entriesWithToolResults);
+      expect(filteredPairs).toHaveLength(1);
+      expect(filteredPairs[0].toolResults).toBeDefined();
+    });
+
+    test('handles extractToolUses with different content types', () => {
+      // Test with array content
+      const arrayContentEntry = {
+        type: 'assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        message: {
+          content: [
+            { type: 'text', text: 'Some text' },
+            { type: 'tool_use', name: 'Read', input: { file: 'test.js' } }
+          ]
+        }
+      };
+      const arrayTools = sessionManager.extractToolUses(arrayContentEntry);
+      expect(arrayTools).toHaveLength(1);
+      
+      // Test with string content
+      const stringContentEntry = {
+        type: 'assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        message: { content: 'Just a string response' }
+      };
+      const stringTools = sessionManager.extractToolUses(stringContentEntry);
+      expect(stringTools).toHaveLength(0);
+      
+      // Test with no message
+      const noMessageEntry = {
+        type: 'assistant',
+        timestamp: '2024-01-01T10:00:00Z'
+      };
+      const noMessageTools = sessionManager.extractToolUses(noMessageEntry);
+      expect(noMessageTools).toHaveLength(0);
+      
+      // Test with no content
+      const noContentEntry = {
+        type: 'assistant',
+        timestamp: '2024-01-01T10:00:00Z',
+        message: {}
+      };
+      const noContentTools = sessionManager.extractToolUses(noContentEntry);
+      expect(noContentTools).toHaveLength(0);
+    });
+
+    test('handles calculateSessionMetrics with edge cases', () => {
+      // Test with pairs missing responseTime
+      const pairsNoResponseTime = [
+        {
+          userTime: new Date('2024-01-01T10:00:00Z'),
+          assistantTime: new Date('2024-01-01T10:01:00Z'),
+          toolCount: 2
+        }
+      ];
+      const metricsNoTime = sessionManager.calculateSessionMetrics(pairsNoResponseTime);
+      expect(metricsNoTime.duration).toBeGreaterThan(0);
+      expect(metricsNoTime.avgResponseTime).toBeGreaterThan(0);
+      
+      // Test with pairs missing toolCount
+      const pairsNoToolCount = [
+        {
+          responseTime: 5,
+          userTime: new Date('2024-01-01T10:00:00Z'),
+          assistantTime: new Date('2024-01-01T10:00:05Z')
+        }
+      ];
+      const metricsNoToolCount = sessionManager.calculateSessionMetrics(pairsNoToolCount);
+      expect(metricsNoToolCount.totalTools).toBe(0);
+      
+      // Test with mixed valid/invalid data
+      const mixedPairs = [
+        {
+          responseTime: 5,
+          toolCount: 1,
+          userTime: new Date('2024-01-01T10:00:00Z'),
+          assistantTime: new Date('2024-01-01T10:00:05Z')
+        },
+        {
+          // Missing some fields
+          userTime: new Date('2024-01-01T11:00:00Z')
+        }
+      ];
+      const mixedMetrics = sessionManager.calculateSessionMetrics(mixedPairs);
+      expect(mixedMetrics.totalTools).toBe(1);
+    });
+
+    test('handles scanDirectory with different scenarios', async () => {
+      // Test with non-existent directory
+      const nonExistentFiles = await sessionManager.scanDirectory('/non/existent/path');
+      expect(nonExistentFiles).toEqual([]);
+      
+      // Test with null/undefined path
+      const nullFiles = await sessionManager.scanDirectory(null);
+      expect(nullFiles).toEqual([]);
+      
+      const undefinedFiles = await sessionManager.scanDirectory(undefined);
+      expect(undefinedFiles).toEqual([]);
+    });
+
+    test('handles project name extraction edge cases', () => {
+      // Test extractProjectName with different entry types
+      const entriesWithCwd = [
+        { type: 'user', cwd: '/Users/test/project-name', message: { content: 'Test' } }
+      ];
+      const projectFromCwd = sessionManager.extractProjectName(entriesWithCwd, '/path/to/file.jsonl');
+      expect(projectFromCwd).toBe('project-name');
+      
+      // Test with no cwd
+      const entriesNoCwd = [
+        { type: 'user', message: { content: 'Test' } }
+      ];
+      const projectFromFile = sessionManager.extractProjectName(entriesNoCwd, '/path/to/project-file.jsonl');
+      expect(projectFromFile).toBeDefined();
+      
+      // Test with empty entries
+      const emptyEntries = [];
+      const projectFromEmpty = sessionManager.extractProjectName(emptyEntries, '/path/to/file.jsonl');
+      expect(projectFromEmpty).toBeDefined();
+    });
+
+    test('handles search query with different options', () => {
+      // Test search with valid sessions
+      const results = sessionManager.searchConversations('test');
+      expect(results).toBeInstanceOf(Array);
+      
+      // Test search with regex option
+      const regexResults = sessionManager.searchConversations('test.*pattern', { regex: true });
+      expect(regexResults).toBeInstanceOf(Array);
+      
+      // Test search with case sensitive option
+      const caseResults = sessionManager.searchConversations('Test', { caseSensitive: true });
+      expect(caseResults).toBeInstanceOf(Array);
+      
+      // Test empty search
+      const emptyResults = sessionManager.searchConversations('');
+      expect(emptyResults).toBeInstanceOf(Array);
+    });
+
+    test('handles session cache operations', () => {
+      // Test basic cache operations
+      expect(sessionManager.sessionCache).toBeInstanceOf(Map);
+      
+      // Test cache size
+      const cacheSize = sessionManager.sessionCache.size;
+      expect(cacheSize).toBeGreaterThanOrEqual(0);
+      
+      // Test cache operations with session discovery
+      const cacheKey = 'test-cache-key';
+      sessionManager.sessionCache.set(cacheKey, { test: 'value' });
+      expect(sessionManager.sessionCache.has(cacheKey)).toBe(true);
+      
+      sessionManager.sessionCache.delete(cacheKey);
+      expect(sessionManager.sessionCache.has(cacheKey)).toBe(false);
+    });
+
+    test('handles conversation pair building with different message types', () => {
+      // Test with thinking content
+      const entriesWithThinking = [
+        {
+          type: 'user',
+          timestamp: '2024-01-01T10:00:00Z',
+          message: { content: 'Test user message' }
+        },
+        {
+          type: 'assistant',
+          timestamp: '2024-01-01T10:00:01Z',
+          message: {
+            content: [
+              { type: 'thinking', text: 'Let me think about this...' },
+              { type: 'text', text: 'Test assistant response' }
+            ]
+          }
+        }
+      ];
+      
+      const pairsWithThinking = sessionManager.buildConversationPairs(entriesWithThinking);
+      expect(pairsWithThinking).toHaveLength(1);
+      expect(pairsWithThinking[0].thinkingContent).toBeDefined();
+      
+      // Test with mixed content types
+      const entriesWithMixed = [
+        {
+          type: 'user',
+          timestamp: '2024-01-01T10:00:00Z',
+          message: { content: 'Test user message' }
+        },
+        {
+          type: 'assistant',
+          timestamp: '2024-01-01T10:00:01Z',
+          message: {
+            content: [
+              { type: 'text', text: 'Response text' },
+              { type: 'tool_use', name: 'Read', input: { file: 'test.js' } },
+              { type: 'thinking', text: 'Some thinking' }
+            ]
+          }
+        }
+      ];
+      
+      const pairsWithMixed = sessionManager.buildConversationPairs(entriesWithMixed);
+      expect(pairsWithMixed).toHaveLength(1);
+      expect(pairsWithMixed[0].toolsUsed).toHaveLength(1);
+      expect(pairsWithMixed[0].thinkingContent).toBeDefined();
+    });
+
+    test('handles error recovery and malformed data', () => {
+      // Test with malformed JSONL entries
+      const malformedEntries = [
+        { type: 'user', message: { content: 'Valid entry' } },
+        { invalidEntry: true }, // Missing required fields
+        { type: 'assistant', message: { content: 'Another valid entry' } }
+      ];
+      
+      const pairs = sessionManager.buildConversationPairs(malformedEntries);
+      expect(pairs).toHaveLength(1);
+      
+      // Test with missing timestamps
+      const entriesNoTimestamp = [
+        { type: 'user', message: { content: 'Test' } },
+        { type: 'assistant', message: { content: 'Response' } }
+      ];
+      
+      const pairsNoTimestamp = sessionManager.buildConversationPairs(entriesNoTimestamp);
+      expect(pairsNoTimestamp).toHaveLength(1);
+      
+      // Test with invalid message content
+      const entriesInvalidContent = [
+        { type: 'user', timestamp: '2024-01-01T10:00:00Z', message: null },
+        { type: 'assistant', timestamp: '2024-01-01T10:00:01Z', message: { content: 'Response' } }
+      ];
+      
+      const pairsInvalidContent = sessionManager.buildConversationPairs(entriesInvalidContent);
+      expect(pairsInvalidContent).toHaveLength(0);
+    });
+
+    test('handles different search result scenarios', () => {
+      // Test search with no results
+      const noResults = sessionManager.searchConversations('nonexistent');
+      expect(noResults).toBeInstanceOf(Array);
+      expect(noResults).toHaveLength(0);
+      
+      // Test search with basic query
+      const basicResults = sessionManager.searchConversations('test');
+      expect(basicResults).toBeInstanceOf(Array);
+      
+      // Test search with regex
+      const regexResults = sessionManager.searchConversations('test.*pattern', { regex: true });
+      expect(regexResults).toBeInstanceOf(Array);
+      
+      // Test search with case sensitivity
+      const caseResults = sessionManager.searchConversations('Test', { caseSensitive: true });
+      expect(caseResults).toBeInstanceOf(Array);
+    });
+
+    test('handles session data structure validation', () => {
+      // Test session structure validation
+      const sessions = sessionManager.sessions;
+      expect(sessions).toBeInstanceOf(Array);
+      
+      // Test that each session has required properties
+      sessions.forEach(session => {
+        expect(session).toHaveProperty('sessionId');
+        expect(session).toHaveProperty('projectName');
+        expect(session).toHaveProperty('conversationPairs');
+        expect(session.conversationPairs).toBeInstanceOf(Array);
+      });
+      
+      // Test session metrics
+      sessions.forEach(session => {
+        if (session.conversationPairs.length > 0) {
+          expect(session).toHaveProperty('duration');
+          expect(session.duration).toBeGreaterThanOrEqual(0);
+        }
+      });
+    });
+  });
 });

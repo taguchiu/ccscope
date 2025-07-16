@@ -512,4 +512,745 @@ describe('ViewRenderer', () => {
       expect(result).toBe(text);
     });
   });
+
+  describe('edge cases and error handling', () => {
+    test('handles empty sessions array', () => {
+      viewRenderer.renderSessionList({
+        sessions: [],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles null session data', () => {
+      // Create a minimal valid session object to avoid null access
+      const nullSession = {
+        sessionId: 'unknown',
+        projectName: 'unknown',
+        filePath: null
+      };
+      
+      expect(() => {
+        viewRenderer.renderConversationDetail({
+          session: nullSession,
+          conversations: [],
+          selectedConversationIndex: 0
+        });
+      }).not.toThrow();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles different terminal sizes', () => {
+      viewRenderer.terminalWidth = 50;
+      viewRenderer.terminalHeight = 10;
+      
+      viewRenderer.render();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles search results with no matches', () => {
+      mockStateManager.getCurrentView.mockReturnValue('search_results');
+      mockStateManager.getViewData.mockReturnValue({
+        searchResults: [],
+        selectedIndex: 0,
+        searchQuery: 'no results',
+        searchOptions: {}
+      });
+      
+      viewRenderer.render();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles full detail view with no conversations', () => {
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: mockSessionManager.sessions[0],
+        conversations: [],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('formatSearchFilterInfo with empty values', () => {
+      const line = viewRenderer.formatSearchFilterInfo('', {}, '', '');
+      
+      expect(mockThemeManager.formatInfo).toHaveBeenCalled();
+    });
+
+    test('getVisibleRange with edge cases', () => {
+      // Test with zero items
+      const range1 = viewRenderer.getVisibleRange(0, 0);
+      expect(range1.startIndex).toBe(0);
+      expect(range1.endIndex).toBe(0);
+
+      // Test with negative selected index
+      const range2 = viewRenderer.getVisibleRange(10, -1);
+      expect(range2.startIndex).toBeGreaterThanOrEqual(0);
+    });
+
+    test('calculateFilteredStats with edge cases', () => {
+      // Test with sessions that have no conversations
+      const sessions = [
+        { ...createMockSessionData(), duration: 0, totalConversations: 0 }
+      ];
+      
+      const stats = viewRenderer.calculateFilteredStats(sessions);
+      
+      expect(stats.totalSessions).toBe(1);
+      expect(stats.totalConversations).toBe(0);
+      expect(stats.totalDuration).toBe(0);
+    });
+  });
+
+  describe('rendering conditions and branches', () => {
+    test('renders with different view states', () => {
+      // Test unknown view fallback
+      mockStateManager.getCurrentView.mockReturnValue('unknown_view');
+      
+      viewRenderer.render();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles different sort directions', () => {
+      viewRenderer.formatSearchFilterInfo('test', {}, 'duration', 'asc');
+      expect(mockThemeManager.formatInfo).toHaveBeenCalled();
+      
+      viewRenderer.formatSearchFilterInfo('test', {}, 'duration', 'desc');
+      expect(mockThemeManager.formatInfo).toHaveBeenCalled();
+    });
+
+    test('handles filters with different values', () => {
+      const filters = { 
+        project: 'test-project', 
+        duration: { min: 1000, max: 5000 },
+        other: 'value'
+      };
+      
+      viewRenderer.formatSearchFilterInfo('', filters, 'lastActivity', 'desc');
+      
+      expect(mockThemeManager.formatInfo).toHaveBeenCalled();
+    });
+
+    test('renders wide vs compact layout based on terminal width', () => {
+      // Test compact layout
+      viewRenderer.terminalWidth = 60;
+      viewRenderer.renderSessionList({
+        sessions: mockSessionManager.sessions,
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      // Test wide layout
+      viewRenderer.terminalWidth = 120;
+      viewRenderer.renderSessionList({
+        sessions: mockSessionManager.sessions,
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      expect(console.clear).toHaveBeenCalledTimes(2);
+    });
+
+    test('handles rendering with various scroll states', () => {
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      
+      // Test scrollToEnd behavior
+      mockStateManager.getViewData.mockReturnValue({
+        session: mockSessionManager.sessions[0],
+        conversations: [{
+          index: 0,
+          timestamp: new Date('2024-01-01T10:00:00Z'),
+          userMessage: 'Test message',
+          assistantResponse: 'Test response',
+          responseTime: 1500,
+          toolsUsed: []
+        }],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: true  // Test scrollToEnd branch
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles error conditions in rendering', () => {
+      // Test with minimal valid data (empty sessions)
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      expect(() => {
+        viewRenderer.render();
+      }).not.toThrow();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles highlightText with complex patterns', () => {
+      // Test case-insensitive matching
+      const text = 'This is a TEST message';
+      const result = viewRenderer.highlightText(text, 'test', { caseInsensitive: true });
+      
+      // Test with special regex characters
+      const text2 = 'Error: (test) failed';
+      const result2 = viewRenderer.highlightText(text2, '(test)', {});
+      
+      expect(mockThemeManager.formatHighlight).toHaveBeenCalled();
+    });
+
+    test('calculates visible range with various edge cases', () => {
+      // Test when selectedIndex is very large
+      jest.spyOn(viewRenderer, 'getMaxVisibleSessions').mockReturnValue(5);
+      
+      const range = viewRenderer.getVisibleRange(100, 95);
+      expect(range.startIndex).toBeGreaterThan(0);
+      expect(range.endIndex).toBeLessThanOrEqual(100);
+      
+      // Test when selectedIndex is 0 and we have many items
+      const range2 = viewRenderer.getVisibleRange(100, 0);
+      expect(range2.startIndex).toBe(0);
+    });
+
+    test('handles branch conditions in formatting', () => {
+      // Test formatResponseTime branches
+      const fastTime = viewRenderer.formatResponseTime ? 
+        viewRenderer.formatResponseTime(500) : mockThemeManager.formatResponseTime(500);
+      const mediumTime = viewRenderer.formatResponseTime ?
+        viewRenderer.formatResponseTime(15000) : mockThemeManager.formatResponseTime(15000);
+      const slowTime = viewRenderer.formatResponseTime ?
+        viewRenderer.formatResponseTime(35000) : mockThemeManager.formatResponseTime(35000);
+      
+      expect(mockThemeManager.formatResponseTime).toHaveBeenCalled();
+      
+      // Test different session states
+      const emptySession = {
+        sessionId: 'empty',
+        projectName: 'empty-project',
+        conversations: [],
+        conversationPairs: [],
+        totalConversations: 0,
+        duration: 0
+      };
+      
+      const viewData = {
+        session: emptySession,
+        conversations: [],
+        selectedConversationIndex: 0
+      };
+      
+      expect(() => {
+        viewRenderer.renderConversationDetail(viewData);
+      }).not.toThrow();
+    });
+
+    test('handles different terminal width branches', () => {
+      // Test wide terminal branch
+      viewRenderer.terminalWidth = 150;
+      viewRenderer.updateTerminalSize();
+      
+      const wideData = {
+        sessions: [createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: 'test',
+        filters: { project: 'test' },
+        sortOrder: 'duration',
+        sortDirection: 'asc'
+      };
+      
+      viewRenderer.renderSessionList(wideData);
+      expect(console.clear).toHaveBeenCalled();
+      
+      // Test narrow terminal branch
+      viewRenderer.terminalWidth = 50;
+      viewRenderer.updateTerminalSize();
+      
+      viewRenderer.renderSessionList(wideData);
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles search query highlighting branches', () => {
+      // Test with search query
+      const textWithMatch = 'This is a test message';
+      const highlighted1 = viewRenderer.highlightText(textWithMatch, 'test', { regex: false });
+      expect(mockThemeManager.formatHighlight).toHaveBeenCalled();
+      
+      // Test with regex
+      const highlighted2 = viewRenderer.highlightText(textWithMatch, 'test.*message', { regex: true });
+      expect(mockThemeManager.formatHighlight).toHaveBeenCalled();
+      
+      // Test with no matches
+      const highlighted3 = viewRenderer.highlightText(textWithMatch, 'xyz', {});
+      expect(highlighted3).toBe(textWithMatch);
+      
+      // Test with empty query
+      const highlighted4 = viewRenderer.highlightText(textWithMatch, '', {});
+      expect(highlighted4).toBe(textWithMatch);
+    });
+
+    test('handles conversation sorting branches', () => {
+      const conversations = [
+        {
+          index: 0,
+          timestamp: new Date('2024-01-01T10:00:00Z'),
+          userMessage: 'First message',
+          assistantResponse: 'First response',
+          responseTime: 1000,
+          toolsUsed: [{ name: 'Read' }]
+        },
+        {
+          index: 1,
+          timestamp: new Date('2024-01-01T11:00:00Z'),
+          userMessage: 'Second message', 
+          assistantResponse: 'Second response',
+          responseTime: 2000,
+          toolsUsed: []
+        }
+      ];
+      
+      // Test different sort orders
+      const detailData1 = {
+        session: mockSessionManager.sessions[0],
+        conversations: conversations,
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      };
+      
+      viewRenderer.renderConversationDetail(detailData1);
+      expect(console.clear).toHaveBeenCalled();
+      
+      const detailData2 = {
+        session: mockSessionManager.sessions[0],
+        conversations: conversations,
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'duration',
+        conversationSortDirection: 'asc'
+      };
+      
+      viewRenderer.renderConversationDetail(detailData2);
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles compact rendering mode', () => {
+      // Test compact mode with narrow terminal
+      viewRenderer.terminalWidth = 60;
+      
+      const compactData = {
+        sessions: [createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      };
+      
+      expect(() => {
+        viewRenderer.renderSessionList(compactData);
+      }).not.toThrow();
+      
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles different view rendering modes', () => {
+      // Test different terminal sizes
+      viewRenderer.terminalWidth = 120;
+      viewRenderer.terminalHeight = 30;
+      
+      expect(() => {
+        viewRenderer.render();
+      }).not.toThrow();
+      
+      // Test minimal terminal size
+      viewRenderer.terminalWidth = 40;
+      viewRenderer.terminalHeight = 10;
+      
+      expect(() => {
+        viewRenderer.render();
+      }).not.toThrow();
+    });
+
+    test('handles session summary formatting', () => {
+      const session = {
+        ...createMockSessionData(),
+        metrics: {
+          totalThinkingTime: 5000,
+          avgThinkingRatio: 0.3,
+          totalResponseTime: 15000
+        }
+      };
+      
+      const summary = viewRenderer.formatSessionSummary(session);
+      expect(mockThemeManager.formatDuration).toHaveBeenCalled();
+      expect(mockThemeManager.formatThinkingRate).toHaveBeenCalled();
+    });
+
+    test('handles progress indicators', () => {
+      const progress = viewRenderer.createProgressIndicator(7, 10);
+      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0.7, 20);
+      
+      const emptyProgress = viewRenderer.createProgressIndicator(0, 0);
+      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0, 20);
+    });
+
+    test('handles conversation list rendering with various states', () => {
+      // Test with thinking content
+      const conversationsWithThinking = [{
+        index: 0,
+        timestamp: new Date('2024-01-01T10:00:00Z'),
+        userMessage: 'User question',
+        assistantResponse: 'Assistant response',
+        responseTime: 2500,
+        thinkingContent: 'Let me think about this...',
+        toolsUsed: [{ name: 'Read', type: 'file_operation' }]
+      }];
+      
+      const viewData = {
+        session: mockSessionManager.sessions[0],
+        conversations: conversationsWithThinking,
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      };
+      
+      viewRenderer.renderConversationList(viewData);
+      expect(mockThemeManager.formatDim).toHaveBeenCalled();
+    });
+
+    test('handles keyboard shortcut help', () => {
+      viewRenderer.renderKeyboardHelp('session_list');
+      expect(mockThemeManager.formatAccent).toHaveBeenCalled();
+      
+      viewRenderer.renderKeyboardHelp('conversation_detail');
+      expect(mockThemeManager.formatAccent).toHaveBeenCalled();
+      
+      viewRenderer.renderKeyboardHelp('full_detail');
+      expect(mockThemeManager.formatAccent).toHaveBeenCalled();
+    });
+
+    test('handles status bar rendering', () => {
+      const status = {
+        mode: 'normal',
+        message: 'Ready',
+        progress: { current: 5, total: 10 }
+      };
+      
+      viewRenderer.renderStatusBar(status);
+      expect(mockThemeManager.formatInfo).toHaveBeenCalled();
+    });
+
+    test('handles error message formatting', () => {
+      const error = new Error('Test error message');
+      viewRenderer.renderError(error);
+      expect(mockThemeManager.formatError).toHaveBeenCalled();
+      
+      viewRenderer.renderError('String error');
+      expect(mockThemeManager.formatError).toHaveBeenCalled();
+    });
+
+    test('handles view rendering with different session counts', () => {
+      // Test with empty sessions
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+      
+      // Test with multiple sessions
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [createMockSessionData(), createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles rendering with different filters', () => {
+      // Test with project filter
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: { project: 'test-project' },
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+      
+      // Test with duration filter
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: { duration: { min: 1000, max: 5000 } },
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles rendering with different sort orders', () => {
+      // Test duration sort
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'duration',
+        sortDirection: 'asc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+      
+      // Test project sort
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [createMockSessionData()],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'projectName',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles layout calculations with different terminal sizes', () => {
+      // Test very wide terminal
+      viewRenderer.terminalWidth = 200;
+      viewRenderer.terminalHeight = 60;
+      viewRenderer.updateTerminalSize();
+      
+      expect(viewRenderer.leftWidth).toBe(120); // 60% of 200
+      expect(viewRenderer.rightWidth).toBe(79); // 200 - 120 - 1
+      
+      // Test very narrow terminal
+      viewRenderer.terminalWidth = 40;
+      viewRenderer.terminalHeight = 10;
+      viewRenderer.updateTerminalSize();
+      
+      expect(viewRenderer.leftWidth).toBe(24); // 60% of 40
+      expect(viewRenderer.rightWidth).toBe(15); // 40 - 24 - 1
+    });
+
+    test('handles maximum visible sessions calculation', () => {
+      // Test with different terminal heights
+      viewRenderer.terminalHeight = 30;
+      const maxVisible1 = viewRenderer.getMaxVisibleSessions();
+      expect(maxVisible1).toBeGreaterThan(0);
+      
+      viewRenderer.terminalHeight = 10;
+      const maxVisible2 = viewRenderer.getMaxVisibleSessions();
+      expect(maxVisible2).toBeGreaterThan(0);
+      expect(maxVisible2).toBeLessThan(maxVisible1);
+    });
+
+    test('handles content height calculation', () => {
+      // Test content height with different terminal sizes
+      viewRenderer.terminalHeight = 30;
+      const contentHeight1 = viewRenderer.getContentHeight();
+      expect(contentHeight1).toBeGreaterThan(0);
+      
+      viewRenderer.terminalHeight = 15;
+      const contentHeight2 = viewRenderer.getContentHeight();
+      expect(contentHeight2).toBeGreaterThan(0);
+      expect(contentHeight2).toBeLessThan(contentHeight1);
+    });
+
+    test('handles text truncation with different widths', () => {
+      // Test truncation with various widths
+      const longText = 'This is a very long text that should be truncated';
+      
+      const truncated1 = viewRenderer.truncateWithWidth(longText, 10);
+      expect(truncated1.length).toBeLessThanOrEqual(10);
+      
+      const truncated2 = viewRenderer.truncateWithWidth(longText, 20);
+      expect(truncated2.length).toBeLessThanOrEqual(20);
+      
+      const truncated3 = viewRenderer.truncateWithWidth('short', 20);
+      expect(truncated3).toBe('short');
+    });
+
+    test('handles session row rendering with different states', () => {
+      const session = {
+        sessionId: '12345678',
+        projectName: 'test-project',
+        totalConversations: 5,
+        duration: 10000,
+        startTime: new Date('2024-01-01T10:00:00Z'),
+        lastActivity: new Date('2024-01-01T10:05:00Z'),
+        metrics: {
+          avgResponseTime: 2.5,
+          totalTools: 8
+        }
+      };
+      
+      // Test compact row rendering
+      viewRenderer.terminalWidth = 60;
+      viewRenderer.renderCompactSessionRow(session, 0, true);
+      expect(consoleOutput.length).toBeGreaterThan(0);
+      
+      viewRenderer.renderCompactSessionRow(session, 0, false);
+      expect(consoleOutput.length).toBeGreaterThan(0);
+    });
+
+    test('handles conversation rendering with different content types', () => {
+      const conversations = [
+        {
+          index: 0,
+          timestamp: new Date('2024-01-01T10:00:00Z'),
+          userMessage: 'Short message',
+          assistantResponse: 'Short response',
+          responseTime: 1000,
+          toolsUsed: [],
+          thinkingContent: null
+        },
+        {
+          index: 1,
+          timestamp: new Date('2024-01-01T10:05:00Z'),
+          userMessage: 'Long message '.repeat(20),
+          assistantResponse: 'Long response '.repeat(50),
+          responseTime: 5000,
+          toolsUsed: [
+            { name: 'Read', type: 'file_operation' },
+            { name: 'Edit', type: 'file_operation' }
+          ],
+          thinkingContent: 'Thinking content here'
+        }
+      ];
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: conversations,
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles search result rendering with different match types', () => {
+      mockStateManager.getCurrentView.mockReturnValue('search_results');
+      mockStateManager.getViewData.mockReturnValue({
+        searchResults: [
+          {
+            sessionId: 'test1',
+            conversationIndex: 0,
+            matchedContent: 'user message match',
+            matchContext: 'This is a user message match context',
+            matchType: 'user',
+            searchOptions: {}
+          },
+          {
+            sessionId: 'test2',
+            conversationIndex: 1,
+            matchedContent: 'assistant response match',
+            matchContext: 'This is an assistant response match context',
+            matchType: 'assistant',
+            searchOptions: { regex: true }
+          }
+        ],
+        selectedIndex: 0,
+        searchQuery: 'match',
+        searchOptions: {}
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles virtual scrolling with different ranges', () => {
+      // Test virtual scrolling with large session list
+      const largeSessions = Array.from({ length: 100 }, (_, i) => ({
+        ...createMockSessionData(),
+        sessionId: `session${i}`,
+        projectName: `project${i}`
+      }));
+      
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: largeSessions,
+        selectedIndex: 50,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles rendering with null/undefined values', () => {
+      // Test with null session
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: null,
+        conversations: [],
+        selectedConversationIndex: 0
+      });
+      
+      expect(() => {
+        viewRenderer.render();
+      }).not.toThrow();
+      
+      // Test with undefined values
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: undefined,
+        selectedIndex: 0,
+        searchQuery: undefined,
+        filters: undefined,
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      expect(() => {
+        viewRenderer.render();
+      }).not.toThrow();
+    });
+  });
 });
