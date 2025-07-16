@@ -547,9 +547,10 @@ class ViewRenderer {
    */
   renderControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓') + ' to select',
+      this.theme.formatMuted('↑/↓ or k/j') + ' to select',
       this.theme.formatMuted('Enter') + ' to view details',
       this.theme.formatMuted('r') + ' resume',
+      this.theme.formatMuted('/') + ' full-text search',
       this.theme.formatMuted('f') + ' filter',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('h') + ' help',
@@ -1252,9 +1253,9 @@ class ViewRenderer {
    */
   renderConversationDetailControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓/wheel') + ' to select conversation',
+      this.theme.formatMuted('↑/↓ or k/j') + ' to select conversation',
       this.theme.formatMuted('Enter') + ' to view detail',
-      this.theme.formatMuted('←/→') + ' switch session',
+      this.theme.formatMuted('←/→ or h/l') + ' switch session',
       this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('Esc') + ' back',
@@ -1476,6 +1477,9 @@ class ViewRenderer {
    */
   buildFullDetailContent(session, conversation, selectedConversationIndex, highlightQuery, highlightOptions) {
     const lines = [];
+    
+    // Clear tool IDs for new conversation
+    this.state.clearAllToolIds();
     
     // Safety check
     if (!conversation) {
@@ -1798,8 +1802,8 @@ class ViewRenderer {
           const inputToolId = `input-${item.id || index}`;
           const isInputExpanded = this.state.isToolExpanded(inputToolId);
           
-          // Set current tool for Ctrl+R focus
-          this.state.setCurrentToolId(inputToolId);
+          // Register tool ID for Ctrl+R
+          this.state.registerToolId(inputToolId);
           
           if (toolInputLines.length > 0) {
             lines.push('  ⎿ ' + ' ');
@@ -1835,8 +1839,8 @@ class ViewRenderer {
             const toolId = item.id || `tool-${index}`;
             const isExpanded = this.state.isToolExpanded(toolId);
             
-            // Set current tool for Ctrl+R focus
-            this.state.setCurrentToolId(toolId);
+            // Register tool ID for Ctrl+R
+            this.state.registerToolId(toolId);
             
             // Add indented ⎿ prefix
             lines.push('  ⎿ ' + ' ');
@@ -2121,7 +2125,7 @@ class ViewRenderer {
             });
             // Set current block for Ctrl+R only if it's expandable
             if (blockLines.length > 20) {
-              this.state.setCurrentToolId(blockId);
+              this.state.registerToolId(blockId);
             }
           } else {
             // Show first 20 lines and collapse indicator
@@ -2517,13 +2521,13 @@ class ViewRenderer {
     
     // Always show scroll controls regardless of content length
     controls.push(
-      this.theme.formatMuted('↑/↓') + ' 5-line scroll',
-      this.theme.formatMuted('Space/b') + ' page',
+      this.theme.formatMuted('↑/↓ or k/j') + ' 5-line scroll',
+      this.theme.formatMuted('Space/b') + ' page down/up',
       this.theme.formatMuted('g/G') + ' top/bottom'
     );
     
     controls.push(
-      this.theme.formatMuted('←/→') + ' prev/next conversation',
+      this.theme.formatMuted('←/→ or h/l') + ' prev/next conversation',
       this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
@@ -2567,7 +2571,7 @@ class ViewRenderer {
     });
     
     console.log('');
-    console.log(this.theme.formatMuted('↑/↓ to navigate, Enter to select, Esc to cancel'));
+    console.log(this.theme.formatMuted('↑/↓ or k/j to navigate, Enter to select, Esc to cancel'));
   }
 
   /**
@@ -2856,7 +2860,7 @@ class ViewRenderer {
     
     // Results summary and controls
     console.log(this.theme.formatHeader(`Found ${searchResults.length} matches`));
-    console.log(this.theme.formatDim('↑/↓: Navigate • Enter: View Detail • Esc: Back'));
+    console.log(this.theme.formatDim('↑/↓ or k/j: Navigate • Enter: View Detail • Esc: Back'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
     if (searchResults.length === 0) {
@@ -2941,11 +2945,10 @@ class ViewRenderer {
     console.log('');
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
-    // Use same controls as conversation detail
+    // Search results controls
     const controls = [
-      this.theme.formatMuted('↑/↓') + ' to select result',
+      this.theme.formatMuted('↑/↓ or k/j') + ' to select result',
       this.theme.formatMuted('Enter') + ' to view detail',
-      this.theme.formatMuted('←/→') + ' navigate results',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
     ];

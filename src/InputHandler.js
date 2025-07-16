@@ -314,6 +314,12 @@ class InputHandler {
     } else if (this.isKey(keyName, this.keyBindings.navigation.right)) {
       this.state.navigateSessionRight();
       this.render();
+    }
+    // Toggle tool expansion (Ctrl+R)
+    else if (key && key.ctrl && keyName === 'r') {
+      if (this.state.toggleAllToolExpansions()) {
+        this.render();
+      }
     } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
       this.state.setView('full_detail');
       this.render();
@@ -382,7 +388,7 @@ class InputHandler {
     }
     // Toggle tool expansion (Ctrl+R)
     else if (key && key.ctrl && keyName === 'r') {
-      if (this.state.toggleCurrentToolExpansion()) {
+      if (this.state.toggleAllToolExpansions()) {
         this.render();
       }
     }
@@ -497,8 +503,14 @@ class InputHandler {
         }
       }
     } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
-      // Exit search results and quit application
-      this.exitApplication();
+      // If this is from command-line search, exit application
+      // Otherwise, return to session list
+      if (this.state.isCommandLineSearch) {
+        this.exitApplication();
+      } else {
+        this.state.setView('session_list');
+        this.render();
+      }
     } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
       this.state.setView('help');
       this.render();
@@ -534,8 +546,8 @@ class InputHandler {
       this.inputBuffer += str;
     }
     
-    // Live search
-    this.performLiveSearch();
+    // Update search prompt
+    this.renderSearchPrompt();
   }
 
   /**
@@ -580,7 +592,16 @@ class InputHandler {
     const query = this.inputBuffer.trim();
     if (query) {
       this.inputHistory.push(query);
-      this.state.setSearchQuery(query);
+      // Perform full conversation search
+      const results = this.sessionManager.searchConversations(query);
+      if (results.length > 0) {
+        // Store search results and navigate to search results view
+        this.state.setSearchResults(query, results);
+        this.state.setView('search_results');
+      } else {
+        // No results found, just filter the session list
+        this.state.setSearchQuery(query);
+      }
     }
     this.exitSearchMode();
   }
@@ -758,7 +779,7 @@ class InputHandler {
     });
     
     console.log('');
-    console.log(this.theme.formatMuted('↑/↓ to navigate, Enter to select, Esc to cancel'));
+    console.log(this.theme.formatMuted('↑/↓ or k/j to navigate, Enter to select, Esc to cancel'));
   }
 
 

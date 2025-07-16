@@ -54,10 +54,7 @@ module.exports = {
   // File System Settings
   filesystem: {
     transcriptDirectories: [
-      '~/.claude/projects/',
-      '~/.config/claude/transcripts/',
-      './transcripts/',
-      './'
+      '~/.claude/projects/'
     ],
     transcriptExtension: '.jsonl',
     backupExtension: '.backup'

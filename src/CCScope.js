@@ -265,8 +265,9 @@ class CCScopeApplication {
       // Search conversations
       const results = this.sessionManager.searchConversations(query, options);
       
-      // Store search results in state
-      this.stateManager.setSearchResults(query, results, options);
+      // Store search results in state with command-line flag
+      const searchOptions = { ...options, isCommandLineSearch: true };
+      this.stateManager.setSearchResults(query, results, searchOptions);
       
       // Enter search results view
       this.stateManager.setView('search_results');
