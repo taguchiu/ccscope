@@ -223,9 +223,15 @@ ccscope/
 │   ├── InputHandler.js
 │   ├── ThemeManager.js
 │   └── CCScope.js
+├── __tests__/          # Test files
+│   ├── helpers/        # Test utilities
+│   └── *.test.js       # Component tests
+├── .github/            # GitHub Actions workflows
+│   └── workflows/      # CI/CD pipelines
 ├── CLAUDE.md           # Claude Code integration guide
 ├── examples/           # Example files
 ├── package.json
+├── jest.config.js      # Jest configuration
 ├── README.md
 ├── README.ja.md
 └── LICENSE
@@ -242,6 +248,68 @@ ccscope follows a modular architecture:
 - **InputHandler**: Processes keyboard input and key bindings
 - **ThemeManager**: Manages color themes and text formatting
 - **MouseEventFilter**: Prevents mouse event artifacts in terminal output
+
+## Testing
+
+ccscope includes a comprehensive test suite built with Jest. All major components have unit tests to ensure reliability and maintainability.
+
+### Running Tests
+
+```bash
+# Install dependencies (including dev dependencies)
+npm install
+
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
+### Test Structure
+
+```
+__tests__/
+├── helpers/              # Test utilities and mocks
+│   ├── testHelpers.js   # Common test data and utilities
+│   └── mockTerminal.js  # Mock terminal interface
+├── SessionManager.test.js
+├── StateManager.test.js
+├── ViewRenderer.test.js
+├── InputHandler.test.js
+├── MouseEventFilter.test.js
+├── ThemeManager.test.js
+└── setup.js             # Jest setup configuration
+```
+
+### Writing Tests
+
+When contributing new features or fixes, please include tests:
+
+1. Unit tests for new functions/methods
+2. Integration tests for component interactions
+3. Edge case coverage
+4. Mock external dependencies (file system, terminal I/O)
+
+### Coverage Requirements
+
+The project aims for:
+- **80%** overall code coverage
+- **70%** branch coverage
+- **80%** function coverage
+
+Run `npm run test:coverage` to check current coverage levels.
+
+### Continuous Integration
+
+All pull requests are automatically tested via GitHub Actions:
+- Tests run on multiple Node.js versions (14.x, 16.x, 18.x, 20.x)
+- Tests run on multiple platforms (Ubuntu, macOS, Windows)
+- Coverage reports are generated and checked against thresholds
+- Security audits are performed on dependencies
 
 ## Contributing
 
