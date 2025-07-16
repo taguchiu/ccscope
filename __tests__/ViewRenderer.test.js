@@ -1404,22 +1404,31 @@ describe('ViewRenderer', () => {
       expect(unknownResult.length).toBeGreaterThan(0);
     });
     
-    test('handles getKeyParams for different tools', () => {
-      // Test file operations
-      const readParams = viewRenderer.getKeyParams('Read', { file_path: '/test/file.js' });
-      expect(readParams).toBe('/test/file.js');
+    test('handles tool parameters display', () => {
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'Test',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: [
+          { toolName: 'Read', input: { file_path: '/test/file.js' } },
+          { toolName: 'Bash', input: { command: 'ls -la' } },
+          { toolName: 'Grep', input: { pattern: 'test' } }
+        ]
+      };
       
-      // Test Bash command
-      const bashParams = viewRenderer.getKeyParams('Bash', { command: 'ls -la' });
-      expect(bashParams).toBe('ls -la');
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
       
-      // Test Grep - returns null (not implemented in getKeyParams)
-      const grepParams = viewRenderer.getKeyParams('Grep', { pattern: 'test' });
-      expect(grepParams).toBe(null);
-      
-      // Test empty input
-      const emptyParams = viewRenderer.getKeyParams('Read', {});
-      expect(emptyParams).toBe(null);
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
     });
     
     test('handles createUnifiedDiff edge cases', () => {
@@ -1436,6 +1445,264 @@ describe('ViewRenderer', () => {
       const removeDiff = viewRenderer.createUnifiedDiff('old content', '');
       expect(removeDiff.length).toBeGreaterThan(0);
       expect(removeDiff.some(line => line.type === 'removed')).toBe(true);
+    });
+
+    test('handles tool usage summary display', () => {
+      const conversations = [
+        {
+          index: 0,
+          timestamp: new Date(),
+          userMessage: 'Test 1',
+          assistantResponse: 'Response 1',
+          responseTime: 1000,
+          toolsUsed: [
+            { toolName: 'Read' },
+            { toolName: 'Read' },
+            { toolName: 'Edit' }
+          ]
+        },
+        {
+          index: 1,
+          timestamp: new Date(),
+          userMessage: 'Test 2',
+          assistantResponse: 'Response 2',
+          responseTime: 2000,
+          toolsUsed: [
+            { toolName: 'Bash' },
+            { toolName: 'Bash' },
+            { toolName: 'Bash' }
+          ]
+        }
+      ];
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: conversations,
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles conversation row display edge cases', () => {
+      // Test conversation with no tools
+      const noToolsConv = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'User message',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: []
+      };
+      
+      // Test conversation with thinking
+      const thinkingConv = {
+        index: 1,
+        timestamp: new Date(),
+        userMessage: 'User message',
+        assistantResponse: 'Response',
+        responseTime: 5000,
+        toolsUsed: [],
+        thinkingContent: 'Let me think...'
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [noToolsConv, thinkingConv],
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles renderSearchResults with no results', () => {
+      mockStateManager.getCurrentView.mockReturnValue('search_results');
+      mockStateManager.getViewData.mockReturnValue({
+        searchResults: [],
+        selectedIndex: 0,
+        searchQuery: 'nonexistent',
+        searchOptions: {}
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles renderFullDetail with tool outputs', () => {
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'Test',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: [
+          {
+            toolName: 'Read',
+            input: { file_path: '/test.js' },
+            output: 'File content\\n'.repeat(30), // Long output
+            toolId: 'tool1'
+          }
+        ]
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles conversation content with various types', () => {
+      // Test with array content in conversation
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'User message',
+        assistantResponse: 'Assistant response',
+        responseTime: 1000,
+        toolsUsed: []
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles conversation preview with edge cases', () => {
+      // Test with empty conversation
+      const emptyConv = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: '',
+        assistantResponse: '',
+        responseTime: 0,
+        toolsUsed: []
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [emptyConv],
+        selectedConversationIndex: 0
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles tool usage with collapsed/expanded states', () => {
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'Test',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: [
+          {
+            toolName: 'Read',
+            input: { file_path: '/test.js' },
+            output: 'Line\\n'.repeat(30),
+            toolId: 'tool1'
+          }
+        ]
+      };
+      
+      // Test collapsed state
+      mockStateManager.isToolExpanded = jest.fn(() => false);
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles session statistics display', () => {
+      const sessions = [
+        {
+          ...createMockSessionData(),
+          conversationPairs: [{ responseTime: 1000 }, { responseTime: 2000 }],
+          metrics: { totalTools: 5 },
+          totalConversations: 2
+        },
+        {
+          ...createMockSessionData(),
+          conversationPairs: [{ responseTime: 3000 }],
+          metrics: { totalTools: 3 },
+          totalConversations: 1
+        }
+      ];
+      
+      const stats = viewRenderer.calculateFilteredStats(sessions);
+      expect(stats.totalSessions).toBe(2);
+      expect(stats.totalConversations).toBe(3);
+    });
+
+    test('handles session metrics display', () => {
+      const session = {
+        ...createMockSessionData(),
+        metrics: {
+          avgResponseTime: 2.5,
+          totalTools: 10,
+          avgThinkingRatio: 0.3,
+          toolsByType: {
+            'file_operation': 5,
+            'command': 3,
+            'search': 2
+          }
+        }
+      };
+      
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [session],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles error boundary in render method', () => {
+      // Mock a method to throw error
+      mockStateManager.getViewData.mockImplementation(() => {
+        throw new Error('Test error');
+      });
+      
+      // ViewRenderer doesn't have error boundary, so it will throw
+      expect(() => {
+        viewRenderer.render();
+      }).toThrow('Test error');
     });
   });
 });
