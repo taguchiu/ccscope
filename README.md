@@ -122,7 +122,7 @@ npm link
 npm install -g git+https://github.com/taguchiu/ccscope.git
 
 # Install specific version
-npm install -g ccscope@1.0.0
+npm install -g ccscope@1.2.1
 
 # Install locally for development
 npm install ccscope

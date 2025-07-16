@@ -121,7 +121,7 @@ npm link
 npm install -g git+https://github.com/taguchiu/ccscope.git
 
 # 特定のバージョンをインストール
-npm install -g ccscope@1.0.0
+npm install -g ccscope@1.2.1
 
 # 開発用にローカルインストール
 npm install ccscope
