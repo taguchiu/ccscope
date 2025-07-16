@@ -4,7 +4,7 @@
 
 Claude Code Scope - Interactive terminal browser for Claude Code conversation transcripts
 
-[![npm version](https://badge.fury.io/js/ccscope.svg)](https://badge.fury.io/js/ccscope)
+[![npm version](https://img.shields.io/npm/v/ccscope.svg)](https://www.npmjs.com/package/ccscope)
 [![Downloads](https://img.shields.io/npm/dm/ccscope.svg)](https://npmjs.org/package/ccscope)
 ![Node](https://img.shields.io/badge/node-%3E%3D14.0.0-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
