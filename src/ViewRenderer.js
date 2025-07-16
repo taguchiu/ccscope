@@ -547,9 +547,10 @@ class ViewRenderer {
    */
   renderControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓') + ' to select',
+      this.theme.formatMuted('↑/↓ or k/j') + ' to select',
       this.theme.formatMuted('Enter') + ' to view details',
       this.theme.formatMuted('r') + ' resume',
+      this.theme.formatMuted('/') + ' full-text search',
       this.theme.formatMuted('f') + ' filter',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('h') + ' help',
@@ -1252,9 +1253,9 @@ class ViewRenderer {
    */
   renderConversationDetailControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓') + ' to select conversation',
+      this.theme.formatMuted('↑/↓ or k/j') + ' to select conversation',
       this.theme.formatMuted('Enter') + ' to view detail',
-      this.theme.formatMuted('←/→') + ' switch session',
+      this.theme.formatMuted('←/→ or h/l') + ' switch session',
       this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('Esc') + ' back',
@@ -1476,6 +1477,9 @@ class ViewRenderer {
    */
   buildFullDetailContent(session, conversation, selectedConversationIndex, highlightQuery, highlightOptions) {
     const lines = [];
+    
+    // Clear tool IDs for new conversation
+    this.state.clearAllToolIds();
     
     // Safety check
     if (!conversation) {
@@ -1775,7 +1779,7 @@ class ViewRenderer {
           // Add tool execution section - Claude Code style
           lines.push('');
           
-          // Create tool header with parameters
+          // Create tool header with parameters and timestamp
           let toolHeader = `⏺ ${item.name}`;
           if (item.input) {
             // Add key parameters to header
@@ -1784,23 +1788,83 @@ class ViewRenderer {
               toolHeader += `(${keyParams})`;
             }
           }
+          
+          // Add timestamp if available
+          const toolTime = item.timestamp ? this.theme.formatDateTime(item.timestamp) : '';
+          if (toolTime) {
+            toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          }
+          
           lines.push(this.theme.formatSuccess(toolHeader));
           
           // Format tool input details
           const toolInputLines = this.formatToolInput({ toolName: item.name, input: item.input });
-          toolInputLines.forEach(line => {
-            lines.push(line);
-          });
+          const inputToolId = `input-${item.id || index}`;
+          const isInputExpanded = this.state.isToolExpanded(inputToolId);
+          
+          // Register tool ID for Ctrl+R
+          this.state.registerToolId(inputToolId);
+          
+          if (toolInputLines.length > 0) {
+            lines.push('  ⎿ ' + ' ');
+            
+            if (toolInputLines.length <= 20 || isInputExpanded) {
+              // Show all lines if short or expanded
+              toolInputLines.forEach((line, i) => {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿' + line.substring(1); // Remove first space
+                } else {
+                  lines.push('    ' + line);
+                }
+              });
+            } else {
+              // Show first 20 lines and collapsed indicator
+              for (let i = 0; i < 20; i++) {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿' + toolInputLines[i].substring(1); // Remove first space
+                } else {
+                  lines.push('    ' + toolInputLines[i]);
+                }
+              }
+              const remainingLines = toolInputLines.length - 20;
+              lines.push(this.theme.formatDim(`     … +${remainingLines} lines (ctrl+r to expand)`));
+            }
+          }
           
           // Find corresponding tool result
           const toolResult = conversation.toolUses?.find(t => t.toolId === item.id);
           if (toolResult && toolResult.result) {
             // Format tool result
             const resultLines = this.formatToolResult(toolResult.result).split('\n');
-            if (resultLines.length <= 3) {
-              lines.push(this.theme.formatInfo(resultLines.join(' ')));
+            const toolId = item.id || `tool-${index}`;
+            const isExpanded = this.state.isToolExpanded(toolId);
+            
+            // Register tool ID for Ctrl+R
+            this.state.registerToolId(toolId);
+            
+            // Add indented ⎿ prefix
+            lines.push('  ⎿ ' + ' ');
+            
+            if (resultLines.length <= 20 || isExpanded) {
+              // Show all lines if short or expanded
+              resultLines.forEach((line, i) => {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿  ' + line;
+                } else {
+                  lines.push('     ' + line);
+                }
+              });
             } else {
-              lines.push(this.theme.formatInfo(resultLines[0] + '...'));
+              // Show first 20 lines and collapsed indicator
+              for (let i = 0; i < 20; i++) {
+                if (i === 0) {
+                  lines[lines.length - 1] = '  ⎿  ' + resultLines[i];
+                } else {
+                  lines.push('     ' + resultLines[i]);
+                }
+              }
+              const remainingLines = resultLines.length - 20;
+              lines.push(this.theme.formatDim(`     … +${remainingLines} lines (ctrl+r to expand)`));
             }
           }
           
@@ -1812,9 +1876,9 @@ class ViewRenderer {
           const processedResponse = this.processMarkdownContent(item.text);
           const responseText = highlightQuery ? this.highlightText(processedResponse, highlightQuery, highlightOptions) : processedResponse;
           const responseLines = responseText.split('\n');
-          responseLines.forEach(line => {
-            lines.push(line); // No indentation for response text
-          });
+          
+          // Check if there are any tool-like blocks in the text that need collapsing
+          this.processTextWithCollapsibleBlocks(responseLines, lines);
         }
       });
     } else {
@@ -1839,12 +1903,17 @@ class ViewRenderer {
         conversation.toolUses.forEach(tool => {
           lines.push('');
           
+          // Format timestamp
+          const toolTime = tool.timestamp ? this.theme.formatDateTime(tool.timestamp) : '';
           let toolHeader = `⏺ ${tool.toolName}`;
           if (tool.input) {
             const keyParams = this.getKeyParams(tool.toolName, tool.input);
             if (keyParams) {
               toolHeader += `(${keyParams})`;
             }
+          }
+          if (toolTime) {
+            toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
           lines.push(this.theme.formatSuccess(toolHeader));
           
@@ -1863,9 +1932,9 @@ class ViewRenderer {
         const processedResponse = this.processMarkdownContent(conversation.assistantResponse);
         const assistantMessage = highlightQuery ? this.highlightText(processedResponse, highlightQuery, highlightOptions) : processedResponse;
         const assistantLines = assistantMessage.split('\n');
-        assistantLines.forEach(line => {
-          lines.push(line);
-        });
+        
+        // Process text with collapsible blocks
+        this.processTextWithCollapsibleBlocks(assistantLines, lines);
       }
     }
     
@@ -1936,8 +2005,12 @@ class ViewRenderer {
         lines.push(''); // Space between tools
       }
       
-      // Tool header with number
-      lines.push(this.theme.formatAccent(`  [${index + 1}] ${tool.toolName}`));
+      // Tool header with number and timestamp
+      const toolTime = tool.timestamp ? this.theme.formatDateTime(tool.timestamp) : '';
+      const toolHeader = toolTime ? 
+        `  [${index + 1}] ${tool.toolName} ${this.theme.formatDim(`[${toolTime}]`)}` : 
+        `  [${index + 1}] ${tool.toolName}`;
+      lines.push(this.theme.formatAccent(toolHeader));
       
       // Tool parameters
       if (tool.input) {
@@ -1995,6 +2068,88 @@ class ViewRenderer {
   }
 
   /**
+   * Process text with collapsible tool blocks
+   */
+  processTextWithCollapsibleBlocks(responseLines, outputLines) {
+    let i = 0;
+    while (i < responseLines.length) {
+      const line = responseLines[i];
+      
+      // Check if this line starts a tool block
+      if (line.match(/^⏺\s+\w+/)) {
+        // Found a tool header
+        outputLines.push(line);
+        i++;
+        
+        // Debug: Log what we're processing
+        if (config.debug && config.debug.enabled) {
+          console.log(`Found tool block at line ${i}, next line: "${responseLines[i] || 'EOF'}"`);
+        }
+        
+        // Look for the indented block with ⎿ (allow spaces before it)
+        if (i < responseLines.length && responseLines[i].includes('⎿')) {
+          const blockStart = i;
+          let blockEnd = i + 1; // Start from the next line after ⎿
+          
+          // Find the end of the block
+          while (blockEnd < responseLines.length) {
+            const blockLine = responseLines[blockEnd];
+            // Stop if we hit an empty line, another tool header, or a line that doesn't look like part of the block
+            if (blockLine.trim() === '' || 
+                blockLine.match(/^⏺/) || 
+                blockLine.match(/^[A-Z]/) || // New line starting with capital letter
+                (!blockLine.match(/^\s+/) && !blockLine.includes('...'))) {
+              break;
+            }
+            blockEnd++;
+          }
+          
+          const blockLines = responseLines.slice(blockStart, blockEnd);
+          const blockId = `text-block-${blockStart}-${i}`;
+          const isExpanded = this.state.isToolExpanded(blockId);
+          
+          // Check if there's already a "... X more lines" indicator
+          const lastLine = blockLines[blockLines.length - 1];
+          const moreMatch = lastLine && lastLine.match(/^\s*\.\.\.\s*(\d+)\s*more\s*lines?/);
+          
+          if (moreMatch) {
+            // Already has a more lines indicator - this is pre-summarized content
+            // Don't add expand/collapse hints as there's no actual content to show
+            blockLines.forEach(blockLine => {
+              outputLines.push(blockLine);
+            });
+          } else if (blockLines.length <= 20 || isExpanded) {
+            // Show all lines
+            blockLines.forEach(blockLine => {
+              outputLines.push(blockLine);
+            });
+            // Set current block for Ctrl+R only if it's expandable
+            if (blockLines.length > 20) {
+              this.state.registerToolId(blockId);
+            }
+          } else {
+            // Show first 20 lines and collapse indicator
+            for (let j = 0; j < 20 && j < blockLines.length; j++) {
+              outputLines.push(blockLines[j]);
+            }
+            const remainingLines = blockLines.length - 20;
+            outputLines.push(`     … +${remainingLines} lines (ctrl+r to expand)`);
+            // Set current block for Ctrl+R
+            this.state.setCurrentToolId(blockId);
+          }
+          
+          i = blockEnd;
+          continue;
+        }
+      }
+      
+      // Regular line, just add it
+      outputLines.push(line);
+      i++;
+    }
+  }
+
+  /**
    * Format tool input parameters
    */
   formatToolInput(tool, boxWidth) {
@@ -2049,14 +2204,16 @@ class ViewRenderer {
         // Handle MultiEdit specially
         lines.push(`  ${this.theme.formatMuted('edits:')} ${tool.input.edits.length} changes`);
         
-        // Show all edits (no truncation)
-        tool.input.edits.forEach((edit, idx) => {
-          lines.push('');
-          lines.push(`  ${this.theme.formatAccent(`[Edit ${idx + 1}]`)}`);
+        // Show each edit as a mini-diff
+        tool.input.edits.forEach((edit, editIndex) => {
+          if (editIndex > 0) {
+            lines.push('');
+          }
           
-          // Show complete unified diff for each edit
-          const diffResult = this.createUnifiedDiff(edit.old_string, edit.new_string);
-          diffResult.forEach(diffLine => {
+          const diffLines = this.createUnifiedDiff(edit.old_string, edit.new_string);
+          const maxLines = 10;
+          
+          diffLines.slice(0, maxLines).forEach(diffLine => {
             let lineNumStr = '';
             if (diffLine.lineNum !== '...') {
               lineNumStr = String(diffLine.lineNum).padStart(4) + '│';
@@ -2064,14 +2221,18 @@ class ViewRenderer {
               lineNumStr = '    │';
             }
             
-            if (diffLine.type === 'added') {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
-            } else if (diffLine.type === 'removed') {
+            if (diffLine.type === 'removed') {
               lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatError('- ' + diffLine.content)}`);
+            } else if (diffLine.type === 'added') {
+              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
             } else {
               lines.push(`       ${this.theme.formatDim(lineNumStr)}   ${diffLine.content}`);
             }
           });
+          
+          if (diffLines.length > maxLines) {
+            lines.push(`       ${this.theme.formatMuted(`... ${diffLines.length - maxLines} more lines`)}`);
+          }
         });
       }
       
@@ -2360,13 +2521,13 @@ class ViewRenderer {
     
     // Always show scroll controls regardless of content length
     controls.push(
-      this.theme.formatMuted('↑/↓') + ' 5-line scroll',
-      this.theme.formatMuted('Space/b') + ' page',
+      this.theme.formatMuted('↑/↓ or k/j') + ' 5-line scroll',
+      this.theme.formatMuted('Space/b') + ' page down/up',
       this.theme.formatMuted('g/G') + ' top/bottom'
     );
     
     controls.push(
-      this.theme.formatMuted('←/→') + ' prev/next conversation',
+      this.theme.formatMuted('←/→ or h/l') + ' prev/next conversation',
       this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
@@ -2410,7 +2571,7 @@ class ViewRenderer {
     });
     
     console.log('');
-    console.log(this.theme.formatMuted('↑/↓ to navigate, Enter to select, Esc to cancel'));
+    console.log(this.theme.formatMuted('↑/↓ or k/j to navigate, Enter to select, Esc to cancel'));
   }
 
   /**
@@ -2429,9 +2590,12 @@ class ViewRenderer {
         items: [
           '↑/↓ k/j       Navigate up/down',
           '←/→ h/l       Navigate left/right',
+          'PgUp/PgDn     Page up/down',
+          'Ctrl+B/F      Page up/down (vim style)',
           'Enter         Select/Enter view',
           'Esc/q         Back/Exit',
-          'g/G           Top/Bottom (in detail view)'
+          'g/G           Top/Bottom (in detail view)',
+          'Ctrl+R        Expand/collapse tool output'
         ]
       },
       {
@@ -2696,7 +2860,7 @@ class ViewRenderer {
     
     // Results summary and controls
     console.log(this.theme.formatHeader(`Found ${searchResults.length} matches`));
-    console.log(this.theme.formatDim('↑/↓: Navigate • Enter: View Detail • Esc: Back'));
+    console.log(this.theme.formatDim('↑/↓ or k/j: Navigate • Enter: View Detail • Esc: Back'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
     if (searchResults.length === 0) {
@@ -2780,8 +2944,15 @@ class ViewRenderer {
     // Footer
     console.log('');
     console.log(this.theme.formatSeparator(this.terminalWidth));
-    const position = `${selectedIndex + 1}/${searchResults.length}`;
-    console.log(this.theme.formatDim(`Result ${position} • Press h for help`));
+    
+    // Search results controls
+    const controls = [
+      this.theme.formatMuted('↑/↓ or k/j') + ' to select result',
+      this.theme.formatMuted('Enter') + ' to view detail',
+      this.theme.formatMuted('Esc') + ' back',
+      this.theme.formatMuted('q') + ' exit'
+    ];
+    console.log(controls.join(' · '));
   }
 
   /**

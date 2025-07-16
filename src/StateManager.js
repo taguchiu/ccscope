@@ -68,6 +68,13 @@ class StateManager {
     this.highlightMatchType = null;
     this.scrollToSearchMatch = false;
     this.searchMatchType = null;
+    
+    // Tool result expansion state
+    // Maps toolId to expansion state
+    this.expandedTools = new Map();
+    this.currentToolId = null; // Track current tool for Ctrl+R
+    this.visibleToolIds = new Set(); // Track visible tools in viewport
+    this.allToolIds = new Set(); // Track all tool IDs in current conversation
   }
 
   /**
@@ -88,6 +95,11 @@ class StateManager {
     // Reset scroll offset when changing views
     this.scrollOffset = 0;
     this.scrollToEnd = false; // Always start at the top
+    
+    // Clear tool expansions when leaving full_detail view
+    if (this.previousView === 'full_detail') {
+      this.clearToolExpansions();
+    }
     
     this.trackStateChange();
   }
@@ -872,6 +884,90 @@ class StateManager {
   }
 
   /**
+   * Toggle tool expansion state
+   */
+  toggleToolExpansion(toolId) {
+    const currentState = this.expandedTools.get(toolId) || false;
+    this.expandedTools.set(toolId, !currentState);
+    this.trackStateChange();
+  }
+
+  /**
+   * Clear all tool expansions
+   */
+  clearToolExpansions() {
+    this.expandedTools.clear();
+    this.clearAllToolIds();
+    this.trackStateChange();
+  }
+
+  /**
+   * Check if tool is expanded
+   */
+  isToolExpanded(toolId) {
+    return this.expandedTools.get(toolId) || false;
+  }
+
+  /**
+   * Set current tool ID (for Ctrl+R focus)
+   */
+  setCurrentToolId(toolId) {
+    this.currentToolId = toolId;
+  }
+
+  /**
+   * Toggle current tool expansion
+   */
+  toggleCurrentToolExpansion() {
+    if (this.currentToolId) {
+      this.toggleToolExpansion(this.currentToolId);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Toggle all tool expansions
+   */
+  toggleAllToolExpansions() {
+    // If any tools are expanded, collapse all
+    // If all are collapsed, expand all registered tools
+    const hasExpanded = Array.from(this.expandedTools.values()).some(expanded => expanded);
+    
+    if (hasExpanded) {
+      // Collapse all
+      this.expandedTools.clear();
+    } else {
+      // Expand all registered tools
+      this.allToolIds.forEach(toolId => {
+        this.expandedTools.set(toolId, true);
+      });
+    }
+    
+    this.trackStateChange();
+    return true;
+  }
+
+  /**
+   * Register a tool ID
+   */
+  registerToolId(toolId) {
+    if (!this.allToolIds) {
+      this.allToolIds = new Set();
+    }
+    this.allToolIds.add(toolId);
+  }
+
+  /**
+   * Clear all tool IDs
+   */
+  clearAllToolIds() {
+    if (this.allToolIds) {
+      this.allToolIds.clear();
+    }
+  }
+
+  /**
    * Track state change
    */
   trackStateChange() {
@@ -957,6 +1053,8 @@ class StateManager {
     this.searchOptions = options;
     this.selectedSearchResultIndex = 0;
     this.scrollOffset = 0;
+    // Track if this is from command-line search
+    this.isCommandLineSearch = options.isCommandLineSearch || false;
     this.trackStateChange();
   }
 }

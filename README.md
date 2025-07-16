@@ -1,4 +1,4 @@
-# CCScope 🔍
+# ccscope 🔍
 
 [English](README.md) | [日本語](README.ja.md)
 
@@ -11,57 +11,58 @@ Claude Code Scope - Interactive terminal browser for Claude Code conversation tr
 
 ## Overview
 
-CCScope (Claude Code Scope) is a powerful terminal-based application that allows you to browse, analyze, and explore your Claude Code conversation transcripts. It provides an intuitive interface for navigating through sessions, analyzing thinking patterns, response times, and tool usage.
+ccscope (Claude Code Scope) is a powerful terminal-based application that allows you to browse, analyze, and explore your Claude Code conversation logs. It provides an intuitive interface for navigating through sessions, response times, and tool usage analysis.
 
 ## Features
 
 - 🔍 **Interactive Browsing**: Navigate through sessions and conversations with vim-like keybindings
 - 📊 **Rich Analytics**: View response times and tool usage statistics
 - 🔎 **Full-text Search**: Search across all conversations with highlighting, OR conditions, and regex support
-- 🔄 **Search-aware Navigation**: Navigate through search results with left/right keys when viewing from search
+- 🔄 **Search Results Navigation**: Navigate search results with left/right keys when viewing from search
 - 🔎 **Search & Filter**: Find specific conversations or filter by project
 - 📱 **Responsive Design**: Adapts to your terminal size with wide and compact layouts
-- ⚡ **Performance**: Virtual scrolling and caching for large datasets
 - 🔧 **Tool Analysis**: Detailed breakdown of tool usage and execution flow
-- 💭 **Thinking Process**: View Claude's thinking patterns
 - 📈 **Session Metrics**: Track conversation duration, response times, and productivity
-- 🚀 **Resume Sessions**: Resume Claude Code sessions directly from CCScope with 'r' key
+- 🚀 **Session Resume**: Resume Claude Code sessions directly from ccscope with 'r' key
+- 📑 **Collapsible Tool Output**: Long tool outputs (>20 lines) are collapsed by default, toggle with Ctrl+R
 
 ## Screenshots
 
 ### Session List View
 ```
 🔍 Claude Code Scope
-================================================================================
+========================================================================================================
 📊 35 Sessions | 💬 1503 Convos | ⏱️ 4d 9h 23m
 
-▶ 1  52ccc342  ccscope               48 convos  1h 51m   07/10 23:52  07/12 19:58
+▶ 1  52ccc342  ccscope               48 convos   1h 51m   07/10 23:52  07/12 19:58
   2  14208db7  sms-proto              7 convos  24m 24s   07/12 19:23  07/12 19:55
-  3  7726f0    mobile-documents      40 convos   1h 6m   07/12 15:25  07/12 19:22
+  3  7726f0    mobile-documents      40 convos    1h 6m   07/12 15:25  07/12 19:22
 
-↑/↓ Navigate · Enter Details · r Resume · f Filter · s Sort · q Exit
+────────────────────────────────────────────────────────────────────────────────────────────────────────  
+↑/↓ or k/j to select · Enter to view details · r resume · / full-text search · f filter · s sort · h help · q exit
 ```
 
-### Conversation Detail View  
+### Conversation Detail View
 ```
 🔍 Claude Code Scope
-================================================================================
+========================================================================================================
 💬 48 Convos | ⏱️ 1h 51m
 Selected: [52ccc342] -Users-taguchiu-Documents-workspace-ccscope
 📁 File: /Users/taguchiu/.claude/projects/...
 
 ▶ 1  07/10 14:30  12.3s  3t  Help me refactor ViewRenderer...
-  2  07/10 14:35   8.7s  1t  Add full-width character support  
+  2  07/10 14:35   8.7s  1t  Add full-width character support
   3  07/10 14:42  15.2s  5t  Implement virtual scrolling
 
-↑/↓ Select · Enter Detail · ←/→ Switch Session · r Resume · Esc Back
+────────────────────────────────────────────────────────────────────────────────────────────────────────  
+↑/↓ or k/j to select conversation · Enter to view detail · ←/→ or h/l switch session · r resume · s sort · Esc back · q exit
 ```
 
 ### Full Detail View
 ```
 [52ccc342] -Users-taguchiu-Documents-workspace-ccscope     [18-66/66] 100%
 Conversation #15 of 48
-================================================================================
+========================================================================================================
 
 👤 USER:
 Help me refactor the ViewRenderer component...
@@ -69,9 +70,15 @@ Help me refactor the ViewRenderer component...
 🤖 ASSISTANT:
 I'll help you refactor the ViewRenderer component...
 
-🔧 Tools: Read×2, Edit×1
+⏺ Read(file: /src/ViewRenderer.js)
+  ⎿ File content...
+     ... +45 lines (ctrl+r to expand)
 
-↑/↓ Scroll · Space Page · ←/→ Prev/Next · r Resume · g/G Top/Bottom · Esc Back
+⏺ Edit(file: /src/ViewRenderer.js)
+  ⎿ Applied changes successfully
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────  
+↑/↓ or k/j 5-line scroll · Space/b page down/up · g/G top/bottom · ←/→ or h/l prev/next conversation · r resume · Esc back · q exit
 ```
 
 ## Installation
@@ -90,13 +97,13 @@ Once installed, you can run `ccscope` from anywhere in your terminal.
 # Install globally
 npm install -g ccscope
 
-# Run CCScope
+# Run ccscope
 ccscope
 
 # Or run without installation using npx
-npx ccscope
+npx ccscope@latest
 
-# That's it! CCScope will automatically find your Claude Code transcripts
+# That's it! ccscope will automatically find your Claude Code transcripts
 ```
 
 ### Local Installation
@@ -139,30 +146,20 @@ ccscope search "query"   # Search across all conversations
 
 # Options
 ccscope --help           # Show help
-ccscope --debug          # Enable debug mode
 
 # Search examples
-ccscope search "error handling"
 ccscope search "async await"
-ccscope search "error OR warning"     # OR search (uppercase)
-ccscope search "error or warning"     # OR search (lowercase)
-ccscope search "function OR method"
+ccscope search "error or warning"     # OR search
 ccscope search --regex "import.*from" # Regex search
 ccscope search --regex "\berror\b"    # Word boundary search
-
-# Combine commands with options
-ccscope daily --debug
-ccscope project --debug
 ```
 
 ### Resume Claude Code Sessions
 
 Press `r` in any view to resume a Claude Code session:
-- Automatically extracts the full session ID from transcript files
-- Changes to the project directory before resuming
 - Executes `claude -r <session-id>` to continue the conversation
 
-This feature allows you to seamlessly continue conversations discovered through CCScope.
+This feature allows you to seamlessly continue conversations discovered through ccscope.
 
 ### Navigation
 
@@ -185,42 +182,30 @@ This feature allows you to seamlessly continue conversations discovered through 
 - `Esc`: Back to session list
 
 #### Full Detail View
-- `↑/↓`: Scroll content (5-line increments)
-- `Space/b`: Page up/down
+- `↑/↓` or `k/j`: Scroll content (5-line increments)
+- `Space/b` or `PgDn/PgUp`: Page down/up
+- `Ctrl+F/Ctrl+B`: Page forward/back (vim-style)
+- `Ctrl+D/Ctrl+U`: Half-page down/up
 - `g/G`: Jump to top/bottom
 - `←/→`: Previous/next conversation (or navigate search results if from search)
+- `Ctrl+R`: Toggle all tool output expansion/collapse
 - `r`: Resume session with `claude -r`
 - `Esc`: Back to conversation list
 
 #### Search Results View
-- `↑/↓`: Navigate search results
+- `↑/↓` or `k/j`: Navigate search results
 - `Enter`: View conversation detail
-- `Esc`: Exit application
-
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `q` | Quit application |
-| `h` or `?` | Show help |
-| `/` | Search |
-| `f` | Filter |
-| `s` | Sort |
-| `r` | Resume session (claude -r) |
-| `Esc` | Go back |
-| `Enter` | Select/Enter |
+- `Esc`: Back to session list
+- `q`: Exit application
 
 ## Configuration
 
-CCScope automatically discovers Claude Code transcripts in these directories:
+ccscope automatically discovers Claude Code transcripts in this directory:
 - `~/.claude/projects/`
-- `~/.config/claude/transcripts/`
-- `./transcripts/`
-- `./`
 
 ### Supported Formats
 
-CCScope reads Claude Code transcript files in JSONL format (`.jsonl` extension).
+ccscope reads Claude Code transcript files in JSONL format (`.jsonl` extension).
 
 ## Development
 
@@ -228,7 +213,7 @@ CCScope reads Claude Code transcript files in JSONL format (`.jsonl` extension).
 
 ```
 ccscope/
-├── bin/                 # Executable scripts
+├── bin/                # Executable scripts
 │   └── ccscope         # Main CLI entry point
 ├── src/                # Source code
 │   ├── config.js       # Configuration
@@ -242,12 +227,13 @@ ccscope/
 ├── examples/           # Example files
 ├── package.json
 ├── README.md
+├── README.ja.md
 └── LICENSE
 ```
 
 ### Architecture
 
-CCScope follows a modular architecture:
+ccscope follows a modular architecture:
 
 - **CCScope**: Main application orchestrator
 - **SessionManager**: Handles transcript discovery and parsing
@@ -255,28 +241,7 @@ CCScope follows a modular architecture:
 - **ViewRenderer**: Handles UI rendering and display logic
 - **InputHandler**: Processes keyboard input and key bindings
 - **ThemeManager**: Manages color themes and text formatting
-
-### Building from Source
-
-```bash
-git clone https://github.com/taguchiu/ccscope.git
-cd ccscope
-npm install
-npm start
-```
-
-### Development Commands
-
-```bash
-# Run in development mode
-npm run dev
-
-# Start the application
-npm start
-
-# Make binary executable
-chmod +x bin/ccscope
-```
+- **MouseEventFilter**: Prevents mouse event artifacts in terminal output
 
 ## Contributing
 
@@ -295,13 +260,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 🐛 [Report Issues](https://github.com/taguchiu/ccscope/issues)
 - 💬 [Discussions](https://github.com/taguchiu/ccscope/discussions)
 - 📦 [npm Package](https://www.npmjs.com/package/ccscope)
-
-## Acknowledgments
-
-- Built for the [Claude Code](https://claude.ai/code) community
-- Inspired by terminal-based file browsers and analysis tools
-- Special thanks to all contributors and users
-
----
-
-Made with ❤️ for Claude Code users

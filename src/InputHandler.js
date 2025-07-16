@@ -1,10 +1,12 @@
 /**
  * InputHandler
- * Handles keyboard input processing and key bindings
+ * Handles keyboard input processing, key bindings, and mouse event filtering
+ * Uses MouseEventFilter for centralized mouse event detection and filtering
  */
 
 const readline = require('readline');
 const config = require('./config');
+const MouseEventFilter = require('./MouseEventFilter');
 
 class InputHandler {
   constructor(stateManager, sessionManager, viewRenderer, themeManager) {
@@ -28,6 +30,9 @@ class InputHandler {
     }
     process.stdin.resume();
     
+    // Mouse events disabled - using keyboard navigation instead
+    // this.enableMouseEvents();
+    
     // Input state
     this.inputBuffer = '';
     this.inputMode = 'normal'; // normal, search, filter, select_project
@@ -44,8 +49,66 @@ class InputHandler {
     // Debounce timer
     this.debounceTimer = null;
     
+    // Mouse event filter for centralized mouse event detection
+    // Handles mouse event patterns (drag, click, selection) for artifact prevention
+    this.mouseFilter = new MouseEventFilter();
+    
+    // Setup output filtering
+    this.setupOutputFiltering();
+    
     // Bind event listeners
     this.setupEventListeners();
+  }
+
+  /**
+   * Setup output filtering to prevent mouse events from appearing
+   * Intercepts stdout.write to filter out mouse event artifacts
+   */
+  setupOutputFiltering() {
+    // Store original stdout.write
+    const originalWrite = process.stdout.write;
+    const mouseFilter = this.mouseFilter;
+    
+    // Override stdout.write to filter mouse events
+    process.stdout.write = function(chunk, encoding, callback) {
+      if (typeof chunk === 'string' || chunk instanceof Buffer) {
+        const str = chunk.toString();
+        
+        // Use centralized mouse event detection for output filtering
+        if (mouseFilter.isMouseEventOutput(str)) {
+          // Don't write mouse event output to stdout
+          return true;
+        }
+      }
+      
+      // Call original write for non-mouse events
+      return originalWrite.call(this, chunk, encoding, callback);
+    };
+  }
+
+  /**
+   * Enable mouse events
+   */
+  enableMouseEvents() {
+    if (process.stdin.isTTY) {
+      // Enable mouse tracking
+      process.stdout.write('\x1b[?1000h'); // Enable mouse button tracking
+      process.stdout.write('\x1b[?1002h'); // Enable mouse button and drag tracking
+      process.stdout.write('\x1b[?1015h'); // Enable urxvt mouse mode
+      process.stdout.write('\x1b[?1006h'); // Enable SGR mouse mode
+    }
+  }
+
+  /**
+   * Disable mouse events
+   */
+  disableMouseEvents() {
+    if (process.stdin.isTTY) {
+      process.stdout.write('\x1b[?1006l'); // Disable SGR mouse mode
+      process.stdout.write('\x1b[?1015l'); // Disable urxvt mouse mode
+      process.stdout.write('\x1b[?1002l'); // Disable mouse button and drag tracking
+      process.stdout.write('\x1b[?1000l'); // Disable mouse button tracking
+    }
   }
 
   /**
@@ -55,6 +118,18 @@ class InputHandler {
     // Handle keypress events
     process.stdin.on('keypress', (str, key) => {
       this.handleKeyPress(str, key);
+    });
+    
+    // Handle raw data for mouse events with complete isolation
+    process.stdin.on('data', (data) => {
+      const dataStr = data.toString();
+      
+      // Use centralized mouse event detection for input filtering
+      if (this.mouseFilter.isMouseEventInput(dataStr)) {
+        this.handleMouseEvent(data);
+        // Critical: consume completely to prevent leakage
+        return;
+      }
     });
 
     // Handle terminal resize
@@ -71,6 +146,20 @@ class InputHandler {
   }
 
   /**
+   * Handle mouse events from raw data
+   * Consumes all mouse events to prevent artifacts (scroll functionality disabled)
+   */
+  handleMouseEvent(data) {
+    // Mouse scroll functionality disabled - using keyboard navigation instead
+    // Simply consume all mouse events to prevent artifacts from appearing
+    
+    // Always consume all mouse events to prevent artifacts
+    // This is critical to prevent mouse event strings from leaking to display
+    return true;
+  }
+
+
+  /**
    * Handle key press events
    */
   handleKeyPress(str, key) {
@@ -81,6 +170,11 @@ class InputHandler {
     }
     
     if (!key) return;
+    
+    // Filter out mouse events that might leak through
+    if (this.mouseFilter.isMouseEventKeypress(str)) {
+      return;
+    }
     
     // Clear debounce timer
     if (this.debounceTimer) {
@@ -220,6 +314,12 @@ class InputHandler {
     } else if (this.isKey(keyName, this.keyBindings.navigation.right)) {
       this.state.navigateSessionRight();
       this.render();
+    }
+    // Toggle tool expansion (Ctrl+R)
+    else if (key && key.ctrl && keyName === 'r') {
+      if (this.state.toggleAllToolExpansions()) {
+        this.render();
+      }
     } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
       this.state.setView('full_detail');
       this.render();
@@ -270,11 +370,11 @@ class InputHandler {
       this.state.scrollDown(smoothScrollLines);
       this.render();
     }
-    // Page scrolling
-    else if (keyName === 'space' || keyName === 'pagedown') {
+    // Page scrolling (PgUp/PgDn, Ctrl+B/Ctrl+F)
+    else if (keyName === 'space' || keyName === 'pagedown' || (key && key.ctrl && keyName === 'f')) {
       this.state.scrollPageDown();
       this.render();
-    } else if (keyName === 'b' || keyName === 'pageup') {
+    } else if (keyName === 'b' || keyName === 'pageup' || (key && key.ctrl && keyName === 'b')) {
       this.state.scrollPageUp();
       this.render();
     }
@@ -285,6 +385,12 @@ class InputHandler {
     } else if (key && key.ctrl && keyName === 'u') {
       this.state.scrollHalfPageUp();
       this.render();
+    }
+    // Toggle tool expansion (Ctrl+R)
+    else if (key && key.ctrl && keyName === 'r') {
+      if (this.state.toggleAllToolExpansions()) {
+        this.render();
+      }
     }
     // Jump to top/bottom
     else if (this.isKey(keyName, this.keyBindings.navigation.home)) {
@@ -397,8 +503,14 @@ class InputHandler {
         }
       }
     } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
-      // Exit search results and quit application
-      this.exitApplication();
+      // If this is from command-line search, exit application
+      // Otherwise, return to session list
+      if (this.state.isCommandLineSearch) {
+        this.exitApplication();
+      } else {
+        this.state.setView('session_list');
+        this.render();
+      }
     } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
       this.state.setView('help');
       this.render();
@@ -434,8 +546,8 @@ class InputHandler {
       this.inputBuffer += str;
     }
     
-    // Live search
-    this.performLiveSearch();
+    // Update search prompt
+    this.renderSearchPrompt();
   }
 
   /**
@@ -480,7 +592,16 @@ class InputHandler {
     const query = this.inputBuffer.trim();
     if (query) {
       this.inputHistory.push(query);
-      this.state.setSearchQuery(query);
+      // Perform full conversation search
+      const results = this.sessionManager.searchConversations(query);
+      if (results.length > 0) {
+        // Store search results and navigate to search results view
+        this.state.setSearchResults(query, results);
+        this.state.setView('search_results');
+      } else {
+        // No results found, just filter the session list
+        this.state.setSearchQuery(query);
+      }
     }
     this.exitSearchMode();
   }
@@ -658,7 +779,7 @@ class InputHandler {
     });
     
     console.log('');
-    console.log(this.theme.formatMuted('↑/↓ to navigate, Enter to select, Esc to cancel'));
+    console.log(this.theme.formatMuted('↑/↓ or k/j to navigate, Enter to select, Esc to cancel'));
   }
 
 
@@ -734,6 +855,9 @@ class InputHandler {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
+    
+    // Disable mouse events
+    this.disableMouseEvents();
     
     // Reset terminal
     process.stdout.write('\x1b[0m'); // Reset colors

@@ -62,7 +62,7 @@ The application follows a modular MVC-like architecture with clear separation of
    - Coordinates between components
 
 2. **SessionManager.js** - Data layer
-   - Discovers transcript files from multiple directories (`~/.claude/projects/`, `~/.config/claude/transcripts/`, etc.)
+   - Discovers transcript files from `~/.claude/projects/` directory
    - Parses JSONL transcript files into structured session objects
    - Extracts project paths from `cwd` field in JSONL files
    - Extracts full session IDs from filenames (UUID or hex format)
@@ -77,6 +77,7 @@ The application follows a modular MVC-like architecture with clear separation of
    - Manages search state and search-aware navigation
    - Implements virtual scrolling logic for large datasets
    - Maintains cache of filtered/sorted sessions
+   - Manages tool expansion state (expandedTools Map, allToolIds Set)
 
 4. **ViewRenderer.js** - Presentation layer
    - Renders all UI views based on current state
@@ -86,6 +87,7 @@ The application follows a modular MVC-like architecture with clear separation of
    - Highlights search matches in conversation content
    - Formats session/conversation data with color coding
    - Shows [Continued] for resumed sessions
+   - Implements collapsible tool outputs (>20 lines)
 
 5. **InputHandler.js** - User interaction layer
    - Captures raw keyboard input using readline
@@ -94,12 +96,18 @@ The application follows a modular MVC-like architecture with clear separation of
    - Handles search-aware navigation (navigates search results when coming from search)
    - Implements session resume functionality (`r` key)
    - Debounces rapid inputs for performance
+   - Filters mouse events using MouseEventFilter to prevent artifacts
 
 6. **ThemeManager.js** - Visual styling
    - Provides color themes (default, dark, light, minimal)
    - Handles ANSI color formatting
    - Manages text width calculations for CJK characters
    - Provides consistent formatting methods for UI elements
+
+7. **MouseEventFilter.js** - Mouse event filtering
+   - Centralized logic for detecting and filtering mouse events
+   - Prevents mouse event artifacts from appearing in terminal output
+   - Handles different mouse event formats (SGR, raw, etc.)
 
 ### Key Features
 
@@ -116,6 +124,12 @@ The application follows a modular MVC-like architecture with clear separation of
 - Search results maintain context for navigation
 - Left/right arrows navigate search results when viewing from search
 - Highlighting preserves original search terms in detail views
+
+**Tool Output Collapsing** (`Ctrl+R`):
+- Long tool outputs (>20 lines) are collapsed by default
+- Shows first 20 lines with "... +XX lines (ctrl+r to expand)"
+- Ctrl+R toggles all tool outputs in current conversation
+- State managed through expandedTools Map and allToolIds Set
 
 **Performance Optimizations**:
 - Virtual scrolling limits rendered content to visible area
@@ -183,6 +197,7 @@ Full Detail (with search highlighting)
 - **Response time indicators**: 🔴 >30s (slow), 🟡 10-30s (medium), 🟢 <10s (fast)
 - **Tool usage format**: "Read×3, Edit×2, Bash×1" shows count per tool type
 - **Continuation sessions**: Shows [Continued] prefix for resumed sessions
+- **Keyboard navigation**: PgUp/PgDn and Ctrl+B/F for page scrolling (mouse scroll disabled)
 
 ## Transcript Format
 
