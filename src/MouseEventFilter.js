@@ -28,7 +28,7 @@ class MouseEventFilter {
       scrollDown: /^65;\d+;\d+M/,    // Scroll down
       
       // Long sequences (likely mouse events)
-      longSequence: (str) => str.length > 100 && /^\d+;\d+;\d+M/.test(str),
+      longSequence: (str) => str && typeof str === 'string' && str.length > 100 && /^\d+;\d+;\d+M/.test(str),
       
       // Repeated event patterns for output filtering
       repeatedDrag: /^(65|32);\d+;\d+M\1;\d+;\d+M/,
@@ -42,8 +42,12 @@ class MouseEventFilter {
    * Used for stdin data filtering
    */
   isMouseEventInput(dataStr) {
+    if (!dataStr || typeof dataStr !== 'string') return false;
+    
+    // Check for specific mouse event patterns
     return (
-      this.patterns.ansiEscape.test(dataStr) ||
+      /\x1b\[M/.test(dataStr) || // Basic mouse event start
+      /\x1b\[[\<\>\?]?\d+;\d+;\d+[Mm]/.test(dataStr) || // SGR and other formats
       this.patterns.rawSingle.test(dataStr) ||
       this.patterns.rawMultiple.test(dataStr) ||
       this.patterns.longSequence(dataStr) ||
@@ -77,12 +81,22 @@ class MouseEventFilter {
    * Used for stdout filtering - more restrictive to avoid blocking normal text
    */
   isMouseEventOutput(str) {
+    if (!str || typeof str !== 'string') return false;
+    
+    // For output filtering, be more selective
+    // Only filter if it's purely mouse events or ends with mouse events
+    if (/^\d+;\d+;\d+M$/.test(str)) {
+      // Single mouse event by itself - don't filter
+      return false;
+    }
+    
     return (
       this.patterns.multipleEvents.test(str) ||
-      this.patterns.rawSingle.test(str) ||
       this.patterns.longSequence(str) ||
       this.patterns.repeatedDrag.test(str) ||
       this.patterns.repeatedClick.test(str) ||
+      // Block if it contains mouse events mixed with text
+      (/\d+;\d+;\d+M/.test(str) && !/^[a-zA-Z0-9\s:]+$/.test(str)) ||
       // Also block if it ends with a mouse event (common artifact pattern)
       /\d+;\d+;\d+M$/.test(str)
     );
@@ -94,6 +108,8 @@ class MouseEventFilter {
    */
   extractScrollEvents(dataStr) {
     const events = [];
+    
+    if (!dataStr || typeof dataStr !== 'string') return events;
     
     // First, check for SGR format and remove processed parts
     let processedStr = dataStr;

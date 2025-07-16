@@ -514,7 +514,8 @@ describe('StateManager', () => {
       expect(stateManager.selectedSessionIndex).toBe(0);
       
       stateManager.navigateDown();
-      expect(stateManager.selectedSessionIndex).toBe(-1); // Current behavior: Math.min(-1, index+1)
+      // Math.min(sessions.length - 1, index + 1) = Math.min(-1, 1) = -1, but validateState sets it to 0
+      expect(stateManager.selectedSessionIndex).toBe(0);
       
       stateManager.navigateToLast();
       expect(stateManager.selectedSessionIndex).toBe(0); // Math.max(0, sessions.length - 1) = Math.max(0, -1) = 0
@@ -936,46 +937,58 @@ describe('StateManager', () => {
     test('handles complex sort operations', () => {
       // Test complex sort operations
       const complexSessions = [
-        { 
-          ...createMockSessionData(), 
+        Object.assign(createMockSessionData(), {
           sessionId: 'a', 
           lastActivity: new Date('2024-01-01'), 
           duration: 1000,
           projectName: 'project-a'
-        },
-        { 
-          ...createMockSessionData(), 
+        }),
+        Object.assign(createMockSessionData(), {
           sessionId: 'b', 
           lastActivity: new Date('2024-01-02'), 
           duration: 2000,
           projectName: 'project-b'
-        },
-        { 
-          ...createMockSessionData(), 
+        }),
+        Object.assign(createMockSessionData(), {
           sessionId: 'c', 
           lastActivity: new Date('2024-01-03'), 
           duration: 500,
           projectName: 'project-c'
-        }
+        })
       ];
       
+      // Update mock to return the new sessions
       mockSessionManager.sessions = complexSessions;
+      mockSessionManager.filterSessions = jest.fn(() => complexSessions);
       
       // Test different sort combinations
-      stateManager.sortOrder = 'lastActivity';
-      stateManager.sortDirection = 'desc';
+      // Clear any existing state
+      stateManager.cacheInvalidated = true;
+      stateManager.sortOrder = null; // Reset to ensure setSortOrder sets it properly
+      stateManager.sortDirection = 'desc'; // Reset to default
+      stateManager.setSortOrder('lastActivity');
       const sorted1 = stateManager.getFilteredSessions();
+      // When sorted by lastActivity desc, 'c' (2024-01-03) should be first
       expect(sorted1[0].sessionId).toBe('c');
       
-      stateManager.sortOrder = 'duration';
+      // Reset and test duration sort
+      stateManager.cacheInvalidated = true;
+      stateManager.sortOrder = 'lastActivity'; // Reset to a different order first
+      stateManager.sortDirection = 'desc'; // Ensure default sort direction
+      stateManager.setSortOrder('duration'); // This sets it to 'desc' by default
+      // Now manually set to 'asc' after setSortOrder
       stateManager.sortDirection = 'asc';
+      stateManager.cacheInvalidated = true; // Invalidate cache after changing direction
       const sorted2 = stateManager.getFilteredSessions();
-      expect(sorted2[0].sessionId).toBe('c');
+      expect(sorted2[0].sessionId).toBe('c'); // 'c' has shortest duration (500)
       
-      stateManager.sortOrder = 'projectName';
-      stateManager.sortDirection = 'asc';
+      // Reset and test project name sort
+      stateManager.cacheInvalidated = true;
+      stateManager.sortDirection = 'desc'; // Reset to default desc
+      stateManager.setSortOrder('projectName');
       const sorted3 = stateManager.getFilteredSessions();
-      expect(sorted3[0].projectName).toBe('project-a');
+      // When sorted by projectName desc, 'project-c' should be first
+      expect(sorted3[0].projectName).toBe('project-c');
     });
 
     test('handles tool expansion state management', () => {
@@ -1004,17 +1017,41 @@ describe('StateManager', () => {
 
     test('handles cache invalidation scenarios', () => {
       // Test cache invalidation
-      stateManager.getFilteredSessions(); // Populate cache
-      expect(stateManager.cacheInvalidated).toBe(false);
+      // Note: validateState() calls getFilteredSessions() which resets cacheInvalidated
+      // So we need to test the methods that invalidate cache directly
       
-      stateManager.setSortOrder('duration');
-      expect(stateManager.cacheInvalidated).toBe(true);
+      // Create a fresh StateManager instance
+      const freshStateManager = new StateManager(mockSessionManager);
       
-      stateManager.getFilteredSessions(); // Repopulate cache
-      expect(stateManager.cacheInvalidated).toBe(false);
+      // Mock validateState to prevent it from calling getFilteredSessions
+      freshStateManager.validateState = jest.fn();
       
-      stateManager.setSearchQuery('test');
-      expect(stateManager.cacheInvalidated).toBe(true);
+      // Start with cache populated
+      freshStateManager.cacheInvalidated = false;
+      
+      // Test setSortOrder invalidates cache
+      freshStateManager.setSortOrder('duration');
+      expect(freshStateManager.cacheInvalidated).toBe(true);
+      
+      // Test setSearchQuery invalidates cache
+      freshStateManager.cacheInvalidated = false;
+      freshStateManager.setSearchQuery('test');
+      expect(freshStateManager.cacheInvalidated).toBe(true);
+      
+      // Test clearSearch invalidates cache
+      freshStateManager.cacheInvalidated = false;
+      freshStateManager.clearSearch();
+      expect(freshStateManager.cacheInvalidated).toBe(true);
+      
+      // Test setFilter invalidates cache
+      freshStateManager.cacheInvalidated = false;
+      freshStateManager.setFilter('project', 'test-project');
+      expect(freshStateManager.cacheInvalidated).toBe(true);
+      
+      // Test refreshSessions invalidates cache
+      freshStateManager.cacheInvalidated = false;
+      freshStateManager.refreshSessions();
+      expect(freshStateManager.cacheInvalidated).toBe(true);
     });
 
     test('handles boundary conditions in navigation', () => {
@@ -1025,7 +1062,7 @@ describe('StateManager', () => {
       expect(stateManager.selectedSessionIndex).toBe(0);
       
       stateManager.navigateDown();
-      expect(stateManager.selectedSessionIndex).toBe(-1);
+      expect(stateManager.selectedSessionIndex).toBe(0); // validateState prevents negative values
       
       stateManager.navigateToFirst();
       expect(stateManager.selectedSessionIndex).toBe(0);

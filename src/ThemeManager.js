@@ -375,6 +375,9 @@ class ThemeManager {
    * Format duration
    */
   formatDuration(milliseconds) {
+    // Handle negative values
+    if (milliseconds <= 0) return '0s';
+    
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
@@ -442,7 +445,11 @@ class ThemeManager {
    */
   createProgressBar(current, total, width = 20) {
     const theme = this.getTheme();
-    const progress = Math.min(current / total, 1);
+    // Handle edge cases
+    if (width <= 0) return `${theme.colors.info}[] 0%${theme.colors.reset}`;
+    if (total <= 0) return `${theme.colors.info}[${'░'.repeat(width)}] 0%${theme.colors.reset}`;
+    
+    const progress = Math.max(0, Math.min(current / total, 1));
     const filled = Math.floor(progress * width);
     const empty = width - filled;
     
