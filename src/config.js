@@ -35,7 +35,7 @@ module.exports = {
     headerHeight: 9,
     footerHeight: 9,
     sessionIdLength: 16,
-    projectNameLength: 75,
+    projectNameLength: 38,
     durationLength: 10,
     responseTimeLength: 8,
     conversationPadding: 13,

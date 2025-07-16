@@ -1775,7 +1775,16 @@ class ViewRenderer {
         if (item.type === 'thinking' && item.thinking) {
           // Add thinking section - Claude Code style
           lines.push('');
-          lines.push(this.theme.formatWarning('⏺ Thinking'));
+          
+          // Format thinking header with timestamp
+          let thinkingHeader = '⏺ Thinking';
+          if (conversation.timestamp) {
+            // Calculate approximate thinking timestamp based on position in array
+            const baseTime = new Date(conversation.timestamp);
+            const thinkingTime = this.formatDateTimeWithSeconds(baseTime);
+            thinkingHeader += ` ${this.theme.formatDim(`[${thinkingTime}]`)}`;
+          }
+          lines.push(this.theme.formatWarning(thinkingHeader));
           lines.push('');
           
           // Apply search highlighting if needed
@@ -1802,8 +1811,8 @@ class ViewRenderer {
           }
           
           // Add timestamp if available
-          const toolTime = item.timestamp ? this.theme.formatDateTime(item.timestamp) : '';
-          if (toolTime) {
+          if (conversation.timestamp) {
+            const toolTime = this.formatDateTimeWithSeconds(conversation.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
           
@@ -1899,7 +1908,14 @@ class ViewRenderer {
       if (conversation.thinkingContent && conversation.thinkingContent.length > 0) {
         conversation.thinkingContent.forEach(thinking => {
           lines.push('');
-          lines.push(this.theme.formatWarning('⏺ Thinking'));
+          
+          // Format thinking header with timestamp
+          let thinkingHeader = '⏺ Thinking';
+          if (thinking.timestamp) {
+            const thinkingTime = this.formatDateTimeWithSeconds(thinking.timestamp);
+            thinkingHeader += ` ${this.theme.formatDim(`[${thinkingTime}]`)}`;
+          }
+          lines.push(this.theme.formatWarning(thinkingHeader));
           lines.push('');
           
           const thinkingText = highlightQuery ? this.highlightText(thinking.text, highlightQuery, highlightOptions) : thinking.text;
@@ -1916,7 +1932,6 @@ class ViewRenderer {
           lines.push('');
           
           // Format timestamp
-          const toolTime = tool.timestamp ? this.theme.formatDateTime(tool.timestamp) : '';
           let toolHeader = `⏺ ${tool.toolName}`;
           if (tool.input) {
             const keyParams = this.getKeyParams(tool.toolName, tool.input);
@@ -1924,7 +1939,8 @@ class ViewRenderer {
               toolHeader += `(${keyParams})`;
             }
           }
-          if (toolTime) {
+          if (tool.timestamp) {
+            const toolTime = this.formatDateTimeWithSeconds(tool.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
           lines.push(this.theme.formatSuccess(toolHeader));
@@ -1951,6 +1967,21 @@ class ViewRenderer {
     }
     
     return lines.join('\n');
+  }
+
+  /**
+   * Format date/time with seconds (mm/dd hh:mm:ss)
+   */
+  formatDateTimeWithSeconds(timestamp) {
+    const date = new Date(timestamp);
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    return `${month}/${day} ${hours}:${minutes}:${seconds}`;
   }
 
   /**
