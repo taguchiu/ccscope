@@ -27,7 +27,7 @@ class SessionManager {
   }
 
   /**
-   * Discover and analyze all sessions
+   * Discover and analyze all sessions (optimized)
    */
   async discoverSessions() {
     if (this.isLoading) return this.sessions;
@@ -36,16 +36,36 @@ class SessionManager {
     const startTime = Date.now();
     
     try {
-      process.stdout.write('Loading...');
+      process.stdout.write('🔍 Discovering files...');
       
       // Discover transcript files
       const transcriptFiles = await this.discoverTranscriptFiles();
       
-      // Parse sessions with progress
+      // Early return if no files found
+      if (transcriptFiles.length === 0) {
+        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
+        console.log('ℹ️ No transcript files found');
+        this.sessions = [];
+        return this.sessions;
+      }
+      
+      // Update status
+      process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
+      process.stdout.write(`📊 Found ${transcriptFiles.length} files, analyzing...`);
+      
+      // Parse sessions with progress (now uses parallel processing)
       this.sessions = await this.parseSessionsWithProgress(transcriptFiles);
       
-      // Sort sessions by last activity
-      this.sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+      // Sort sessions by last activity (optimize by checking if already sorted)
+      if (this.sessions.length > 1) {
+        const needsSorting = this.sessions.some((session, i) => 
+          i > 0 && new Date(session.lastActivity) > new Date(this.sessions[i-1].lastActivity)
+        );
+        
+        if (needsSorting) {
+          this.sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+        }
+      }
       
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
@@ -90,7 +110,7 @@ class SessionManager {
   }
 
   /**
-   * Scan directory for transcript files
+   * Scan directory for transcript files (optimized)
    */
   async scanDirectory(directory, depth = 0, maxDepth = 5) {
     const files = [];
@@ -103,23 +123,55 @@ class SessionManager {
     try {
       const entries = fs.readdirSync(directory, { withFileTypes: true });
       
+      // Pre-filter entries to reduce iterations
+      const transcriptFiles = [];
+      const subdirectories = [];
+      
       for (const entry of entries) {
         // Skip hidden directories and common ignored directories
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || 
-            entry.name === 'venv' || entry.name === '__pycache__') {
+        if (entry.name.startsWith('.') || 
+            entry.name === 'node_modules' || 
+            entry.name === 'venv' || 
+            entry.name === '__pycache__' ||
+            entry.name === 'dist' ||
+            entry.name === 'build') {
           continue;
         }
         
         const fullPath = path.join(directory, entry.name);
         
         if (entry.isDirectory()) {
-          // Recursively scan subdirectories
-          const subFiles = await this.scanDirectory(fullPath, depth + 1, maxDepth);
-          files.push(...subFiles);
+          subdirectories.push(fullPath);
         } else if (entry.name.endsWith(config.filesystem.transcriptExtension)) {
-          files.push(fullPath);
+          transcriptFiles.push(fullPath);
         }
       }
+      
+      // Add transcript files first (immediate results)
+      files.push(...transcriptFiles);
+      
+      // Early termination: if we found transcript files at depth 0-1, 
+      // and no subdirectories suggest deeper structure, skip deep recursion
+      if (depth <= 1 && transcriptFiles.length > 0 && subdirectories.length === 0) {
+        return files;
+      }
+      
+      // Process subdirectories in parallel for better performance
+      if (subdirectories.length > 0) {
+        // Use Promise.all but limit concurrency to avoid overwhelming the filesystem
+        const MAX_CONCURRENT_DIRS = 5;
+        
+        for (let i = 0; i < subdirectories.length; i += MAX_CONCURRENT_DIRS) {
+          const batch = subdirectories.slice(i, i + MAX_CONCURRENT_DIRS);
+          const batchPromises = batch.map(subDir => 
+            this.scanDirectory(subDir, depth + 1, maxDepth).catch(() => [])
+          );
+          
+          const batchResults = await Promise.all(batchPromises);
+          batchResults.forEach(subFiles => files.push(...subFiles));
+        }
+      }
+      
     } catch (error) {
       // Skip inaccessible directories
     }
@@ -128,37 +180,47 @@ class SessionManager {
   }
 
   /**
-   * Parse sessions with progress updates
+   * Parse sessions with progress updates (optimized with parallel processing)
    */
   async parseSessionsWithProgress(transcriptFiles) {
-    const sessions = [];
+    if (transcriptFiles.length === 0) return [];
     
-    for (let i = 0; i < transcriptFiles.length; i++) {
-      const file = transcriptFiles[i];
-      const progress = Math.round((i / transcriptFiles.length) * 100);
+    // Process files in batches to avoid overwhelming the system
+    const BATCH_SIZE = 10;
+    const sessions = [];
+    let processed = 0;
+    
+    process.stdout.write('📊 Analyzing sessions... ');
+    
+    // Process files in batches for better performance
+    for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
+      const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
       
-      // Show simple progress bar only
-      if (i === 0) {
-        process.stdout.write('📊 Analyzing sessions... ');
-      }
+      // Process batch in parallel
+      const batchPromises = batch.map(file => 
+        this.parseTranscriptFile(file).catch(() => null) // Return null for errors
+      );
       
-      // Update progress bar
-      const barWidth = 30;
-      const filled = Math.round((progress / 100) * barWidth);
-      const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-      const progressText = `📊 Analyzing sessions... [${bar}] ${progress}%`;
+      const batchResults = await Promise.all(batchPromises);
       
-      // Clear line and write progress
-      process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-      process.stdout.write(progressText);
+      // Add successful results
+      batchResults.forEach(session => {
+        if (session) sessions.push(session);
+      });
       
-      try {
-        const session = await this.parseTranscriptFile(file);
-        if (session) {
-          sessions.push(session);
-        }
-      } catch (error) {
-        // Silently skip error files
+      processed += batch.length;
+      const progress = Math.round((processed / transcriptFiles.length) * 100);
+      
+      // Update progress less frequently for better performance
+      if (progress % 10 === 0 || processed === transcriptFiles.length) {
+        const barWidth = 20;
+        const filled = Math.round((progress / 100) * barWidth);
+        const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+        const progressText = `📊 Analyzing sessions... [${bar}] ${progress}%`;
+        
+        // Clear line and write progress
+        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
+        process.stdout.write(progressText);
       }
     }
     
@@ -167,7 +229,7 @@ class SessionManager {
   }
 
   /**
-   * Parse a single transcript file
+   * Parse a single transcript file (optimized)
    */
   async parseTranscriptFile(filePath) {
     try {
@@ -176,12 +238,15 @@ class SessionManager {
       
       if (lines.length === 0) return null;
       
-      // Parse JSON lines
+      // Parse JSON lines with improved error handling
       const entries = [];
+      let firstEntry = null;
+      
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
           entries.push(entry);
+          if (!firstEntry) firstEntry = entry; // Store first entry for metadata extraction
         } catch (error) {
           continue; // Skip malformed lines
         }
@@ -189,10 +254,13 @@ class SessionManager {
       
       if (entries.length === 0) return null;
       
-      // Extract session metadata
+      // Extract session metadata (use cached first entry)
       const sessionId = this.extractSessionId(entries);
-      const fullSessionId = this.extractFullSessionId(filePath); // Get full ID from filename
+      const fullSessionId = this.extractFullSessionId(filePath);
       const projectName = this.extractProjectName(entries, filePath);
+      
+      // Extract project path efficiently using cached first entry
+      const projectPath = this.extractProjectPathOptimized(filePath, projectName, firstEntry);
       
       // Build conversation pairs
       const conversationPairs = this.buildConversationPairs(entries);
@@ -207,9 +275,9 @@ class SessionManager {
       
       return {
         sessionId,
-        fullSessionId: fullSessionId || sessionId, // Use full ID if available
+        fullSessionId: fullSessionId || sessionId,
         projectName,
-        projectPath: this.extractProjectPath(filePath, projectName), // Add project path
+        projectPath,
         filePath,
         conversationPairs,
         totalConversations: conversationPairs.length,
@@ -264,7 +332,20 @@ class SessionManager {
   }
 
   /**
-   * Extract project path from file path and project name
+   * Extract project path from file path and project name (optimized)
+   */
+  extractProjectPathOptimized(filePath, projectName, firstEntry) {
+    // Use cached first entry if available
+    if (firstEntry && firstEntry.cwd) {
+      return firstEntry.cwd;
+    }
+    
+    // Fallback to original logic without file I/O
+    return this.extractProjectPathFallback(filePath, projectName);
+  }
+
+  /**
+   * Extract project path from file path and project name (original method)
    */
   extractProjectPath(filePath, projectName) {
     try {
@@ -284,7 +365,14 @@ class SessionManager {
       console.debug('Could not extract cwd from file:', error.message);
     }
     
-    // Fallback: Special handling for .claude/projects/ pattern
+    return this.extractProjectPathFallback(filePath, projectName);
+  }
+
+  /**
+   * Fallback method for extracting project path without file I/O
+   */
+  extractProjectPathFallback(filePath, projectName) {
+    // Special handling for .claude/projects/ pattern
     if (filePath.includes('/.claude/projects/')) {
       const filename = path.basename(filePath);
       const nameWithoutExt = filename.replace('.jsonl', '');
