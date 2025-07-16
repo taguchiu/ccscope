@@ -3350,7 +3350,7 @@ class ViewRenderer {
   /**
    * Render daily statistics
    */
-  renderDailyStatistics(dailyStats) {
+  renderDailyStatistics(dailyStatsResult) {
     console.clear();
     
     const title = '📊 Daily Conversation Statistics';
@@ -3358,10 +3358,12 @@ class ViewRenderer {
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log();
     
-    if (!dailyStats || dailyStats.days.length === 0) {
+    if (!dailyStatsResult || !dailyStatsResult.dailyStats || dailyStatsResult.dailyStats.length === 0) {
       console.log(this.theme.formatMuted('No sessions found'));
       return;
     }
+    
+    const dailyStats = dailyStatsResult.dailyStats;
     
     // Header
     const header = 'Date       Sessions  Conversations  Duration    Avg Duration  Tools';
@@ -3369,23 +3371,32 @@ class ViewRenderer {
     console.log(this.theme.formatSeparator(header.length));
     
     // Data rows
-    dailyStats.days.forEach(day => {
+    dailyStats.forEach(day => {
+      const avgDuration = day.conversationCount > 0 ? 
+        Math.round(day.totalDuration / day.conversationCount) : 0;
+      
       const row = [
         day.date.padEnd(10),
         String(day.sessionCount).padStart(8),
         String(day.conversationCount).padStart(13),
         this.theme.formatDuration(day.totalDuration).padStart(10),
-        this.theme.formatDuration(day.avgDuration).padStart(12),
+        this.theme.formatDuration(avgDuration).padStart(12),
         String(day.toolUsageCount).padStart(6)
       ].join('  ');
       
       console.log(row);
     });
     
+    // Calculate totals
+    const totalConversations = dailyStats.reduce((sum, day) => sum + day.conversationCount, 0);
+    const totalDuration = dailyStats.reduce((sum, day) => sum + day.totalDuration, 0);
+    const totalTools = dailyStats.reduce((sum, day) => sum + day.toolUsageCount, 0);
+    
     // Summary
     console.log();
     console.log(this.theme.formatSeparator(header.length));
-    console.log(this.theme.formatInfo(`Total: ${dailyStats.totalSessions} sessions, ${dailyStats.totalConversations} conversations`));
+    console.log(this.theme.formatInfo(`Total: ${dailyStatsResult.totalSessions} sessions, ${totalConversations} conversations, ${totalTools} tool uses`));
+    console.log(this.theme.formatInfo(`Total Duration: ${this.theme.formatDuration(totalDuration)}`));
   }
 
   /**
@@ -3399,34 +3410,50 @@ class ViewRenderer {
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log();
     
-    if (!projectStats || projectStats.projects.length === 0) {
+    if (!projectStats || !Array.isArray(projectStats) || projectStats.length === 0) {
       console.log(this.theme.formatMuted('No projects found'));
       return;
     }
     
     // Header
-    const header = 'Project                           Sessions  Conv.  Duration    Thinking';
+    const header = 'Project                           Sessions  Conv.  Duration    Tools  Thinking Time';
     console.log(this.theme.formatAccent(header));
     console.log(this.theme.formatSeparator(header.length));
     
     // Data rows
-    projectStats.projects.forEach(project => {
-      const projectName = this.theme.truncate(project.name || 'Unknown', 32);
+    projectStats.forEach(project => {
+      const projectName = project.project || 'Unknown';
+      const truncatedName = projectName.length > 32 ? 
+        projectName.substring(0, 29) + '...' : projectName;
+        
+      // Calculate average thinking rate if available
+      const avgThinkingRate = project.thinkingRates && project.thinkingRates.length > 0 ?
+        project.thinkingRates.reduce((sum, rate) => sum + rate, 0) / project.thinkingRates.length : 0;
+      
       const row = [
-        projectName.padEnd(32),
+        truncatedName.padEnd(32),
         String(project.sessionCount).padStart(8),
         String(project.conversationCount).padStart(6),
         this.theme.formatDuration(project.totalDuration).padStart(10),
-        this.theme.formatThinkingRate(project.avgThinkingRate).padStart(8)
+        String(project.toolUsageCount).padStart(6),
+        this.theme.formatDuration(project.thinkingTime).padStart(14)
       ].join('  ');
       
       console.log(row);
     });
     
+    // Calculate totals
+    const totalSessions = projectStats.reduce((sum, p) => sum + p.sessionCount, 0);
+    const totalConversations = projectStats.reduce((sum, p) => sum + p.conversationCount, 0);
+    const totalDuration = projectStats.reduce((sum, p) => sum + p.totalDuration, 0);
+    const totalTools = projectStats.reduce((sum, p) => sum + p.toolUsageCount, 0);
+    const totalThinkingTime = projectStats.reduce((sum, p) => sum + p.thinkingTime, 0);
+    
     // Summary
     console.log();
     console.log(this.theme.formatSeparator(header.length));
-    console.log(this.theme.formatInfo(`Total: ${projectStats.totalProjects} projects`));
+    console.log(this.theme.formatInfo(`Total: ${projectStats.length} projects, ${totalSessions} sessions, ${totalConversations} conversations`));
+    console.log(this.theme.formatInfo(`Total Duration: ${this.theme.formatDuration(totalDuration)}, Tools: ${totalTools}, Thinking: ${this.theme.formatDuration(totalThinkingTime)}`));
   }
 
 }
