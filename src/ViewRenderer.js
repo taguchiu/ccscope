@@ -3235,6 +3235,118 @@ class ViewRenderer {
     return truncated;
   }
 
+  /**
+   * Format session summary with metrics
+   */
+  formatSessionSummary(session) {
+    if (!session) return '';
+    
+    const lines = [];
+    
+    if (session.metrics) {
+      if (session.metrics.totalThinkingTime) {
+        lines.push(`Thinking time: ${this.theme.formatDuration(session.metrics.totalThinkingTime)}`);
+      }
+      if (session.metrics.avgThinkingRatio !== undefined) {
+        lines.push(`Thinking ratio: ${this.theme.formatThinkingRate(session.metrics.avgThinkingRatio)}`);
+      }
+      if (session.metrics.totalResponseTime) {
+        lines.push(`Total response time: ${this.theme.formatDuration(session.metrics.totalResponseTime)}`);
+      }
+    }
+    
+    return lines.join(' | ');
+  }
+
+  /**
+   * Create progress indicator
+   */
+  createProgressIndicator(current, total) {
+    return this.theme.createProgressBar(current, total, 20);
+  }
+
+  /**
+   * Render keyboard shortcut help
+   */
+  renderKeyboardHelp(view) {
+    const shortcuts = {
+      'session_list': [
+        { key: '↑/↓ j/k', desc: 'Navigate' },
+        { key: 'Enter', desc: 'View details' },
+        { key: '/', desc: 'Search' },
+        { key: 'f', desc: 'Filter' },
+        { key: 's', desc: 'Sort' },
+        { key: 'r', desc: 'Resume session' },
+        { key: 'q', desc: 'Quit' }
+      ],
+      'conversation_detail': [
+        { key: '↑/↓ j/k', desc: 'Navigate' },
+        { key: 'Enter', desc: 'View full' },
+        { key: '←/→ h/l', desc: 'Previous/Next session' },
+        { key: 'Esc', desc: 'Back' },
+        { key: 's', desc: 'Sort conversations' }
+      ],
+      'full_detail': [
+        { key: '↑/↓ j/k', desc: 'Scroll' },
+        { key: 'PgUp/PgDn', desc: 'Page scroll' },
+        { key: 'Home/End', desc: 'Top/Bottom' },
+        { key: 'Ctrl+R', desc: 'Toggle tools' },
+        { key: 'Esc', desc: 'Back' }
+      ]
+    };
+    
+    const lines = [];
+    const shortcutList = shortcuts[view] || [];
+    
+    shortcutList.forEach(item => {
+      lines.push(`${this.theme.formatAccent(item.key.padEnd(15))} ${item.desc}`);
+    });
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Render status bar
+   */
+  renderStatusBar(status) {
+    const parts = [];
+    
+    if (status.mode) {
+      parts.push(`Mode: ${status.mode}`);
+    }
+    
+    if (status.message) {
+      parts.push(status.message);
+    }
+    
+    if (status.progress) {
+      parts.push(`${status.progress.current}/${status.progress.total}`);
+    }
+    
+    return this.theme.formatInfo(parts.join(' | '));
+  }
+
+  /**
+   * Render error message
+   */
+  renderError(error) {
+    if (error instanceof Error) {
+      return this.theme.formatError(`Error: ${error.message}`);
+    } else {
+      return this.theme.formatError(`Error: ${error}`);
+    }
+  }
+
+  /**
+   * Get content height for scrolling
+   */
+  getContentHeight() {
+    const headerLines = 8;
+    const footerLines = 10;
+    const buffer = 2;
+    return Math.max(1, this.terminalHeight - headerLines - footerLines - buffer);
+  }
+
 }
 
 module.exports = ViewRenderer;

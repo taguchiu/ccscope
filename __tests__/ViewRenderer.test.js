@@ -89,7 +89,8 @@ describe('ViewRenderer', () => {
       formatToolCount: jest.fn(count => `${count}t`),
       stripAnsiCodes: jest.fn(text => text.replace(/\x1b\[[0-9;]*m/g, '')),
       formatSelection: jest.fn((text, isSelected) => isSelected ? `[SELECTED] ${text}` : text),
-      truncateWithWidth: jest.fn((text, width) => text.substring(0, width))
+      truncateWithWidth: jest.fn((text, width) => text.substring(0, width)),
+      createProgressBar: jest.fn((current, total, width) => `[${current}/${total}]`)
     };
 
     mockStateManager = {
@@ -894,7 +895,7 @@ describe('ViewRenderer', () => {
       }).not.toThrow();
     });
 
-    test.skip('handles session summary formatting', () => {
+    test('handles session summary formatting', () => {
       const session = {
         ...createMockSessionData(),
         metrics: {
@@ -909,12 +910,12 @@ describe('ViewRenderer', () => {
       expect(mockThemeManager.formatThinkingRate).toHaveBeenCalled();
     });
 
-    test.skip('handles progress indicators', () => {
+    test('handles progress indicators', () => {
       const progress = viewRenderer.createProgressIndicator(7, 10);
-      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0.7, 20);
+      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(7, 10, 20);
       
       const emptyProgress = viewRenderer.createProgressIndicator(0, 0);
-      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0, 20);
+      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0, 0, 20);
     });
 
     test('handles conversation list rendering with various states', () => {
@@ -936,7 +937,7 @@ describe('ViewRenderer', () => {
       expect(console.log).toHaveBeenCalled();
     });
 
-    test.skip('handles keyboard shortcut help', () => {
+    test('handles keyboard shortcut help', () => {
       viewRenderer.renderKeyboardHelp('session_list');
       expect(mockThemeManager.formatAccent).toHaveBeenCalled();
       
@@ -947,7 +948,7 @@ describe('ViewRenderer', () => {
       expect(mockThemeManager.formatAccent).toHaveBeenCalled();
     });
 
-    test.skip('handles status bar rendering', () => {
+    test('handles status bar rendering', () => {
       const status = {
         mode: 'normal',
         message: 'Ready',
@@ -958,7 +959,7 @@ describe('ViewRenderer', () => {
       expect(mockThemeManager.formatInfo).toHaveBeenCalled();
     });
 
-    test.skip('handles error message formatting', () => {
+    test('handles error message formatting', () => {
       const error = new Error('Test error message');
       viewRenderer.renderError(error);
       expect(mockThemeManager.formatError).toHaveBeenCalled();
@@ -1108,7 +1109,7 @@ describe('ViewRenderer', () => {
       process.stdout.rows = originalRows;
     });
 
-    test.skip('handles content height calculation', () => {
+    test('handles content height calculation', () => {
       // Test content height with different terminal sizes
       viewRenderer.terminalHeight = 30;
       const contentHeight1 = viewRenderer.getContentHeight();
