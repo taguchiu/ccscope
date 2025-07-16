@@ -3416,7 +3416,7 @@ class ViewRenderer {
     }
     
     // Header
-    const header = 'Project                           Sessions  Conv.  Duration    Tools  Thinking Time';
+    const header = 'Project                           Sessions  Conv.  Duration    Tools';
     console.log(this.theme.formatAccent(header));
     console.log(this.theme.formatSeparator(header.length));
     
@@ -3426,17 +3426,13 @@ class ViewRenderer {
       const truncatedName = projectName.length > 32 ? 
         projectName.substring(0, 29) + '...' : projectName;
         
-      // Calculate average thinking rate if available
-      const avgThinkingRate = project.thinkingRates && project.thinkingRates.length > 0 ?
-        project.thinkingRates.reduce((sum, rate) => sum + rate, 0) / project.thinkingRates.length : 0;
       
       const row = [
         truncatedName.padEnd(32),
         String(project.sessionCount).padStart(8),
         String(project.conversationCount).padStart(6),
         this.theme.formatDuration(project.totalDuration).padStart(10),
-        String(project.toolUsageCount).padStart(6),
-        this.theme.formatDuration(project.thinkingTime).padStart(14)
+        String(project.toolUsageCount).padStart(6)
       ].join('  ');
       
       console.log(row);
@@ -3447,13 +3443,12 @@ class ViewRenderer {
     const totalConversations = projectStats.reduce((sum, p) => sum + p.conversationCount, 0);
     const totalDuration = projectStats.reduce((sum, p) => sum + p.totalDuration, 0);
     const totalTools = projectStats.reduce((sum, p) => sum + p.toolUsageCount, 0);
-    const totalThinkingTime = projectStats.reduce((sum, p) => sum + p.thinkingTime, 0);
     
     // Summary
     console.log();
     console.log(this.theme.formatSeparator(header.length));
     console.log(this.theme.formatInfo(`Total: ${projectStats.length} projects, ${totalSessions} sessions, ${totalConversations} conversations`));
-    console.log(this.theme.formatInfo(`Total Duration: ${this.theme.formatDuration(totalDuration)}, Tools: ${totalTools}, Thinking: ${this.theme.formatDuration(totalThinkingTime)}`));
+    console.log(this.theme.formatInfo(`Total Duration: ${this.theme.formatDuration(totalDuration)}, Tools: ${totalTools}`));
   }
 
 }
