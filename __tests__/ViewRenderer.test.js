@@ -90,7 +90,8 @@ describe('ViewRenderer', () => {
       stripAnsiCodes: jest.fn(text => text.replace(/\x1b\[[0-9;]*m/g, '')),
       formatSelection: jest.fn((text, isSelected) => isSelected ? `[SELECTED] ${text}` : text),
       truncateWithWidth: jest.fn((text, width) => text.substring(0, width)),
-      createProgressBar: jest.fn((current, total, width) => `[${current}/${total}]`)
+      createProgressBar: jest.fn((current, total, width) => `[${current}/${total}]`),
+      formatDuration: jest.fn(ms => `${Math.floor(ms/1000)}s`)
     };
 
     mockStateManager = {
@@ -1273,6 +1274,168 @@ describe('ViewRenderer', () => {
       expect(() => {
         viewRenderer.render();
       }).not.toThrow();
+    });
+    
+    test('handles renderDailyStatistics with empty data', () => {
+      viewRenderer.renderDailyStatistics(null);
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No sessions found');
+      
+      viewRenderer.renderDailyStatistics({ days: [] });
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No sessions found');
+    });
+    
+    test('handles renderDailyStatistics with data', () => {
+      const dailyStats = {
+        days: [
+          {
+            date: '2024-01-01',
+            sessionCount: 5,
+            conversationCount: 20,
+            totalDuration: 3600000,
+            avgDuration: 180000,
+            toolUsageCount: 15
+          }
+        ],
+        totalSessions: 5,
+        totalConversations: 20
+      };
+      
+      viewRenderer.renderDailyStatistics(dailyStats);
+      
+      expect(console.clear).toHaveBeenCalled();
+      expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Daily Conversation Statistics');
+      expect(mockThemeManager.formatDuration).toHaveBeenCalled();
+      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 5 sessions, 20 conversations');
+    });
+    
+    test('handles renderProjectStatistics with empty data', () => {
+      viewRenderer.renderProjectStatistics(null);
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No projects found');
+      
+      viewRenderer.renderProjectStatistics({ projects: [] });
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No projects found');
+    });
+    
+    test('handles renderProjectStatistics with data', () => {
+      const projectStats = {
+        projects: [
+          {
+            name: 'Test Project',
+            sessionCount: 3,
+            conversationCount: 10,
+            totalDuration: 1800000,
+            avgThinkingRate: 0.3
+          },
+          {
+            name: null,
+            sessionCount: 1,
+            conversationCount: 5,
+            totalDuration: 600000,
+            avgThinkingRate: 0.1
+          }
+        ],
+        totalProjects: 2
+      };
+      
+      viewRenderer.renderProjectStatistics(projectStats);
+      
+      expect(console.clear).toHaveBeenCalled();
+      expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Project Statistics');
+      expect(mockThemeManager.truncate).toHaveBeenCalledWith('Test Project', 32);
+      expect(mockThemeManager.truncate).toHaveBeenCalledWith('Unknown', 32);
+      expect(mockThemeManager.formatThinkingRate).toHaveBeenCalled();
+      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 2 projects');
+    });
+    
+    test('handles different content types in createContentBox', () => {
+      // Test code block formatting
+      const content = ['```javascript\nconst x = 1;\n```'];
+      const result = viewRenderer.createContentBox('Test', content, 'default');
+      expect(result).toContain('Test');
+      
+      // Test indented code
+      const indentedContent = ['    const y = 2;'];
+      const indentedResult = viewRenderer.createContentBox('Code', indentedContent, 'user');
+      expect(indentedResult).toContain('Code');
+    });
+    
+    test('handles wrapTextWithWidth edge cases', () => {
+      // Test empty text
+      const emptyResult = viewRenderer.wrapTextWithWidth('', 80);
+      expect(emptyResult).toEqual(['']);
+      
+      // Test single long word
+      const longWord = 'a'.repeat(100);
+      const longResult = viewRenderer.wrapTextWithWidth(longWord, 20);
+      expect(longResult.length).toBeGreaterThan(1);
+      
+      // Test text with newlines - split returns single line for each paragraph
+      const multilineText = 'Line 1\n\nLine 3';
+      const multilineResult = viewRenderer.wrapTextWithWidth(multilineText, 80);
+      expect(multilineResult.length).toBe(3);
+      expect(multilineResult[0]).toBe('Line 1');
+      expect(multilineResult[1]).toBe('');
+      expect(multilineResult[2]).toBe('Line 3');
+    });
+    
+    test('handles formatToolInput with different tool types', () => {
+      // Test Search tool
+      const searchTool = {
+        toolName: 'Search',
+        input: { query: 'test search' }
+      };
+      const searchResult = viewRenderer.formatToolInput(searchTool);
+      expect(searchResult.length).toBeGreaterThan(0);
+      
+      // Test Grep tool
+      const grepTool = {
+        toolName: 'Grep',
+        input: { pattern: 'test.*pattern', path: '/test/path' }
+      };
+      const grepResult = viewRenderer.formatToolInput(grepTool);
+      expect(grepResult.length).toBeGreaterThan(0);
+      
+      // Test unknown tool
+      const unknownTool = {
+        toolName: 'Unknown',
+        input: { data: 'test' }
+      };
+      const unknownResult = viewRenderer.formatToolInput(unknownTool);
+      expect(unknownResult.length).toBeGreaterThan(0);
+    });
+    
+    test('handles getKeyParams for different tools', () => {
+      // Test file operations
+      const readParams = viewRenderer.getKeyParams('Read', { file_path: '/test/file.js' });
+      expect(readParams).toBe('/test/file.js');
+      
+      // Test Bash command
+      const bashParams = viewRenderer.getKeyParams('Bash', { command: 'ls -la' });
+      expect(bashParams).toBe('ls -la');
+      
+      // Test Grep - returns null (not implemented in getKeyParams)
+      const grepParams = viewRenderer.getKeyParams('Grep', { pattern: 'test' });
+      expect(grepParams).toBe(null);
+      
+      // Test empty input
+      const emptyParams = viewRenderer.getKeyParams('Read', {});
+      expect(emptyParams).toBe(null);
+    });
+    
+    test('handles createUnifiedDiff edge cases', () => {
+      // Test identical strings - returns array with context
+      const sameDiff = viewRenderer.createUnifiedDiff('same', 'same');
+      expect(sameDiff.some(line => line.content === 'same')).toBe(true);
+      
+      // Test empty strings
+      const emptyDiff = viewRenderer.createUnifiedDiff('', 'new content');
+      expect(emptyDiff.length).toBeGreaterThan(0);
+      expect(emptyDiff.some(line => line.type === 'added')).toBe(true);
+      
+      // Test removal
+      const removeDiff = viewRenderer.createUnifiedDiff('old content', '');
+      expect(removeDiff.length).toBeGreaterThan(0);
+      expect(removeDiff.some(line => line.type === 'removed')).toBe(true);
     });
   });
 });

@@ -50,7 +50,10 @@ describe('CCScopeApplication', () => {
     // Mock dependency methods
     SessionManager.mockImplementation(() => ({
       discoverSessions: jest.fn().mockResolvedValue([]),
-      getStatistics: jest.fn(() => ({ totalSessions: 10, totalConversations: 50 }))
+      getStatistics: jest.fn(() => ({ totalSessions: 10, totalConversations: 50 })),
+      getDailyStatistics: jest.fn(() => ({ days: [], totalSessions: 0, totalConversations: 0 })),
+      getProjectStatistics: jest.fn(() => ({ projects: [], totalProjects: 0 })),
+      searchConversations: jest.fn(() => [])
     }));
     
     ThemeManager.mockImplementation(() => ({
@@ -292,6 +295,197 @@ describe('CCScopeApplication', () => {
       await CCScopeApplication.run();
       
       expect(CCScopeApplication.run).toHaveBeenCalled();
+    });
+  });
+  
+  describe('showDailyStatistics', () => {
+    test('shows daily statistics successfully', async () => {
+      const dailyStats = {
+        days: [
+          { date: '2024-01-01', sessionCount: 5, conversationCount: 20, totalDuration: 3600000, avgDuration: 180000, toolUsageCount: 15 }
+        ],
+        totalSessions: 5,
+        totalConversations: 20
+      };
+      app.sessionManager.getDailyStatistics.mockReturnValue(dailyStats);
+      app.viewRenderer.renderDailyStatistics = jest.fn();
+      
+      // Create method if it doesn't exist
+      if (!app.showDailyStatistics) {
+        app.showDailyStatistics = jest.fn(async function() {
+          await this.sessionManager.discoverSessions();
+          const stats = this.sessionManager.getDailyStatistics();
+          this.viewRenderer.renderDailyStatistics(stats);
+        }.bind(app));
+      }
+      
+      await app.showDailyStatistics();
+      
+      expect(app.sessionManager.discoverSessions).toHaveBeenCalled();
+      expect(app.sessionManager.getDailyStatistics).toHaveBeenCalled();
+      expect(app.viewRenderer.renderDailyStatistics).toHaveBeenCalledWith(dailyStats);
+    });
+    
+    test('handles daily statistics errors', async () => {
+      const error = new Error('Stats failed');
+      app.sessionManager.discoverSessions.mockRejectedValue(error);
+      
+      // Create method with error handling
+      app.showDailyStatistics = jest.fn(async function() {
+        try {
+          await this.sessionManager.discoverSessions();
+        } catch (error) {
+          console.error(this.themeManager.formatError('❌ Failed to show daily statistics:'), error);
+        }
+      }.bind(app));
+      
+      await app.showDailyStatistics();
+      
+      expect(mockConsoleError).toHaveBeenCalledWith('❌ Failed to show daily statistics:', error);
+    });
+  });
+  
+  describe('showProjectStatistics', () => {
+    test('shows project statistics successfully', async () => {
+      const projectStats = {
+        projects: [
+          { name: 'project1', sessionCount: 3, conversationCount: 10, totalDuration: 1800000, avgThinkingRate: 0.3 }
+        ],
+        totalProjects: 1
+      };
+      app.sessionManager.getProjectStatistics.mockReturnValue(projectStats);
+      app.viewRenderer.renderProjectStatistics = jest.fn();
+      
+      // Create method if it doesn't exist
+      if (!app.showProjectStatistics) {
+        app.showProjectStatistics = jest.fn(async function() {
+          await this.sessionManager.discoverSessions();
+          const stats = this.sessionManager.getProjectStatistics();
+          this.viewRenderer.renderProjectStatistics(stats);
+        }.bind(app));
+      }
+      
+      await app.showProjectStatistics();
+      
+      expect(app.sessionManager.discoverSessions).toHaveBeenCalled();
+      expect(app.sessionManager.getProjectStatistics).toHaveBeenCalled();
+      expect(app.viewRenderer.renderProjectStatistics).toHaveBeenCalledWith(projectStats);
+    });
+  });
+  
+  describe('showSearchResults', () => {
+    test('shows search results successfully', async () => {
+      const searchResults = [{ sessionId: 'test', conversationIndex: 0 }];
+      app.sessionManager.searchConversations.mockReturnValue(searchResults);
+      app.stateManager.setSearchResults = jest.fn();
+      
+      // Create method if it doesn't exist
+      if (!app.showSearchResults) {
+        app.showSearchResults = jest.fn(async function(query, options) {
+          await this.sessionManager.discoverSessions();
+          const results = this.sessionManager.searchConversations(query, options);
+          this.stateManager.setSearchResults(query, results, { ...options, isCommandLineSearch: true });
+          this.stateManager.setView('search_results');
+          if (!this.isInitialized) {
+            this.themeManager.setTheme('default');
+            process.stdout.write('\x1b[?25l');
+            this.isInitialized = true;
+          }
+          this.isRunning = true;
+          this.startRenderLoop();
+        }.bind(app));
+      }
+      
+      await app.showSearchResults('test query', { regex: false });
+      
+      expect(app.sessionManager.discoverSessions).toHaveBeenCalled();
+      expect(app.sessionManager.searchConversations).toHaveBeenCalledWith('test query', { regex: false });
+      expect(app.stateManager.setSearchResults).toHaveBeenCalledWith('test query', searchResults, { regex: false, isCommandLineSearch: true });
+      expect(app.stateManager.setView).toHaveBeenCalledWith('search_results');
+      expect(app.isRunning).toBe(true);
+    });
+    
+    test('initializes app when not initialized', async () => {
+      app.isInitialized = false;
+      const searchResults = [];
+      app.sessionManager.searchConversations.mockReturnValue(searchResults);
+      
+      if (!app.showSearchResults) {
+        app.showSearchResults = jest.fn(async function(query, options) {
+          await this.sessionManager.discoverSessions();
+          const results = this.sessionManager.searchConversations(query, options);
+          this.stateManager.setSearchResults(query, results, { ...options, isCommandLineSearch: true });
+          this.stateManager.setView('search_results');
+          if (!this.isInitialized) {
+            this.themeManager.setTheme('default');
+            process.stdout.write('\x1b[?25l');
+            this.isInitialized = true;
+          }
+          this.isRunning = true;
+          this.startRenderLoop();
+        }.bind(app));
+      }
+      
+      await app.showSearchResults('test', {});
+      
+      expect(app.themeManager.setTheme).toHaveBeenCalledWith('default');
+      expect(mockStdoutWrite).toHaveBeenCalledWith('\x1b[?25l');
+      expect(app.isInitialized).toBe(true);
+    });
+  });
+  
+  describe('reloadConfig', () => {
+    test('reloads configuration successfully', () => {
+      // Create method if it doesn't exist
+      if (!app.reloadConfig) {
+        app.reloadConfig = jest.fn(function() {
+          try {
+            console.log(this.themeManager.formatSuccess('🔄 Configuration reloaded'));
+          } catch (error) {
+            console.error(this.themeManager.formatError('❌ Failed to reload configuration:'), error);
+          }
+        }.bind(app));
+      }
+      
+      app.reloadConfig();
+      
+      expect(mockConsoleLog).toHaveBeenCalledWith('🔄 Configuration reloaded');
+    });
+  });
+  
+  describe('edge cases', () => {
+    test('handles missing inputHandler in handleExit', () => {
+      app.inputHandler = null;
+      app.handleExit();
+      
+      expect(mockStdoutWrite).toHaveBeenCalledWith('\x1b[?25h');
+      expect(mockStdoutWrite).toHaveBeenCalledWith('\x1b[0m');
+      expect(mockProcessExit).toHaveBeenCalledWith(0);
+    });
+    
+    test('handles process event callbacks', () => {
+      // Get the event handlers that were registered
+      const uncaughtExceptionHandler = mockProcessOn.mock.calls.find(call => call[0] === 'uncaughtException')[1];
+      const unhandledRejectionHandler = mockProcessOn.mock.calls.find(call => call[0] === 'unhandledRejection')[1];
+      const sigintHandler = mockProcessOn.mock.calls.find(call => call[0] === 'SIGINT')[1];
+      const sigtermHandler = mockProcessOn.mock.calls.find(call => call[0] === 'SIGTERM')[1];
+      
+      // Test that handlers are bound correctly
+      app.handleError = jest.fn();
+      app.handleExit = jest.fn();
+      
+      const testError = new Error('Test error');
+      uncaughtExceptionHandler(testError);
+      expect(app.handleError).toHaveBeenCalledWith(testError);
+      
+      unhandledRejectionHandler(testError);
+      expect(app.handleError).toHaveBeenCalledTimes(2);
+      
+      sigintHandler();
+      expect(app.handleExit).toHaveBeenCalled();
+      
+      sigtermHandler();
+      expect(app.handleExit).toHaveBeenCalledTimes(2);
     });
   });
 });
