@@ -119,21 +119,21 @@ describe('CCScopeApplication', () => {
     test('initializes application successfully', async () => {
       await app.initialize();
       
-      expect(mockConsoleLog).toHaveBeenCalledWith('🚀 Starting CCScope...');
+      // No longer logs startup message
       expect(mockConsoleClear).toHaveBeenCalled();
       expect(app.sessionManager.discoverSessions).toHaveBeenCalled();
       expect(app.themeManager.setTheme).toHaveBeenCalledWith('default');
       expect(app.stateManager.resetState).toHaveBeenCalled();
       expect(mockStdoutWrite).toHaveBeenCalledWith('\x1b[?25l');
       expect(app.isInitialized).toBe(true);
-      expect(mockConsoleLog).toHaveBeenCalledWith('✅ Claude Code Scope initialized successfully');
+      // No longer logs initialization success
     });
 
     test('skips initialization if already initialized', async () => {
       app.isInitialized = true;
       await app.initialize();
       
-      expect(mockConsoleLog).not.toHaveBeenCalledWith('🚀 Starting CCScope...');
+      // No startup message to check
       expect(app.sessionManager.discoverSessions).not.toHaveBeenCalled();
     });
 
@@ -153,7 +153,7 @@ describe('CCScopeApplication', () => {
       app.showLoadingScreen();
       
       expect(mockConsoleClear).toHaveBeenCalled();
-      expect(mockStdoutWrite).toHaveBeenCalledWith('🔍 Claude Code Scope - Loading... ');
+      expect(mockStdoutWrite).toHaveBeenCalledWith('⚡ Loading... ');
     });
   });
 
@@ -208,8 +208,7 @@ describe('CCScopeApplication', () => {
       app.showWelcomeMessage();
       
       expect(mockConsoleClear).toHaveBeenCalled();
-      expect(mockConsoleLog).toHaveBeenCalledWith('🎉 Welcome to Claude Code Scope');
-      expect(mockConsoleLog).toHaveBeenCalledWith('✅ Ready: 10 sessions, 50 conversations');
+      // No longer displays welcome messages
       expect(app.viewRenderer.render).toHaveBeenCalled();
     });
   });

@@ -1280,13 +1280,13 @@ describe('ViewRenderer', () => {
       viewRenderer.renderDailyStatistics(null);
       expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No sessions found');
       
-      viewRenderer.renderDailyStatistics({ days: [] });
+      viewRenderer.renderDailyStatistics({ dailyStats: [] });
       expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No sessions found');
     });
     
     test('handles renderDailyStatistics with data', () => {
       const dailyStats = {
-        days: [
+        dailyStats: [
           {
             date: '2024-01-01',
             sessionCount: 5,
@@ -1305,46 +1305,42 @@ describe('ViewRenderer', () => {
       expect(console.clear).toHaveBeenCalled();
       expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Daily Conversation Statistics');
       expect(mockThemeManager.formatDuration).toHaveBeenCalled();
-      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 5 sessions, 20 conversations');
+      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 5 sessions, 20 conversations, 15 tool uses');
     });
     
     test('handles renderProjectStatistics with empty data', () => {
       viewRenderer.renderProjectStatistics(null);
       expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No projects found');
       
-      viewRenderer.renderProjectStatistics({ projects: [] });
+      viewRenderer.renderProjectStatistics([]);
       expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No projects found');
     });
     
     test('handles renderProjectStatistics with data', () => {
-      const projectStats = {
-        projects: [
+      const projectStats = [
           {
-            name: 'Test Project',
+            project: 'Test Project',
             sessionCount: 3,
             conversationCount: 10,
             totalDuration: 1800000,
-            avgThinkingRate: 0.3
+            toolUsageCount: 25
           },
           {
-            name: null,
+            project: null,
             sessionCount: 1,
             conversationCount: 5,
             totalDuration: 600000,
-            avgThinkingRate: 0.1
+            toolUsageCount: 10
           }
-        ],
-        totalProjects: 2
-      };
+        ];
       
       viewRenderer.renderProjectStatistics(projectStats);
       
       expect(console.clear).toHaveBeenCalled();
       expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Project Statistics');
-      expect(mockThemeManager.truncate).toHaveBeenCalledWith('Test Project', 32);
-      expect(mockThemeManager.truncate).toHaveBeenCalledWith('Unknown', 32);
-      expect(mockThemeManager.formatThinkingRate).toHaveBeenCalled();
-      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 2 projects');
+      // Project stats now displayed differently
+      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 2 projects, 4 sessions, 15 conversations');
+      expect(mockThemeManager.formatDuration).toHaveBeenCalled();
     });
     
     test('handles different content types in createContentBox', () => {
