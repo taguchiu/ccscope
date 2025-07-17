@@ -3235,6 +3235,222 @@ class ViewRenderer {
     return truncated;
   }
 
+  /**
+   * Format session summary with metrics
+   */
+  formatSessionSummary(session) {
+    if (!session) return '';
+    
+    const lines = [];
+    
+    if (session.metrics) {
+      if (session.metrics.totalThinkingTime) {
+        lines.push(`Thinking time: ${this.theme.formatDuration(session.metrics.totalThinkingTime)}`);
+      }
+      if (session.metrics.avgThinkingRatio !== undefined) {
+        lines.push(`Thinking ratio: ${this.theme.formatThinkingRate(session.metrics.avgThinkingRatio)}`);
+      }
+      if (session.metrics.totalResponseTime) {
+        lines.push(`Total response time: ${this.theme.formatDuration(session.metrics.totalResponseTime)}`);
+      }
+    }
+    
+    return lines.join(' | ');
+  }
+
+  /**
+   * Create progress indicator
+   */
+  createProgressIndicator(current, total) {
+    return this.theme.createProgressBar(current, total, 20);
+  }
+
+  /**
+   * Render keyboard shortcut help
+   */
+  renderKeyboardHelp(view) {
+    const shortcuts = {
+      'session_list': [
+        { key: '↑/↓ j/k', desc: 'Navigate' },
+        { key: 'Enter', desc: 'View details' },
+        { key: '/', desc: 'Search' },
+        { key: 'f', desc: 'Filter' },
+        { key: 's', desc: 'Sort' },
+        { key: 'r', desc: 'Resume session' },
+        { key: 'q', desc: 'Quit' }
+      ],
+      'conversation_detail': [
+        { key: '↑/↓ j/k', desc: 'Navigate' },
+        { key: 'Enter', desc: 'View full' },
+        { key: '←/→ h/l', desc: 'Previous/Next session' },
+        { key: 'Esc', desc: 'Back' },
+        { key: 's', desc: 'Sort conversations' }
+      ],
+      'full_detail': [
+        { key: '↑/↓ j/k', desc: 'Scroll' },
+        { key: 'PgUp/PgDn', desc: 'Page scroll' },
+        { key: 'Home/End', desc: 'Top/Bottom' },
+        { key: 'Ctrl+R', desc: 'Toggle tools' },
+        { key: 'Esc', desc: 'Back' }
+      ]
+    };
+    
+    const lines = [];
+    const shortcutList = shortcuts[view] || [];
+    
+    shortcutList.forEach(item => {
+      lines.push(`${this.theme.formatAccent(item.key.padEnd(15))} ${item.desc}`);
+    });
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Render status bar
+   */
+  renderStatusBar(status) {
+    const parts = [];
+    
+    if (status.mode) {
+      parts.push(`Mode: ${status.mode}`);
+    }
+    
+    if (status.message) {
+      parts.push(status.message);
+    }
+    
+    if (status.progress) {
+      parts.push(`${status.progress.current}/${status.progress.total}`);
+    }
+    
+    return this.theme.formatInfo(parts.join(' | '));
+  }
+
+  /**
+   * Render error message
+   */
+  renderError(error) {
+    if (error instanceof Error) {
+      return this.theme.formatError(`Error: ${error.message}`);
+    } else {
+      return this.theme.formatError(`Error: ${error}`);
+    }
+  }
+
+  /**
+   * Get content height for scrolling
+   */
+  getContentHeight() {
+    const headerLines = 8;
+    const footerLines = 10;
+    const buffer = 2;
+    return Math.max(1, this.terminalHeight - headerLines - footerLines - buffer);
+  }
+
+  /**
+   * Render daily statistics
+   */
+  renderDailyStatistics(dailyStatsResult) {
+    console.clear();
+    
+    const title = '📊 Daily Conversation Statistics';
+    console.log(this.theme.formatHeader(title));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log();
+    
+    if (!dailyStatsResult || !dailyStatsResult.dailyStats || dailyStatsResult.dailyStats.length === 0) {
+      console.log(this.theme.formatMuted('No sessions found'));
+      return;
+    }
+    
+    const dailyStats = dailyStatsResult.dailyStats;
+    
+    // Header
+    const header = 'Date       Sessions  Conversations  Duration    Avg Duration  Tools';
+    console.log(this.theme.formatAccent(header));
+    console.log(this.theme.formatSeparator(header.length));
+    
+    // Data rows
+    dailyStats.forEach(day => {
+      const avgDuration = day.conversationCount > 0 ? 
+        Math.round(day.totalDuration / day.conversationCount) : 0;
+      
+      const row = [
+        day.date.padEnd(10),
+        String(day.sessionCount).padStart(8),
+        String(day.conversationCount).padStart(13),
+        this.theme.formatDuration(day.totalDuration).padStart(10),
+        this.theme.formatDuration(avgDuration).padStart(12),
+        String(day.toolUsageCount).padStart(6)
+      ].join('  ');
+      
+      console.log(row);
+    });
+    
+    // Calculate totals
+    const totalConversations = dailyStats.reduce((sum, day) => sum + day.conversationCount, 0);
+    const totalDuration = dailyStats.reduce((sum, day) => sum + day.totalDuration, 0);
+    const totalTools = dailyStats.reduce((sum, day) => sum + day.toolUsageCount, 0);
+    
+    // Summary
+    console.log();
+    console.log(this.theme.formatSeparator(header.length));
+    console.log(this.theme.formatInfo(`Total: ${dailyStatsResult.totalSessions} sessions, ${totalConversations} conversations, ${totalTools} tool uses`));
+    console.log(this.theme.formatInfo(`Total Duration: ${this.theme.formatDuration(totalDuration)}`));
+  }
+
+  /**
+   * Render project statistics
+   */
+  renderProjectStatistics(projectStats) {
+    console.clear();
+    
+    const title = '📊 Project Statistics';
+    console.log(this.theme.formatHeader(title));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log();
+    
+    if (!projectStats || !Array.isArray(projectStats) || projectStats.length === 0) {
+      console.log(this.theme.formatMuted('No projects found'));
+      return;
+    }
+    
+    // Header
+    const header = 'Project                           Sessions  Conv.  Duration    Tools';
+    console.log(this.theme.formatAccent(header));
+    console.log(this.theme.formatSeparator(header.length));
+    
+    // Data rows
+    projectStats.forEach(project => {
+      const projectName = project.project || 'Unknown';
+      const truncatedName = projectName.length > 32 ? 
+        projectName.substring(0, 29) + '...' : projectName;
+        
+      
+      const row = [
+        truncatedName.padEnd(32),
+        String(project.sessionCount).padStart(8),
+        String(project.conversationCount).padStart(6),
+        this.theme.formatDuration(project.totalDuration).padStart(10),
+        String(project.toolUsageCount).padStart(6)
+      ].join('  ');
+      
+      console.log(row);
+    });
+    
+    // Calculate totals
+    const totalSessions = projectStats.reduce((sum, p) => sum + p.sessionCount, 0);
+    const totalConversations = projectStats.reduce((sum, p) => sum + p.conversationCount, 0);
+    const totalDuration = projectStats.reduce((sum, p) => sum + p.totalDuration, 0);
+    const totalTools = projectStats.reduce((sum, p) => sum + p.toolUsageCount, 0);
+    
+    // Summary
+    console.log();
+    console.log(this.theme.formatSeparator(header.length));
+    console.log(this.theme.formatInfo(`Total: ${projectStats.length} projects, ${totalSessions} sessions, ${totalConversations} conversations`));
+    console.log(this.theme.formatInfo(`Total Duration: ${this.theme.formatDuration(totalDuration)}, Tools: ${totalTools}`));
+  }
+
 }
 
 module.exports = ViewRenderer;

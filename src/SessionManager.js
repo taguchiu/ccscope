@@ -6,6 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const CacheManager = require('./CacheManager');
+const FastParser = require('./FastParser');
 
 class SessionManager {
   constructor() {
@@ -24,10 +26,16 @@ class SessionManager {
       responseTime: null,
       dateRange: null
     };
+    
+    // Initialize cache manager
+    this.cacheManager = new CacheManager();
+    
+    // Initialize fast parser
+    this.fastParser = new FastParser();
   }
 
   /**
-   * Discover and analyze all sessions (optimized)
+   * Discover and analyze all sessions (optimized with caching)
    */
   async discoverSessions() {
     if (this.isLoading) return this.sessions;
@@ -36,35 +44,68 @@ class SessionManager {
     const startTime = Date.now();
     
     try {
-      process.stdout.write('🔍 Discovering files...');
+      // Try to load from cache first
+      const cachedData = this.cacheManager.loadCache();
       
       // Discover transcript files
       const transcriptFiles = await this.discoverTranscriptFiles();
       
       // Early return if no files found
       if (transcriptFiles.length === 0) {
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-        console.log('ℹ️ No transcript files found');
         this.sessions = [];
         return this.sessions;
       }
       
-      // Update status
-      process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-      process.stdout.write(`📊 Found ${transcriptFiles.length} files, analyzing...`);
+      let sessions = [];
+      let filesToParse = [];
+      const fileHashes = {};
       
-      // Parse sessions with progress (now uses parallel processing)
-      this.sessions = await this.parseSessionsWithProgress(transcriptFiles);
-      
-      // Sort sessions by last activity (optimize by checking if already sorted)
-      if (this.sessions.length > 1) {
-        const needsSorting = this.sessions.some((session, i) => 
-          i > 0 && new Date(session.lastActivity) > new Date(this.sessions[i-1].lastActivity)
+      if (cachedData) {
+        // Using cached data
+        
+        // Check which files need updating
+        for (const filePath of transcriptFiles) {
+          const hash = this.cacheManager.getFileHash(filePath);
+          fileHashes[filePath] = { hash };
+          
+          if (this.cacheManager.needsUpdate(filePath, cachedData.metadata)) {
+            filesToParse.push(filePath);
+          }
+        }
+        
+        // Get cached sessions that are still valid
+        const validFiles = new Set(transcriptFiles);
+        sessions = cachedData.sessions.filter(session => 
+          validFiles.has(session.filePath) && 
+          this.cacheManager.isCacheValid(session.filePath, cachedData.metadata)
         );
         
-        if (needsSorting) {
-          this.sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+        if (filesToParse.length > 0) {
+          // Updating changed files
         }
+      } else {
+        filesToParse = transcriptFiles;
+        for (const filePath of transcriptFiles) {
+          const hash = this.cacheManager.getFileHash(filePath);
+          fileHashes[filePath] = { hash };
+        }
+        // Analyzing files
+      }
+      
+      // Parse new or updated files
+      if (filesToParse.length > 0) {
+        const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0);
+        sessions = [...sessions, ...newSessions];
+      }
+      
+      // Sort sessions by last activity
+      sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+      
+      this.sessions = sessions;
+      
+      // Save to cache
+      if (sessions.length > 0) {
+        this.cacheManager.saveCache(sessions, fileHashes);
       }
       
       this.scanDuration = Date.now() - startTime;
@@ -182,24 +223,39 @@ class SessionManager {
   /**
    * Parse sessions with progress updates (optimized with parallel processing)
    */
-  async parseSessionsWithProgress(transcriptFiles) {
+  async parseSessionsWithProgress(transcriptFiles, isIncremental = false) {
     if (transcriptFiles.length === 0) return [];
     
     // Process files in batches to avoid overwhelming the system
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 20; // Increased batch size for better performance
     const sessions = [];
     let processed = 0;
     
-    process.stdout.write('📊 Analyzing sessions... ');
+    // Only show progress for significant work
+    const showProgress = false; // Disable all progress output
     
     // Process files in batches for better performance
     for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
       const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
       
       // Process batch in parallel
-      const batchPromises = batch.map(file => 
-        this.parseTranscriptFile(file).catch(() => null) // Return null for errors
-      );
+      const batchPromises = batch.map(file => {
+        // Check memory cache first
+        const cached = this.cacheManager.getFromMemoryCache(file);
+        if (cached) {
+          return Promise.resolve(cached);
+        }
+        
+        // Parse and store in memory cache
+        return this.parseTranscriptFile(file)
+          .then(session => {
+            if (session) {
+              this.cacheManager.storeInMemoryCache(file, session);
+            }
+            return session;
+          })
+          .catch(() => null); // Return null for errors
+      });
       
       const batchResults = await Promise.all(batchPromises);
       
@@ -212,11 +268,13 @@ class SessionManager {
       const progress = Math.round((processed / transcriptFiles.length) * 100);
       
       // Update progress less frequently for better performance
-      if (progress % 10 === 0 || processed === transcriptFiles.length) {
+      if (showProgress && (progress % 20 === 0 || processed === transcriptFiles.length)) {
         const barWidth = 20;
         const filled = Math.round((progress / 100) * barWidth);
         const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-        const progressText = `📊 Analyzing sessions... [${bar}] ${progress}%`;
+        const progressText = isIncremental ?
+          `🔄 Updating... [${bar}] ${progress}%` :
+          `📊 Analyzing sessions... [${bar}] ${progress}%`;
         
         // Clear line and write progress
         process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
@@ -224,33 +282,20 @@ class SessionManager {
       }
     }
     
-    console.log(); // New line after progress
+    if (showProgress) {
+      console.log(); // New line after progress
+    }
+    
     return sessions;
   }
 
   /**
-   * Parse a single transcript file (optimized)
+   * Parse a single transcript file (optimized with FastParser)
    */
   async parseTranscriptFile(filePath) {
     try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const lines = content.trim().split('\n').filter(line => line.trim());
-      
-      if (lines.length === 0) return null;
-      
-      // Parse JSON lines with improved error handling
-      const entries = [];
-      let firstEntry = null;
-      
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          entries.push(entry);
-          if (!firstEntry) firstEntry = entry; // Store first entry for metadata extraction
-        } catch (error) {
-          continue; // Skip malformed lines
-        }
-      }
+      // Use FastParser for optimized parsing
+      const { entries, firstEntry } = await this.fastParser.parseFile(filePath);
       
       if (entries.length === 0) return null;
       
@@ -682,24 +727,18 @@ class SessionManager {
    * Extract tool uses from assistant message
    */
   extractToolUses(entry) {
-    const toolUses = [];
-    if (!entry.message || !entry.message.content) return toolUses;
+    if (!entry.message || !entry.message.content) return [];
     
-    const content = Array.isArray(entry.message.content) ? 
-      entry.message.content : [entry.message.content];
+    // Use FastParser's optimized tool extraction
+    const tools = this.fastParser.extractToolUsesOptimized(entry.message.content);
     
-    for (const item of content) {
-      if (item.type === 'tool_use' && item.name) {
-        toolUses.push({
-          timestamp: new Date(entry.timestamp),
-          toolName: item.name,
-          toolId: item.id || 'unknown',
-          input: item.input || {}
-        });
-      }
-    }
-    
-    return toolUses;
+    // Transform to expected format
+    return tools.map(tool => ({
+      timestamp: this.fastParser.extractTimestamp(entry),
+      toolName: tool.name,
+      toolId: tool.id || 'unknown',
+      input: tool.input || {}
+    }));
   }
 
   /**
@@ -1112,15 +1151,10 @@ class SessionManager {
    * Generate hash for session ID
    */
   generateHash(content) {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    const hexHash = Math.abs(hash).toString(16);
+    // Use FastParser's optimized hash function
+    const hash = this.fastParser.calculateHash(content);
     // Pad with zeros to ensure at least 8 characters
-    return hexHash.padStart(8, '0');
+    return hash.padStart(8, '0');
   }
 
   /**

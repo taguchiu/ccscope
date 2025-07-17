@@ -10,6 +10,7 @@ const ThemeManager = require('./ThemeManager');
 const StateManager = require('./StateManager');
 const ViewRenderer = require('./ViewRenderer');
 const InputHandler = require('./InputHandler');
+const LoadingSpinner = require('./LoadingSpinner');
 const config = require('./config');
 
 class CCScopeApplication {
@@ -23,6 +24,9 @@ class CCScopeApplication {
     this.stateManager = new StateManager(this.sessionManager);
     this.viewRenderer = new ViewRenderer(this.sessionManager, this.themeManager, this.stateManager);
     this.inputHandler = new InputHandler(this.stateManager, this.sessionManager, this.viewRenderer, this.themeManager);
+    
+    // Initialize loading spinner
+    this.loadingSpinner = new LoadingSpinner();
     
     // Bind methods
     this.handleExit = this.handleExit.bind(this);
@@ -42,11 +46,6 @@ class CCScopeApplication {
     if (this.isInitialized) return;
     
     try {
-      console.log('🚀 Starting CCScope...');
-      
-      // Show loading screen
-      this.showLoadingScreen();
-      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
       
@@ -60,9 +59,12 @@ class CCScopeApplication {
       process.stdout.write('\x1b[?25l');
       
       this.isInitialized = true;
-      console.log('✅ Claude Code Scope initialized successfully');
+      
+      // Stop spinner
+      this.loadingSpinner.stop();
       
     } catch (error) {
+      this.loadingSpinner.stop();
       console.error('❌ Failed to initialize Claude Code Scope:', error);
       process.exit(1);
     }
@@ -73,8 +75,7 @@ class CCScopeApplication {
    */
   showLoadingScreen() {
     console.clear();
-    // Simple loading indicator
-    process.stdout.write('🔍 Claude Code Scope - Loading... ');
+    this.loadingSpinner.start('Loading');
   }
 
   /**
@@ -86,6 +87,8 @@ class CCScopeApplication {
     try {
       // Initialize if not already done
       if (!this.isInitialized) {
+        // Show loading screen before initialization
+        this.showLoadingScreen();
         await this.initialize();
       }
       
@@ -106,15 +109,8 @@ class CCScopeApplication {
    * Show welcome message
    */
   showWelcomeMessage() {
-    const stats = this.sessionManager.getStatistics();
-    
+    // Clear screen and render immediately without welcome message
     console.clear();
-    console.log(this.themeManager.formatHeader('🎉 Welcome to Claude Code Scope'));
-    console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
-    console.log('');
-    console.log(this.themeManager.formatSuccess(`✅ Ready: ${stats.totalSessions} sessions, ${stats.totalConversations} conversations`));
-    
-    // Start immediately
     this.viewRenderer.render();
   }
 
@@ -225,10 +221,12 @@ class CCScopeApplication {
       // Get daily statistics
       const dailyStatsResult = this.sessionManager.getDailyStatistics();
       
-      // Render daily statistics view
+      // Stop spinner and render
+      this.loadingSpinner.stop();
       this.viewRenderer.renderDailyStatistics(dailyStatsResult);
       
     } catch (error) {
+      this.loadingSpinner.stop();
       console.error(this.themeManager.formatError('❌ Failed to show daily statistics:'), error);
     }
   }
@@ -244,10 +242,12 @@ class CCScopeApplication {
       // Get project statistics
       const projectStats = this.sessionManager.getProjectStatistics();
       
-      // Render project statistics view
+      // Stop spinner and render
+      this.loadingSpinner.stop();
       this.viewRenderer.renderProjectStatistics(projectStats);
       
     } catch (error) {
+      this.loadingSpinner.stop();
       console.error(this.themeManager.formatError('❌ Failed to show project statistics:'), error);
     }
   }
@@ -264,6 +264,9 @@ class CCScopeApplication {
       
       // Search conversations
       const results = this.sessionManager.searchConversations(query, options);
+      
+      // Stop spinner
+      this.loadingSpinner.stop();
       
       // Store search results in state with command-line flag
       const searchOptions = { ...options, isCommandLineSearch: true };
@@ -284,6 +287,7 @@ class CCScopeApplication {
       this.startRenderLoop();
       
     } catch (error) {
+      this.loadingSpinner.stop();
       console.error(this.themeManager.formatError('❌ Failed to show search results:'), error);
     }
   }

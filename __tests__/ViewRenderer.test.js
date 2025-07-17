@@ -89,7 +89,9 @@ describe('ViewRenderer', () => {
       formatToolCount: jest.fn(count => `${count}t`),
       stripAnsiCodes: jest.fn(text => text.replace(/\x1b\[[0-9;]*m/g, '')),
       formatSelection: jest.fn((text, isSelected) => isSelected ? `[SELECTED] ${text}` : text),
-      truncateWithWidth: jest.fn((text, width) => text.substring(0, width))
+      truncateWithWidth: jest.fn((text, width) => text.substring(0, width)),
+      createProgressBar: jest.fn((current, total, width) => `[${current}/${total}]`),
+      formatDuration: jest.fn(ms => `${Math.floor(ms/1000)}s`)
     };
 
     mockStateManager = {
@@ -894,7 +896,7 @@ describe('ViewRenderer', () => {
       }).not.toThrow();
     });
 
-    test.skip('handles session summary formatting', () => {
+    test('handles session summary formatting', () => {
       const session = {
         ...createMockSessionData(),
         metrics: {
@@ -909,12 +911,12 @@ describe('ViewRenderer', () => {
       expect(mockThemeManager.formatThinkingRate).toHaveBeenCalled();
     });
 
-    test.skip('handles progress indicators', () => {
+    test('handles progress indicators', () => {
       const progress = viewRenderer.createProgressIndicator(7, 10);
-      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0.7, 20);
+      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(7, 10, 20);
       
       const emptyProgress = viewRenderer.createProgressIndicator(0, 0);
-      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0, 20);
+      expect(mockThemeManager.createProgressBar).toHaveBeenCalledWith(0, 0, 20);
     });
 
     test('handles conversation list rendering with various states', () => {
@@ -936,7 +938,7 @@ describe('ViewRenderer', () => {
       expect(console.log).toHaveBeenCalled();
     });
 
-    test.skip('handles keyboard shortcut help', () => {
+    test('handles keyboard shortcut help', () => {
       viewRenderer.renderKeyboardHelp('session_list');
       expect(mockThemeManager.formatAccent).toHaveBeenCalled();
       
@@ -947,7 +949,7 @@ describe('ViewRenderer', () => {
       expect(mockThemeManager.formatAccent).toHaveBeenCalled();
     });
 
-    test.skip('handles status bar rendering', () => {
+    test('handles status bar rendering', () => {
       const status = {
         mode: 'normal',
         message: 'Ready',
@@ -958,7 +960,7 @@ describe('ViewRenderer', () => {
       expect(mockThemeManager.formatInfo).toHaveBeenCalled();
     });
 
-    test.skip('handles error message formatting', () => {
+    test('handles error message formatting', () => {
       const error = new Error('Test error message');
       viewRenderer.renderError(error);
       expect(mockThemeManager.formatError).toHaveBeenCalled();
@@ -1108,7 +1110,7 @@ describe('ViewRenderer', () => {
       process.stdout.rows = originalRows;
     });
 
-    test.skip('handles content height calculation', () => {
+    test('handles content height calculation', () => {
       // Test content height with different terminal sizes
       viewRenderer.terminalHeight = 30;
       const contentHeight1 = viewRenderer.getContentHeight();
@@ -1272,6 +1274,431 @@ describe('ViewRenderer', () => {
       expect(() => {
         viewRenderer.render();
       }).not.toThrow();
+    });
+    
+    test('handles renderDailyStatistics with empty data', () => {
+      viewRenderer.renderDailyStatistics(null);
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No sessions found');
+      
+      viewRenderer.renderDailyStatistics({ dailyStats: [] });
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No sessions found');
+    });
+    
+    test('handles renderDailyStatistics with data', () => {
+      const dailyStats = {
+        dailyStats: [
+          {
+            date: '2024-01-01',
+            sessionCount: 5,
+            conversationCount: 20,
+            totalDuration: 3600000,
+            avgDuration: 180000,
+            toolUsageCount: 15
+          }
+        ],
+        totalSessions: 5,
+        totalConversations: 20
+      };
+      
+      viewRenderer.renderDailyStatistics(dailyStats);
+      
+      expect(console.clear).toHaveBeenCalled();
+      expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Daily Conversation Statistics');
+      expect(mockThemeManager.formatDuration).toHaveBeenCalled();
+      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 5 sessions, 20 conversations, 15 tool uses');
+    });
+    
+    test('handles renderProjectStatistics with empty data', () => {
+      viewRenderer.renderProjectStatistics(null);
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No projects found');
+      
+      viewRenderer.renderProjectStatistics([]);
+      expect(mockThemeManager.formatMuted).toHaveBeenCalledWith('No projects found');
+    });
+    
+    test('handles renderProjectStatistics with data', () => {
+      const projectStats = [
+          {
+            project: 'Test Project',
+            sessionCount: 3,
+            conversationCount: 10,
+            totalDuration: 1800000,
+            toolUsageCount: 25
+          },
+          {
+            project: null,
+            sessionCount: 1,
+            conversationCount: 5,
+            totalDuration: 600000,
+            toolUsageCount: 10
+          }
+        ];
+      
+      viewRenderer.renderProjectStatistics(projectStats);
+      
+      expect(console.clear).toHaveBeenCalled();
+      expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Project Statistics');
+      // Project stats now displayed differently
+      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 2 projects, 4 sessions, 15 conversations');
+      expect(mockThemeManager.formatDuration).toHaveBeenCalled();
+    });
+    
+    test('handles different content types in createContentBox', () => {
+      // Test code block formatting
+      const content = ['```javascript\nconst x = 1;\n```'];
+      const result = viewRenderer.createContentBox('Test', content, 'default');
+      expect(result).toContain('Test');
+      
+      // Test indented code
+      const indentedContent = ['    const y = 2;'];
+      const indentedResult = viewRenderer.createContentBox('Code', indentedContent, 'user');
+      expect(indentedResult).toContain('Code');
+    });
+    
+    test('handles wrapTextWithWidth edge cases', () => {
+      // Test empty text
+      const emptyResult = viewRenderer.wrapTextWithWidth('', 80);
+      expect(emptyResult).toEqual(['']);
+      
+      // Test single long word
+      const longWord = 'a'.repeat(100);
+      const longResult = viewRenderer.wrapTextWithWidth(longWord, 20);
+      expect(longResult.length).toBeGreaterThan(1);
+      
+      // Test text with newlines - split returns single line for each paragraph
+      const multilineText = 'Line 1\n\nLine 3';
+      const multilineResult = viewRenderer.wrapTextWithWidth(multilineText, 80);
+      expect(multilineResult.length).toBe(3);
+      expect(multilineResult[0]).toBe('Line 1');
+      expect(multilineResult[1]).toBe('');
+      expect(multilineResult[2]).toBe('Line 3');
+    });
+    
+    test('handles formatToolInput with different tool types', () => {
+      // Test Search tool
+      const searchTool = {
+        toolName: 'Search',
+        input: { query: 'test search' }
+      };
+      const searchResult = viewRenderer.formatToolInput(searchTool);
+      expect(searchResult.length).toBeGreaterThan(0);
+      
+      // Test Grep tool
+      const grepTool = {
+        toolName: 'Grep',
+        input: { pattern: 'test.*pattern', path: '/test/path' }
+      };
+      const grepResult = viewRenderer.formatToolInput(grepTool);
+      expect(grepResult.length).toBeGreaterThan(0);
+      
+      // Test unknown tool
+      const unknownTool = {
+        toolName: 'Unknown',
+        input: { data: 'test' }
+      };
+      const unknownResult = viewRenderer.formatToolInput(unknownTool);
+      expect(unknownResult.length).toBeGreaterThan(0);
+    });
+    
+    test('handles tool parameters display', () => {
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'Test',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: [
+          { toolName: 'Read', input: { file_path: '/test/file.js' } },
+          { toolName: 'Bash', input: { command: 'ls -la' } },
+          { toolName: 'Grep', input: { pattern: 'test' } }
+        ]
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+    
+    test('handles createUnifiedDiff edge cases', () => {
+      // Test identical strings - returns array with context
+      const sameDiff = viewRenderer.createUnifiedDiff('same', 'same');
+      expect(sameDiff.some(line => line.content === 'same')).toBe(true);
+      
+      // Test empty strings
+      const emptyDiff = viewRenderer.createUnifiedDiff('', 'new content');
+      expect(emptyDiff.length).toBeGreaterThan(0);
+      expect(emptyDiff.some(line => line.type === 'added')).toBe(true);
+      
+      // Test removal
+      const removeDiff = viewRenderer.createUnifiedDiff('old content', '');
+      expect(removeDiff.length).toBeGreaterThan(0);
+      expect(removeDiff.some(line => line.type === 'removed')).toBe(true);
+    });
+
+    test('handles tool usage summary display', () => {
+      const conversations = [
+        {
+          index: 0,
+          timestamp: new Date(),
+          userMessage: 'Test 1',
+          assistantResponse: 'Response 1',
+          responseTime: 1000,
+          toolsUsed: [
+            { toolName: 'Read' },
+            { toolName: 'Read' },
+            { toolName: 'Edit' }
+          ]
+        },
+        {
+          index: 1,
+          timestamp: new Date(),
+          userMessage: 'Test 2',
+          assistantResponse: 'Response 2',
+          responseTime: 2000,
+          toolsUsed: [
+            { toolName: 'Bash' },
+            { toolName: 'Bash' },
+            { toolName: 'Bash' }
+          ]
+        }
+      ];
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: conversations,
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles conversation row display edge cases', () => {
+      // Test conversation with no tools
+      const noToolsConv = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'User message',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: []
+      };
+      
+      // Test conversation with thinking
+      const thinkingConv = {
+        index: 1,
+        timestamp: new Date(),
+        userMessage: 'User message',
+        assistantResponse: 'Response',
+        responseTime: 5000,
+        toolsUsed: [],
+        thinkingContent: 'Let me think...'
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [noToolsConv, thinkingConv],
+        selectedConversationIndex: 0,
+        conversationSortOrder: 'dateTime',
+        conversationSortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles renderSearchResults with no results', () => {
+      mockStateManager.getCurrentView.mockReturnValue('search_results');
+      mockStateManager.getViewData.mockReturnValue({
+        searchResults: [],
+        selectedIndex: 0,
+        searchQuery: 'nonexistent',
+        searchOptions: {}
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles renderFullDetail with tool outputs', () => {
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'Test',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: [
+          {
+            toolName: 'Read',
+            input: { file_path: '/test.js' },
+            output: 'File content\\n'.repeat(30), // Long output
+            toolId: 'tool1'
+          }
+        ]
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles conversation content with various types', () => {
+      // Test with array content in conversation
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'User message',
+        assistantResponse: 'Assistant response',
+        responseTime: 1000,
+        toolsUsed: []
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles conversation preview with edge cases', () => {
+      // Test with empty conversation
+      const emptyConv = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: '',
+        assistantResponse: '',
+        responseTime: 0,
+        toolsUsed: []
+      };
+      
+      mockStateManager.getCurrentView.mockReturnValue('conversation_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [emptyConv],
+        selectedConversationIndex: 0
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles tool usage with collapsed/expanded states', () => {
+      const conversation = {
+        index: 0,
+        timestamp: new Date(),
+        userMessage: 'Test',
+        assistantResponse: 'Response',
+        responseTime: 1000,
+        toolsUsed: [
+          {
+            toolName: 'Read',
+            input: { file_path: '/test.js' },
+            output: 'Line\\n'.repeat(30),
+            toolId: 'tool1'
+          }
+        ]
+      };
+      
+      // Test collapsed state
+      mockStateManager.isToolExpanded = jest.fn(() => false);
+      mockStateManager.getCurrentView.mockReturnValue('full_detail');
+      mockStateManager.getViewData.mockReturnValue({
+        session: createMockSessionData(),
+        conversations: [conversation],
+        selectedConversationIndex: 0,
+        scrollOffset: 0,
+        scrollToEnd: false
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles session statistics display', () => {
+      const sessions = [
+        {
+          ...createMockSessionData(),
+          conversationPairs: [{ responseTime: 1000 }, { responseTime: 2000 }],
+          metrics: { totalTools: 5 },
+          totalConversations: 2
+        },
+        {
+          ...createMockSessionData(),
+          conversationPairs: [{ responseTime: 3000 }],
+          metrics: { totalTools: 3 },
+          totalConversations: 1
+        }
+      ];
+      
+      const stats = viewRenderer.calculateFilteredStats(sessions);
+      expect(stats.totalSessions).toBe(2);
+      expect(stats.totalConversations).toBe(3);
+    });
+
+    test('handles session metrics display', () => {
+      const session = {
+        ...createMockSessionData(),
+        metrics: {
+          avgResponseTime: 2.5,
+          totalTools: 10,
+          avgThinkingRatio: 0.3,
+          toolsByType: {
+            'file_operation': 5,
+            'command': 3,
+            'search': 2
+          }
+        }
+      };
+      
+      mockStateManager.getViewData.mockReturnValue({
+        sessions: [session],
+        selectedIndex: 0,
+        searchQuery: '',
+        filters: {},
+        sortOrder: 'lastActivity',
+        sortDirection: 'desc'
+      });
+      
+      viewRenderer.render();
+      expect(console.clear).toHaveBeenCalled();
+    });
+
+    test('handles error boundary in render method', () => {
+      // Mock a method to throw error
+      mockStateManager.getViewData.mockImplementation(() => {
+        throw new Error('Test error');
+      });
+      
+      // ViewRenderer doesn't have error boundary, so it will throw
+      expect(() => {
+        viewRenderer.render();
+      }).toThrow('Test error');
     });
   });
 });
