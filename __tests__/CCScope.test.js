@@ -84,6 +84,12 @@ describe('CCScopeApplication', () => {
     
     // Create app instance
     app = new CCScopeApplication();
+    
+    // Mock the loading spinner methods
+    app.loadingSpinner = {
+      start: jest.fn(),
+      stop: jest.fn()
+    };
   });
 
   afterEach(() => {
@@ -119,8 +125,7 @@ describe('CCScopeApplication', () => {
     test('initializes application successfully', async () => {
       await app.initialize();
       
-      // No longer logs startup message
-      expect(mockConsoleClear).toHaveBeenCalled();
+      // No longer clears console during initialization
       expect(app.sessionManager.discoverSessions).toHaveBeenCalled();
       expect(app.themeManager.setTheme).toHaveBeenCalledWith('default');
       expect(app.stateManager.resetState).toHaveBeenCalled();
@@ -150,10 +155,13 @@ describe('CCScopeApplication', () => {
 
   describe('showLoadingScreen', () => {
     test('displays loading screen', () => {
+      // Mock the spinner start method
+      app.loadingSpinner.start = jest.fn();
+      
       app.showLoadingScreen();
       
       expect(mockConsoleClear).toHaveBeenCalled();
-      expect(mockStdoutWrite).toHaveBeenCalledWith('⚡ Loading... ');
+      expect(app.loadingSpinner.start).toHaveBeenCalledWith('Loading');
     });
   });
 
@@ -312,6 +320,10 @@ describe('CCScopeApplication', () => {
       app.sessionManager.getDailyStatistics.mockReturnValue(dailyStats);
       app.viewRenderer.renderDailyStatistics = jest.fn();
       
+      // Mock the loading spinner
+      app.loadingSpinner.start = jest.fn();
+      app.loadingSpinner.stop = jest.fn();
+      
       // Create method if it doesn't exist
       if (!app.showDailyStatistics) {
         app.showDailyStatistics = jest.fn(async function() {
@@ -331,6 +343,10 @@ describe('CCScopeApplication', () => {
     test('handles daily statistics errors', async () => {
       const error = new Error('Stats failed');
       app.sessionManager.discoverSessions.mockRejectedValue(error);
+      
+      // Mock the loading spinner
+      app.loadingSpinner.start = jest.fn();
+      app.loadingSpinner.stop = jest.fn();
       
       // Create method with error handling
       app.showDailyStatistics = jest.fn(async function() {
@@ -358,6 +374,10 @@ describe('CCScopeApplication', () => {
       app.sessionManager.getProjectStatistics.mockReturnValue(projectStats);
       app.viewRenderer.renderProjectStatistics = jest.fn();
       
+      // Mock the loading spinner
+      app.loadingSpinner.start = jest.fn();
+      app.loadingSpinner.stop = jest.fn();
+      
       // Create method if it doesn't exist
       if (!app.showProjectStatistics) {
         app.showProjectStatistics = jest.fn(async function() {
@@ -380,6 +400,10 @@ describe('CCScopeApplication', () => {
       const searchResults = [{ sessionId: 'test', conversationIndex: 0 }];
       app.sessionManager.searchConversations.mockReturnValue(searchResults);
       app.stateManager.setSearchResults = jest.fn();
+      
+      // Mock the loading spinner
+      app.loadingSpinner.start = jest.fn();
+      app.loadingSpinner.stop = jest.fn();
       
       // Create method if it doesn't exist
       if (!app.showSearchResults) {
@@ -410,6 +434,10 @@ describe('CCScopeApplication', () => {
       app.isInitialized = false;
       const searchResults = [];
       app.sessionManager.searchConversations.mockReturnValue(searchResults);
+      
+      // Mock the loading spinner
+      app.loadingSpinner.start = jest.fn();
+      app.loadingSpinner.stop = jest.fn();
       
       if (!app.showSearchResults) {
         app.showSearchResults = jest.fn(async function(query, options) {

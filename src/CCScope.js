@@ -46,11 +46,6 @@ class CCScopeApplication {
     if (this.isInitialized) return;
     
     try {
-      // Silent start - no console output
-      
-      // Show loading screen
-      this.showLoadingScreen();
-      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
       
@@ -92,6 +87,8 @@ class CCScopeApplication {
     try {
       // Initialize if not already done
       if (!this.isInitialized) {
+        // Show loading screen before initialization
+        this.showLoadingScreen();
         await this.initialize();
       }
       
@@ -218,9 +215,6 @@ class CCScopeApplication {
    */
   async showDailyStatistics() {
     try {
-      // Show spinning loading indicator
-      this.loadingSpinner.start('Loading daily statistics');
-      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
       
@@ -242,9 +236,6 @@ class CCScopeApplication {
    */
   async showProjectStatistics() {
     try {
-      // Show spinning loading indicator
-      this.loadingSpinner.start('Loading project statistics');
-      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
       
@@ -268,9 +259,6 @@ class CCScopeApplication {
    */
   async showSearchResults(query, options = {}) {
     try {
-      // Show spinning loading indicator
-      this.loadingSpinner.start('Searching conversations');
-      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
       
