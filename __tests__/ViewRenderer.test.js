@@ -87,6 +87,7 @@ describe('ViewRenderer', () => {
       formatDateTime: jest.fn(date => '01/01 12:00'),
       formatThinkingRate: jest.fn(rate => `${(rate * 100).toFixed(0)}%`),
       formatToolCount: jest.fn(count => `${count}t`),
+      formatTokenCount: jest.fn(tokens => `${tokens}t`),
       stripAnsiCodes: jest.fn(text => text.replace(/\x1b\[[0-9;]*m/g, '')),
       formatSelection: jest.fn((text, isSelected) => isSelected ? `[SELECTED] ${text}` : text),
       truncateWithWidth: jest.fn((text, width) => text.substring(0, width))

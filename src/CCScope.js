@@ -42,13 +42,26 @@ class CCScopeApplication {
     if (this.isInitialized) return;
     
     try {
-      console.log('🚀 Starting CCScope...');
-      
-      // Show loading screen
+      // Show loading screen immediately
       this.showLoadingScreen();
+      
+      // Add small delay to ensure loading screen is visible
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Track loading start time
+      const loadingStartTime = Date.now();
       
       // Initialize session manager
       await this.sessionManager.discoverSessions();
+      
+      // Ensure loading is visible for at least 1 second
+      const elapsedTime = Date.now() - loadingStartTime;
+      if (elapsedTime < 1000) {
+        await new Promise(resolve => setTimeout(resolve, 1000 - elapsedTime));
+      }
+      
+      // Clear loading message
+      console.clear();
       
       // Initialize theme
       this.themeManager.setTheme(config.theme || 'default');
@@ -60,9 +73,9 @@ class CCScopeApplication {
       process.stdout.write('\x1b[?25l');
       
       this.isInitialized = true;
-      console.log('✅ Claude Code Scope initialized successfully');
       
     } catch (error) {
+      console.clear();
       console.error('❌ Failed to initialize Claude Code Scope:', error);
       process.exit(1);
     }
@@ -73,9 +86,10 @@ class CCScopeApplication {
    */
   showLoadingScreen() {
     console.clear();
-    // Simple loading indicator
-    process.stdout.write('🔍 Claude Code Scope - Loading... ');
+    console.log('Loading...');
   }
+
+  // Spinner methods removed - using simple static loading message instead
 
   /**
    * Start the application
@@ -106,16 +120,8 @@ class CCScopeApplication {
    * Show welcome message
    */
   showWelcomeMessage() {
-    const stats = this.sessionManager.getStatistics();
-    
-    console.clear();
-    console.log(this.themeManager.formatHeader('🎉 Welcome to Claude Code Scope'));
-    console.log(this.themeManager.formatSeparator(process.stdout.columns || 80));
-    console.log('');
-    console.log(this.themeManager.formatSuccess(`✅ Ready: ${stats.totalSessions} sessions, ${stats.totalConversations} conversations`));
-    
-    // Start immediately
-    this.viewRenderer.render();
+    // Don't show welcome message - go directly to the interface
+    // The initial render will be handled by startRenderLoop
   }
 
   /**
@@ -219,8 +225,14 @@ class CCScopeApplication {
    */
   async showDailyStatistics() {
     try {
+      // Show loading screen
+      this.showLoadingScreen();
+      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
+      
+      // Clear loading screen
+      console.clear();
       
       // Get daily statistics
       const dailyStatsResult = this.sessionManager.getDailyStatistics();
@@ -238,8 +250,14 @@ class CCScopeApplication {
    */
   async showProjectStatistics() {
     try {
+      // Show loading screen
+      this.showLoadingScreen();
+      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
+      
+      // Clear loading screen
+      console.clear();
       
       // Get project statistics
       const projectStats = this.sessionManager.getProjectStatistics();
@@ -252,6 +270,7 @@ class CCScopeApplication {
     }
   }
 
+
   /**
    * Show search results
    * @param {string} query - Search query
@@ -259,8 +278,14 @@ class CCScopeApplication {
    */
   async showSearchResults(query, options = {}) {
     try {
+      // Show loading screen
+      this.showLoadingScreen();
+      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
+      
+      // Clear loading screen
+      console.clear();
       
       // Search conversations
       const results = this.sessionManager.searchConversations(query, options);

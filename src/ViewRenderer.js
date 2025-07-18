@@ -5,6 +5,7 @@
 
 const config = require('./config');
 const path = require('path');
+const { formatWithUnit, formatLargeNumber } = require('./utils/formatters');
 
 class ViewRenderer {
   constructor(sessionManager, themeManager, stateManager) {
@@ -86,6 +87,9 @@ class ViewRenderer {
       case 'search_results':
         this.renderSearchResultsInteractive(viewData);
         break;
+      case 'conversation_tree':
+        this.renderConversationTree(viewData);
+        break;
       case 'help':
         this.renderHelp();
         break;
@@ -129,10 +133,6 @@ class ViewRenderer {
    * Render header
    */
   renderHeader(stats, searchQuery = '', filters = {}, sortOrder = 'lastActivity', sortDirection = 'desc') {
-    const title = this.theme.formatHeader('🔍 Claude Code Scope');
-    console.log(title);
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    
     // Basic stats
     const statsLine = this.formatStatsLine(stats);
     console.log(statsLine);
@@ -173,9 +173,8 @@ class ViewRenderer {
   formatSearchFilterInfo(searchQuery, filters, sortOrder, sortDirection) {
     let info = '';
     
-    if (searchQuery) {
-      info += this.theme.formatInfo(`🔍 Search: "${searchQuery}"`);
-    }
+    // Don't show search query in session list view
+    // (searchQuery is only shown in search results view)
     
     // Always show filter status for visibility
     const hasActiveFilters = filters && Object.keys(filters).some(key => filters[key] !== null);
@@ -211,7 +210,8 @@ class ViewRenderer {
       'duration': 'Duration',
       'conversations': 'Conversations',
       'startTime': 'Started',
-      'projectName': 'Project Name'
+      'projectName': 'Project Name',
+      'tokens': 'Tokens'
     };
     const sortLabel = sortLabels[sortOrder] || sortOrder;
     const directionIcon = sortDirection === 'asc' ? '↑' : '↓';
@@ -257,7 +257,8 @@ class ViewRenderer {
       'No.'.padEnd(5),
       'ID'.padEnd(16),
       'Project'.padEnd(config.layout.projectNameLength),
-      'Conversations'.padEnd(13),
+      'Conv.'.padEnd(6),
+      'Tokens'.padEnd(8),
       'Duration'.padEnd(12),
       'Started'.padEnd(12),
       'Last Updated'.padEnd(12)
@@ -282,7 +283,11 @@ class ViewRenderer {
       const truncatedProject = this.truncateWithWidth(session.projectName, config.layout.projectNameLength - 1);
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
-      const conversations = session.totalConversations.toString().padEnd(13);
+      const conversations = session.totalConversations.toString().padEnd(6);
+      
+      // Format tokens with right alignment
+      const totalTokens = session.totalTokens || 0;
+      const tokens = this.theme.formatTokenCount(totalTokens);
       
       // Format duration without ANSI codes
       const durationMs = session.duration;
@@ -325,7 +330,7 @@ class ViewRenderer {
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
       // Build plain content
-      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${startTime} ${lastUpdated}`;
+      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${tokens} ${duration} ${startTime} ${lastUpdated}`;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
@@ -345,16 +350,37 @@ class ViewRenderer {
       const truncatedProject = this.truncateWithWidth(session.projectName, config.layout.projectNameLength - 1);
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
-      const conversations = session.totalConversations.toString().padEnd(13);
+      const conversations = session.totalConversations.toString().padEnd(6);
+      
+      // Format tokens with color coding and right alignment
+      const totalTokens = session.totalTokens || 0;
+      const tokens = this.theme.formatTokenCount(totalTokens);
+      
       const durationText = this.theme.formatDuration(session.duration);
       const duration = durationText + ' '.repeat(Math.max(0, 12 - this.theme.getDisplayWidth(durationText)));
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
-      const content = `${no} ${id} ${project} ${conversations} ${duration} ${startTime} ${lastUpdated}`;
+      const content = `${no} ${id} ${project} ${conversations} ${tokens} ${duration} ${startTime} ${lastUpdated}`;
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
+  }
+
+  /**
+   * Render compact session list headers
+   */
+  renderCompactSessionListHeaders() {
+    const headers = [
+      'No.'.padEnd(5),
+      'ID'.padEnd(16),
+      'Conv.'.padEnd(6),
+      'Tokens'.padEnd(6)
+    ];
+    
+    const headerLine = headers.join(' ');
+    console.log(this.theme.formatDim(headerLine));
+    console.log(this.theme.formatSeparator(this.terminalWidth, '-'));
   }
 
   /**
@@ -362,6 +388,8 @@ class ViewRenderer {
    */
   renderCompactSessionList(sessions, selectedIndex) {
     // Similar to wide but with fewer columns
+    this.renderCompactSessionListHeaders();
+    
     const { startIndex, endIndex } = this.getVisibleRange(sessions.length, selectedIndex);
     
     for (let i = startIndex; i < endIndex; i++) {
@@ -387,8 +415,12 @@ class ViewRenderer {
       
       const conversations = session.totalConversations.toString().padEnd(5);
       
+      // Add token display to compact layout
+      const totalTokens = session.tokenUsage?.totalTokens || 0;
+      const tokens = this.theme.formatTokenCount(totalTokens).replace(/\s+$/, '').padEnd(6);
+      
       // Build plain content
-      const plainContent = `${no} ${paddedId} ${conversations}`;
+      const plainContent = `${no} ${paddedId} ${conversations} ${tokens}`;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
@@ -408,7 +440,11 @@ class ViewRenderer {
       
       const conversations = session.totalConversations.toString().padEnd(5);
       
-      const content = `${no} ${id} ${conversations}`;
+      // Add token display to compact layout
+      const totalTokens = session.tokenUsage?.totalTokens || 0;
+      const tokens = this.theme.formatTokenCount(totalTokens).replace(/\s+$/, '').padEnd(6);
+      
+      const content = `${no} ${id} ${conversations} ${tokens}`;
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
@@ -586,11 +622,11 @@ class ViewRenderer {
    * Get maximum visible sessions
    */
   getMaxVisibleSessions() {
-    const headerHeight = 8; // Title(1) + separator(1) + stats(1) + blank(1) + headers(2) + separator(1)
-    const footerHeight = 10; // separator(1) + selected info(2) + recent activity header(1) + activities(3) + controls(1) + buffer(2)
+    const headerHeight = 8; // stats(1) + filter/sort(1) + blank(1) + headers(1) + separator(1) + buffer(3)
+    const footerHeight = 8; // separator(1) + selected info(2) + recent activity header(1) + activities(3) + controls(1)
     
-    // Reduce by 2 for stability
-    return Math.max(1, this.terminalHeight - headerHeight - footerHeight - 2);
+    // No additional reduction needed
+    return Math.max(1, this.terminalHeight - headerHeight - footerHeight);
   }
 
   /**
@@ -639,11 +675,6 @@ class ViewRenderer {
       return;
     }
     
-    // Title
-    const title = this.theme.formatHeader('🔍 Claude Code Scope');
-    console.log(title);
-    console.log(this.theme.formatSeparator(this.terminalWidth));
-    
     // Stats line (session-specific, no session count)
     const statsLine = this.formatSessionStatsLine(stats);
     console.log(statsLine);
@@ -661,7 +692,8 @@ class ViewRenderer {
     const sortOrderDisplay = {
       'dateTime': 'DateTime',
       'duration': 'Duration', 
-      'tools': 'Tools'
+      'tools': 'Tools',
+      'tokens': 'Tokens'
     };
     const sortDirectionArrow = sortDirection === 'asc' ? '↑' : '↓';
     const sortInfo = this.theme.formatInfo(`📊 Sort: ${sortOrderDisplay[sortOrder]} ${sortDirectionArrow}`);
@@ -680,16 +712,17 @@ class ViewRenderer {
       return;
     }
     
-    // Headers
-    const headers = [
-      'No.'.padEnd(3),
-      'DateTime'.padEnd(12),
-      'Duration'.padEnd(8),
-      'Tools'.padEnd(6), // Match the data column width
-      'User Message'
-    ];
+    // Headers - must match exact column spacing
+    const headers = 
+      '  ' + // 2 spaces for prefix alignment
+      'No.'.padEnd(3) + ' ' +
+      'DateTime'.padEnd(12) + ' ' +
+      'Duration'.padEnd(8) + ' ' +
+      'Tools'.padEnd(6) + ' ' +  // Tools is right-aligned (padStart(5) + space)
+      'Tokens'.padEnd(8) + ' ' + // Tokens is right-aligned (padStart(7) + space) 
+      'User Message';
     
-    console.log(this.theme.formatMuted(headers.join(' ')));
+    console.log(this.theme.formatMuted(headers));
     console.log(this.theme.formatSeparator(this.terminalWidth, '-'));
     
     // Calculate fixed display rows
@@ -722,6 +755,12 @@ class ViewRenderer {
     const dateTime = this.theme.formatDateTime(conversation.timestamp).padEnd(12); // MM/DD HH:MM format
     const response = this.theme.formatResponseTime(conversation.responseTime); // Already padded in ThemeManager
     const toolCount = this.theme.formatToolCount(conversation.toolsUsed.length);
+    
+    // Format tokens with color coding (lower thresholds for conversations)
+    const totalTokens = conversation.tokenUsage?.totalTokens || 0;
+    const conversationThresholds = { error: 10000, warning: 5000 };
+    const tokens = this.theme.formatTokenCount(totalTokens, conversationThresholds);
+    
     // User message preview - calculate remaining width more accurately
     // Calculate fixed columns width
     // prefix(2) + no(3) + space + datetime(12) + space + response(8) + space + tool(6) + space
@@ -730,14 +769,15 @@ class ViewRenderer {
     const fixedColumnsWidth = 2 + 3 + 1 + 12 + 1 + 8 + 1 + 6 + 1 + ansiMargin;
     
     // Calculate exact fixed column widths based on actual conversation detail layout
-    // Headers: "No." (3) + "DateTime" (12) + "Duration" (8) + "Tools" (6) + spaces
-    // Actual row: "  1   07/13 21:41  3m44s      19t  [message content]"
+    // Headers: "No." (3) + "DateTime" (12) + "Duration" (8) + "Tools" (6) + "Tokens" (8) + spaces
+    // Actual row: "  1   07/13 21:41  3m44s      19t  1.2k    [message content]"
     const exactFixedWidth = 
       2 +     // prefix: "  " or "▶ "
       3 + 1 + // no: "1  " (padEnd 3) + space  
       12 + 1 + // datetime: "07/13 21:41 " (padEnd 12) + space
       8 + 1 +  // duration: "3m44s   " (8 chars by formatResponseTime) + space
-      6 + 1;   // tools: "  19t " (6 chars by formatToolCount) + space
+      6 + 1 +  // tools: "  19t " (6 chars by formatToolCount) + space
+      8 + 1;   // tokens: "1.2k    " (8 chars) + space
     
     // Use ultra-conservative width to absolutely prevent wrapping
     // Reserve huge margin for ANSI codes, numbered lists, complex Japanese text, and calculation errors
@@ -768,7 +808,8 @@ class ViewRenderer {
     const userMessage = truncatedMessage;
     
     // Build raw content without colors for width calculation
-    const rawContent = `${no} ${dateTime} ${response.replace(/\x1b\[[0-9;]*m/g, '')} ${toolCount.replace(/\x1b\[[0-9;]*m/g, '').padEnd(6)} ${userMessage}`;
+    const tokensRaw = tokens.replace(/\x1b\[[0-9;]*m/g, '');
+    const rawContent = `${no} ${dateTime} ${response.replace(/\x1b\[[0-9;]*m/g, '')} ${toolCount.replace(/\x1b\[[0-9;]*m/g, '').padEnd(6)} ${tokensRaw} ${userMessage}`;
     
     // Apply selection highlighting
     if (isSelected) {
@@ -778,12 +819,17 @@ class ViewRenderer {
         : `${conversation.responseTime.toFixed(1)}s`;
       const toolCountRaw = `${conversation.toolsUsed.length}t`;
       
+      // Format tokens without color codes but keep the same formatting as non-selected rows
+      const { formatWithUnit } = require('./utils/formatters');
+      const tokenStr = formatWithUnit(totalTokens);
+      
       // Build plain content for full-width selection, ensuring it fits within terminal width
       const baseParts = [
         no, 
         dateTime.replace(/\x1b\[[0-9;]*m/g, ''), // Remove any ANSI codes from dateTime
         responseRaw.padEnd(8), 
-        toolCountRaw.padStart(5) + ' '
+        toolCountRaw.padStart(5) + ' ', // Match formatToolCount's padding: padStart(5) + space
+        tokenStr.padStart(7) + ' ' // Match formatTokenCount's padding: padStart(7) + space
       ];
       const baseContent = baseParts.join(' ');
       
@@ -796,7 +842,7 @@ class ViewRenderer {
       // Re-truncate message for selected row to ensure it fits
       const selectedMessage = this.truncateWithWidth(userMessage, messageMaxWidth);
       
-      const plainContent = baseContent + selectedMessage;
+      const plainContent = baseContent + ' ' + selectedMessage; // Add space before message
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
@@ -810,7 +856,7 @@ class ViewRenderer {
       console.log(prefix + this.theme.formatSelection(fullLine, isSelected));
     } else {
       // For non-selected rows, use colored values but ensure message fits
-      const content = `${no} ${dateTime} ${response} ${toolCount} ${userMessage}`;
+      const content = `${no} ${dateTime} ${response} ${toolCount} ${tokens} ${userMessage}`;
       
       // Double-check that total line width doesn't exceed terminal width
       const totalLineWidth = this.theme.getDisplayWidth(prefix + content);
@@ -818,7 +864,7 @@ class ViewRenderer {
         // Emergency truncation if line is still too long
         const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 50;
         const emergencyMessage = this.truncateWithWidth(userMessage, emergencyMaxWidth);
-        const safeContent = `${no} ${dateTime} ${response} ${toolCount} ${emergencyMessage}`;
+        const safeContent = `${no} ${dateTime} ${response} ${toolCount} ${tokens} ${emergencyMessage}`;
         console.log(prefix + safeContent);
       } else {
         console.log(prefix + content);
@@ -982,14 +1028,14 @@ class ViewRenderer {
    */
   getMaxVisibleConversations() {
     // Fixed layout calculation:
-    // Header: title(1) + separator(1) + blank(1) = 3
+    // Header: stats(1) + session info(1) + file path(1) + sort info(1) + blank(1) = 5
     // Table headers: headers(1) + separator(1) = 2
     // Footer: separator(1) + preview(5-7 lines) + blank(1) + controls(1) = 8-10
-    const headerHeight = 5; // 3 + 2
-    const footerHeight = 10; // Increased footer height for more preview space
+    const headerHeight = 7; // 5 + 2
+    const footerHeight = 6; // Further reduced by 2 for more conversation space
     
-    // Reduce by 2 for stability
-    const maxVisible = Math.max(1, this.terminalHeight - headerHeight - footerHeight - 2);
+    // No additional reduction needed
+    const maxVisible = Math.max(1, this.terminalHeight - headerHeight - footerHeight);
     
     return maxVisible;
   }
@@ -1029,6 +1075,7 @@ class ViewRenderer {
       const truncatedUser = this.truncateWithWidth(userMessage, maxUserWidth);
       console.log(`${userPrefix}${truncatedUser}`);
     }
+    
     
     // Assistant response (truncate to fit one line considering display width)
     const assistantPrefix = '🤖 ';
@@ -1181,6 +1228,7 @@ class ViewRenderer {
    */
   extractCleanUserMessage(text) {
     if (!text) return '';
+    
     
     const lines = text.split('\n');
     const userMessageLines = [];
@@ -1510,6 +1558,23 @@ class ViewRenderer {
     lines.push(`📅 ${this.theme.formatDateTime(conversation.timestamp)}`);
     lines.push(`⏱️  Response Time: ${this.theme.formatResponseTime(conversation.responseTime)}`);
     
+    // Token usage information
+    if (conversation.tokenUsage) {
+      const { totalTokens, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens } = conversation.tokenUsage;
+      
+      // Main token info
+      let tokenStr = `🎯 Tokens: ${formatLargeNumber(totalTokens)} (In: ${formatLargeNumber(inputTokens)}, Out: ${formatLargeNumber(outputTokens)}`;
+      
+      // Add cache info if exists
+      if (cacheCreationInputTokens || cacheReadInputTokens) {
+        tokenStr += `, Cache: ${formatLargeNumber(cacheCreationInputTokens || 0)} created, ${formatLargeNumber(cacheReadInputTokens || 0)} read`;
+      }
+      tokenStr += ')';
+      
+      lines.push(tokenStr);
+    }
+    
+    
     // User message section
     lines.push('');
     lines.push(this.theme.formatAccent('👤 USER'));
@@ -1705,7 +1770,6 @@ class ViewRenderer {
       
       // Simple block indicator
       lines.push(this.theme.formatAccent(`  [Thinking ${index + 1}]`));
-      lines.push('');
       
       // Process thinking content with enhanced formatting - show all content
       const preview = thinking.text; // Show complete thinking content
@@ -1738,13 +1802,18 @@ class ViewRenderer {
       
       // Display thinking content with proper indentation
       const contentLines = this.wrapTextWithWidth(thinkingText, this.terminalWidth - 6);
-      contentLines.forEach((line, lineIndex) => {
+      // Skip empty lines at the beginning of thinking content
+      let startIndex = 0;
+      while (startIndex < contentLines.length && contentLines[startIndex].trim() === '') {
+        startIndex++;
+      }
+      for (let i = startIndex; i < contentLines.length; i++) {
         // Add line numbers for very long thinking sections
-        if (contentLines.length > 20 && lineIndex % 10 === 0 && lineIndex > 0) {
-          lines.push(this.theme.formatDim(`    [line ${lineIndex}]`));
+        if (contentLines.length > 20 && i % 10 === 0 && i > 0) {
+          lines.push(this.theme.formatDim(`    [line ${i}]`));
         }
-        lines.push('    ' + line);
-      });
+        lines.push('    ' + contentLines[i]);
+      }
       
       // All thinking content is now displayed, no truncation
     });
@@ -1785,16 +1854,20 @@ class ViewRenderer {
             thinkingHeader += ` ${this.theme.formatDim(`[${thinkingTime}]`)}`;
           }
           lines.push(this.theme.formatWarning(thinkingHeader));
-          lines.push('');
           
           // Apply search highlighting if needed
           const thinkingText = highlightQuery ? this.highlightText(item.thinking, highlightQuery, highlightOptions) : item.thinking;
           
           // Display thinking content with proper indentation
           const contentLines = this.wrapTextWithWidth(thinkingText, this.terminalWidth - 4);
-          contentLines.forEach(line => {
-            lines.push('  ' + line);
-          });
+          // Skip empty lines at the beginning of thinking content
+          let startIndex = 0;
+          while (startIndex < contentLines.length && contentLines[startIndex].trim() === '') {
+            startIndex++;
+          }
+          for (let i = startIndex; i < contentLines.length; i++) {
+            lines.push('  ' + contentLines[i]);
+          }
           
         } else if (item.type === 'tool_use') {
           // Add tool execution section - Claude Code style
@@ -1916,13 +1989,17 @@ class ViewRenderer {
             thinkingHeader += ` ${this.theme.formatDim(`[${thinkingTime}]`)}`;
           }
           lines.push(this.theme.formatWarning(thinkingHeader));
-          lines.push('');
           
           const thinkingText = highlightQuery ? this.highlightText(thinking.text, highlightQuery, highlightOptions) : thinking.text;
           const contentLines = this.wrapTextWithWidth(thinkingText, this.terminalWidth - 4);
-          contentLines.forEach(line => {
-            lines.push('  ' + line);
-          });
+          // Skip empty lines at the beginning of thinking content
+          let startIndex = 0;
+          while (startIndex < contentLines.length && contentLines[startIndex].trim() === '') {
+            startIndex++;
+          }
+          for (let i = startIndex; i < contentLines.length; i++) {
+            lines.push('  ' + contentLines[i]);
+          }
         });
       }
       
@@ -2118,7 +2195,8 @@ class ViewRenderer {
     while (i < responseLines.length) {
       const line = responseLines[i];
       
-      // Check if this line starts a tool block
+      // Check if this line starts a tool block - match Claude Code tool format
+      // Matches: ⏺ ToolName(args) [timestamp] or just ⏺ ToolName
       if (line.match(/^⏺\s+\w+/)) {
         // Found a tool header
         outputLines.push(line);
@@ -2130,21 +2208,37 @@ class ViewRenderer {
         }
         
         // Look for the indented block with ⎿ (allow spaces before it)
-        if (i < responseLines.length && responseLines[i].includes('⎿')) {
+        if (i < responseLines.length && responseLines[i].match(/^\s*⎿/)) {
           const blockStart = i;
           let blockEnd = i + 1; // Start from the next line after ⎿
           
           // Find the end of the block
           while (blockEnd < responseLines.length) {
             const blockLine = responseLines[blockEnd];
-            // Stop if we hit an empty line, another tool header, or a line that doesn't look like part of the block
-            if (blockLine.trim() === '' || 
-                blockLine.match(/^⏺/) || 
-                blockLine.match(/^[A-Z]/) || // New line starting with capital letter
-                (!blockLine.match(/^\s+/) && !blockLine.includes('...'))) {
+            // Stop if we hit another tool header
+            if (blockLine.match(/^⏺/)) {
               break;
             }
-            blockEnd++;
+            // For MultiEdit and similar tools, continue if line is indented or looks like diff/code
+            // This includes lines with line numbers (e.g., "123│" or "123 -" or "123 +")
+            if (blockLine.match(/^\s+/) ||                    // Indented lines
+                blockLine.match(/^\s*\d+[│\-\+]/i) ||        // Line numbers with diff markers
+                blockLine.match(/^\s*\.\.\.\s*\d+\s*more/) || // "... X more lines"
+                blockLine.includes('...')) {                  // Continuation markers
+              blockEnd++;
+            } else if (blockLine.trim() === '') {
+              // Empty line might be part of the block, check next line
+              if (blockEnd + 1 < responseLines.length && 
+                  (responseLines[blockEnd + 1].match(/^\s+/) || 
+                   responseLines[blockEnd + 1].match(/^\s*\d+[│\-\+]/))) {
+                blockEnd++;
+              } else {
+                break;
+              }
+            } else {
+              // Non-indented, non-empty line that doesn't look like part of the block
+              break;
+            }
           }
           
           const blockLines = responseLines.slice(blockStart, blockEnd);
@@ -2176,9 +2270,12 @@ class ViewRenderer {
               outputLines.push(blockLines[j]);
             }
             const remainingLines = blockLines.length - 20;
-            outputLines.push(`     … +${remainingLines} lines (ctrl+r to expand)`);
-            // Set current block for Ctrl+R
-            this.state.setCurrentToolId(blockId);
+            // Match the indentation of the tool output
+            const indentMatch = blockLines[0].match(/^(\s*)/);
+            const indent = indentMatch ? indentMatch[1] : '     ';
+            outputLines.push(this.theme.formatDim(`${indent}… +${remainingLines} lines (ctrl+r to expand)`));
+            // Register block for Ctrl+R expansion
+            this.state.registerToolId(blockId);
           }
           
           i = blockEnd;
@@ -2580,6 +2677,185 @@ class ViewRenderer {
   }
 
   /**
+   * Render conversation tree view
+   */
+  renderConversationTree(viewData) {
+    this.clearScreen();
+    
+    const { session, conversationTree, selectedNodeUuid, expandedNodes, treeMode } = viewData;
+    
+    if (!session || !conversationTree) {
+      console.log('No conversation tree data available');
+      return;
+    }
+    
+    // Header
+    console.log(this.theme.formatHeader(`🌳 [${session.sessionId}] ${session.projectName} - Conversation Tree`));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    
+    // Tree mode indicator
+    const modeIndicator = treeMode === 'full' ? '🌳 Full Tree' : '🛤️ Path View';
+    console.log(this.theme.formatMuted(`Mode: ${modeIndicator} | Nodes: ${conversationTree.nodes.size} | Roots: ${conversationTree.roots.length}`));
+    console.log('');
+    
+    // Get visible nodes based on current state
+    const visibleNodes = this.getVisibleTreeNodes(conversationTree, selectedNodeUuid, expandedNodes, treeMode);
+    
+    // Calculate available height for tree content
+    const headerLines = 5; // Header + separator + mode + blank
+    const footerLines = 2; // Controls
+    const contentHeight = this.terminalHeight - headerLines - footerLines;
+    
+    // Render tree nodes
+    this.renderTreeNodes(visibleNodes, selectedNodeUuid, expandedNodes, contentHeight);
+    
+    // Footer
+    console.log(this.theme.formatSeparator(this.terminalWidth, '─'));
+    this.renderTreeControls();
+  }
+
+  /**
+   * Get visible tree nodes based on mode and expansion state
+   */
+  getVisibleTreeNodes(tree, selectedNodeUuid, expandedNodes, treeMode) {
+    const visibleNodes = [];
+    
+    const addNodeAndChildren = (nodeUuid, depth = 0) => {
+      const node = tree.nodes.get(nodeUuid);
+      if (!node) return;
+      
+      // Add current node with depth info
+      visibleNodes.push({
+        ...node,
+        depth: depth,
+        hasChildren: (tree.children.get(nodeUuid) || []).length > 0,
+        isExpanded: expandedNodes.has(nodeUuid),
+        isSelected: nodeUuid === selectedNodeUuid
+      });
+      
+      // Add children if node is expanded
+      if (expandedNodes.has(nodeUuid)) {
+        const children = tree.children.get(nodeUuid) || [];
+        for (const childUuid of children) {
+          addNodeAndChildren(childUuid, depth + 1);
+        }
+      }
+    };
+    
+    if (treeMode === 'path' && selectedNodeUuid) {
+      // Path mode: show only path to selected node
+      const pathNodes = this.getPathToNode(tree, selectedNodeUuid);
+      for (const node of pathNodes) {
+        addNodeAndChildren(node.uuid, 0);
+      }
+    } else {
+      // Full mode: show all nodes starting from roots
+      for (const rootUuid of tree.roots) {
+        addNodeAndChildren(rootUuid, 0);
+      }
+    }
+    
+    return visibleNodes;
+  }
+
+  /**
+   * Get path from roots to specified node
+   */
+  getPathToNode(tree, targetUuid) {
+    const path = [];
+    let currentUuid = targetUuid;
+    
+    while (currentUuid && tree.nodes.has(currentUuid)) {
+      const node = tree.nodes.get(currentUuid);
+      path.unshift(node);
+      currentUuid = node.parentUuid;
+    }
+    
+    return path;
+  }
+
+  /**
+   * Render tree nodes with proper indentation and formatting
+   */
+  renderTreeNodes(visibleNodes, selectedNodeUuid, expandedNodes, contentHeight) {
+    const startIndex = Math.max(0, this.scrollOffset);
+    const endIndex = Math.min(visibleNodes.length, startIndex + contentHeight);
+    
+    for (let i = startIndex; i < endIndex; i++) {
+      const node = visibleNodes[i];
+      const isSelected = node.uuid === selectedNodeUuid;
+      
+      // Build line with proper indentation
+      let line = '';
+      
+      // Indentation
+      const indent = '  '.repeat(node.depth);
+      line += indent;
+      
+      // Expansion indicator
+      if (node.hasChildren) {
+        line += node.isExpanded ? '▼ ' : '▶ ';
+      } else {
+        line += '  ';
+      }
+      
+      // Node type indicator
+      const typeIcon = node.type === 'user' ? '👤' : '🤖';
+      line += typeIcon + ' ';
+      
+      // Node content preview
+      const maxContentWidth = this.terminalWidth - line.length - 20; // Reserve space for timestamp
+      let contentPreview = this.sanitizeForDisplay(node.content || '', maxContentWidth);
+      
+      // Add meta/sidechain indicators
+      if (node.isMeta) {
+        contentPreview = this.theme.formatMuted('[META] ') + contentPreview;
+      }
+      if (node.isSidechain) {
+        contentPreview = this.theme.formatWarning('[SIDE] ') + contentPreview;
+      }
+      
+      line += contentPreview;
+      
+      // Timestamp
+      const timestamp = this.formatTimestamp(node.timestamp);
+      const paddingNeeded = Math.max(0, this.terminalWidth - this.theme.getDisplayWidth(line) - timestamp.length - 2);
+      line += ' '.repeat(paddingNeeded) + this.theme.formatMuted(timestamp);
+      
+      // Apply selection highlighting
+      if (isSelected) {
+        line = this.theme.formatSelection(line, true);
+      }
+      
+      console.log(line);
+    }
+    
+    // Show scrolling indicator if needed
+    if (visibleNodes.length > contentHeight) {
+      const scrollInfo = `${startIndex + 1}-${endIndex}/${visibleNodes.length}`;
+      console.log(this.theme.formatMuted(`  ... (${scrollInfo})`));
+    }
+  }
+
+  /**
+   * Render tree navigation controls
+   */
+  renderTreeControls() {
+    const controls = [
+      this.theme.formatMuted('↑/↓ or k/j') + ' navigate',
+      this.theme.formatMuted('Space') + ' expand/collapse',
+      this.theme.formatMuted('Enter') + ' go to conversation',
+      this.theme.formatMuted('e') + ' expand all',
+      this.theme.formatMuted('c') + ' collapse all',
+      this.theme.formatMuted('m') + ' toggle mode',
+      this.theme.formatMuted('Esc') + ' back',
+      this.theme.formatMuted('q') + ' quit'
+    ];
+    
+    console.log(controls.join(' · '));
+  }
+
+  /**
    * Render search view
    */
   renderSearch(viewData) {
@@ -2762,12 +3038,18 @@ class ViewRenderer {
     // Calculate totals
     const totals = {
       conversationCount: 0,
-      totalDuration: 0
+      totalDuration: 0,
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0
     };
     
     dailyStats.forEach(day => {
       totals.conversationCount += day.conversationCount;
       totals.totalDuration += day.totalDuration;
+      totals.totalTokens += day.totalTokens || 0;
+      totals.inputTokens += day.inputTokens || 0;
+      totals.outputTokens += day.outputTokens || 0;
     });
     
     // Summary
@@ -2777,14 +3059,15 @@ class ViewRenderer {
     console.log(`💼 Total Sessions: ${this.theme.formatHeader(totalSessions.toString())}`);
     console.log(`💬 Total Conversations: ${this.theme.formatHeader(totals.conversationCount.toString())}`);
     console.log(`⏱️  Total Duration: ${this.theme.formatHeader(this.theme.formatDuration(totals.totalDuration))}`);
+    console.log(`🎯 Total Tokens: ${this.theme.formatHeader(formatLargeNumber(totals.totalTokens))} (In: ${formatLargeNumber(totals.inputTokens)}, Out: ${formatLargeNumber(totals.outputTokens)})`);;
     console.log('');
     
     // Table header
     console.log(this.theme.formatHeader('Daily Breakdown'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
-    const headers = ['Date', 'Sessions', 'Conversations', 'Duration', 'Avg Duration', 'Tools'];
-    const colWidths = [12, 10, 15, 12, 15, 10];
+    const headers = ['Date', 'Sessions', 'Conversations', 'Duration', 'Avg Duration', 'Tools', 'Tokens'];
+    const colWidths = [12, 10, 15, 12, 15, 10, 12];
     
     // Print headers
     let headerLine = '';
@@ -2805,6 +3088,7 @@ class ViewRenderer {
       line += this.theme.formatDuration(day.totalDuration).padEnd(colWidths[3]);
       line += this.theme.formatDuration(avgDuration).padEnd(colWidths[4]);
       line += (day.toolUsageCount || 0).toString().padEnd(colWidths[5]);
+      line += formatLargeNumber(day.totalTokens || 0).padEnd(colWidths[6]);
       
       console.log(line);
     });
@@ -2830,7 +3114,10 @@ class ViewRenderer {
     const totals = {
       sessionCount: projectStats.reduce((sum, p) => sum + p.sessionCount, 0),
       conversationCount: projectStats.reduce((sum, p) => sum + p.conversationCount, 0),
-      totalDuration: projectStats.reduce((sum, p) => sum + p.totalDuration, 0)
+      totalDuration: projectStats.reduce((sum, p) => sum + p.totalDuration, 0),
+      totalTokens: projectStats.reduce((sum, p) => sum + (p.totalTokens || 0), 0),
+      inputTokens: projectStats.reduce((sum, p) => sum + (p.inputTokens || 0), 0),
+      outputTokens: projectStats.reduce((sum, p) => sum + (p.outputTokens || 0), 0)
     };
     
     // Summary
@@ -2840,14 +3127,15 @@ class ViewRenderer {
     console.log(`💼 Total Sessions: ${this.theme.formatHeader(totals.sessionCount.toString())}`);
     console.log(`💬 Total Conversations: ${this.theme.formatHeader(totals.conversationCount.toString())}`);
     console.log(`⏱️  Total Duration: ${this.theme.formatHeader(this.theme.formatDuration(totals.totalDuration))}`);
+    console.log(`🎯 Total Tokens: ${this.theme.formatHeader(formatLargeNumber(totals.totalTokens))} (In: ${formatLargeNumber(totals.inputTokens)}, Out: ${formatLargeNumber(totals.outputTokens)})`);;
     console.log('');
     
     // Table header
     console.log(this.theme.formatHeader('Project Breakdown'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
-    const headers = ['Project', 'Sessions', 'Conversations', 'Duration', 'Avg Duration', 'Tools'];
-    const colWidths = [70, 10, 15, 12, 14, 10];
+    const headers = ['Project', 'Sessions', 'Conv.', 'Duration', 'Avg Dur.', 'Tools', 'Tokens'];
+    const colWidths = [45, 10, 8, 12, 10, 8, 12];
     
     // Print headers
     let headerLine = '';
@@ -2876,6 +3164,7 @@ class ViewRenderer {
       line += this.theme.formatDuration(avgDuration).padEnd(colWidths[4]);
       
       line += (project.toolUsageCount || 0).toString().padEnd(colWidths[5]);
+      line += formatLargeNumber(project.totalTokens || 0).padEnd(colWidths[6]);
       
       console.log(line);
     });
@@ -2884,6 +3173,7 @@ class ViewRenderer {
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log(this.theme.formatDim('Press Ctrl+C to exit'));
   }
+
 
   /**
    * Render search results interactively
@@ -2901,9 +3191,8 @@ class ViewRenderer {
     // Search info
     console.log(this.theme.formatInfo(`Query: "${searchQuery}"`));
     
-    // Results summary and controls
+    // Results summary
     console.log(this.theme.formatHeader(`Found ${searchResults.length} matches`));
-    console.log(this.theme.formatDim('↑/↓ or k/j: Navigate • Enter: View Detail • Esc: Back'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
     if (searchResults.length === 0) {
@@ -2912,7 +3201,7 @@ class ViewRenderer {
     }
     
     // Calculate visible range
-    const headerLines = 7; // Lines used by header
+    const headerLines = 6; // Lines used by header (reduced from 7)
     const footerLines = 2; // Lines for footer
     const resultLines = 5; // Lines per result
     const availableHeight = this.terminalHeight - headerLines - footerLines;

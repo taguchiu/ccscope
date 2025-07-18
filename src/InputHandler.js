@@ -244,6 +244,9 @@ class InputHandler {
       case 'search_results':
         this.handleSearchResultsInput(keyName, key);
         break;
+      case 'conversation_tree':
+        this.handleConversationTreeInput(keyName, key);
+        break;
       case 'help':
         this.handleHelpInput(keyName, key);
         break;
@@ -267,6 +270,9 @@ class InputHandler {
       this.render();
     } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
       this.state.setView('conversation_detail');
+      this.render();
+    } else if (this.isKey(keyName, 't')) {
+      this.state.navigateToTreeView();
       this.render();
     } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
       this.exitApplication(); // From session list, Esc still exits
@@ -320,6 +326,13 @@ class InputHandler {
       if (this.state.toggleAllToolExpansions()) {
         this.render();
       }
+    } else if (this.isKey(keyName, 't')) {
+      this.state.navigateToTreeView();
+      this.render();
+    } else if (this.isKey(keyName, this.keyBindings.actions.search)) {
+      // Search is not supported in conversation detail view
+      // Do nothing to prevent error
+      return;
     } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
       this.state.setView('full_detail');
       this.render();
@@ -450,6 +463,75 @@ class InputHandler {
   }
 
   /**
+   * Handle conversation tree input
+   */
+  handleConversationTreeInput(keyName, key) {
+    // Navigation
+    if (this.isKey(keyName, this.keyBindings.navigation.up)) {
+      this.state.navigateTreeVertical('up');
+      this.render();
+    } else if (this.isKey(keyName, this.keyBindings.navigation.down)) {
+      this.state.navigateTreeVertical('down');
+      this.render();
+    
+    // Tree expansion/collapse
+    } else if (this.isKey(keyName, 'space')) {
+      this.state.toggleTreeNodeExpansion();
+      this.render();
+    } else if (this.isKey(keyName, 'e')) {
+      this.state.expandAllTreeNodes();
+      this.render();
+    } else if (this.isKey(keyName, 'c')) {
+      this.state.collapseAllTreeNodes();
+      this.render();
+    
+    // Mode switching
+    } else if (this.isKey(keyName, 'm')) {
+      this.state.switchTreeMode();
+      this.render();
+    
+    // Navigation to conversation
+    } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
+      this.state.navigateToTreeNodeConversation();
+      this.render();
+    
+    // Session navigation
+    } else if (this.isKey(keyName, this.keyBindings.navigation.left)) {
+      this.state.navigateSessionLeft();
+      this.render();
+    } else if (this.isKey(keyName, this.keyBindings.navigation.right)) {
+      this.state.navigateSessionRight();
+      this.render();
+    
+    // Page scrolling
+    } else if (this.isKey(keyName, 'pageup')) {
+      this.state.scrollPage('up');
+      this.render();
+    } else if (this.isKey(keyName, 'pagedown')) {
+      this.state.scrollPage('down');
+      this.render();
+    
+    // Back navigation
+    } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
+      this.state.navigateBack();
+      this.render();
+    
+    // Help
+    } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
+      this.state.setView('help');
+      this.render();
+    
+    // Resume session
+    } else if (this.isKey(keyName, 'r')) {
+      this.resumeSession();
+    
+    // Quit
+    } else if (this.isKey(keyName, 'q')) {
+      this.exitApplication();
+    }
+  }
+
+  /**
    * Handle search results input
    */
   handleSearchResultsInput(keyName, key) {
@@ -508,6 +590,7 @@ class InputHandler {
       if (this.state.isCommandLineSearch) {
         this.exitApplication();
       } else {
+        this.state.clearSearch(); // Clear search query when returning to session list
         this.state.setView('session_list');
         this.render();
       }

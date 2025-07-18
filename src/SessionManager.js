@@ -36,22 +36,18 @@ class SessionManager {
     const startTime = Date.now();
     
     try {
-      process.stdout.write('🔍 Discovering files...');
+      // Loading is handled by CCScope with spinner
       
       // Discover transcript files
       const transcriptFiles = await this.discoverTranscriptFiles();
       
       // Early return if no files found
       if (transcriptFiles.length === 0) {
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-        console.log('ℹ️ No transcript files found');
         this.sessions = [];
         return this.sessions;
       }
       
-      // Update status
-      process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-      process.stdout.write(`📊 Found ${transcriptFiles.length} files, analyzing...`);
+      // Don't clear - let loading message stay visible
       
       // Parse sessions with progress (now uses parallel processing)
       this.sessions = await this.parseSessionsWithProgress(transcriptFiles);
@@ -70,9 +66,7 @@ class SessionManager {
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
       
-      // Clear the progress line
-      const clearLine = '\r' + ' '.repeat(process.stdout.columns || 80) + '\r';
-      process.stdout.write(clearLine);
+      // Don't clear - will be handled by CCScope
       
       return this.sessions;
       
@@ -190,7 +184,7 @@ class SessionManager {
     const sessions = [];
     let processed = 0;
     
-    process.stdout.write('📊 Analyzing sessions... ');
+    // Remove loading text - keep it simple
     
     // Process files in batches for better performance
     for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
@@ -211,20 +205,10 @@ class SessionManager {
       processed += batch.length;
       const progress = Math.round((processed / transcriptFiles.length) * 100);
       
-      // Update progress less frequently for better performance
-      if (progress % 10 === 0 || processed === transcriptFiles.length) {
-        const barWidth = 20;
-        const filled = Math.round((progress / 100) * barWidth);
-        const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-        const progressText = `📊 Analyzing sessions... [${bar}] ${progress}%`;
-        
-        // Clear line and write progress
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-        process.stdout.write(progressText);
-      }
+      // No progress updates - keep it simple
     }
     
-    console.log(); // New line after progress
+    // No newline needed
     return sessions;
   }
 
@@ -262,7 +246,7 @@ class SessionManager {
       // Extract project path efficiently using cached first entry
       const projectPath = this.extractProjectPathOptimized(filePath, projectName, firstEntry);
       
-      // Build conversation pairs
+      
       const conversationPairs = this.buildConversationPairs(entries);
       
       if (conversationPairs.length === 0) return null;
@@ -578,7 +562,14 @@ class SessionManager {
       toolResults: new Map(), // Map toolId to result
       thinkingCharCount: 0,
       thinkingContent: [],
-      assistantResponses: []
+      assistantResponses: [],
+      tokenUsage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      }
     };
 
     for (const entry of entries) {
@@ -608,7 +599,14 @@ class SessionManager {
           toolResults: new Map(),
           thinkingCharCount: 0,
           thinkingContent: [],
-          assistantResponses: []
+          assistantResponses: [],
+          tokenUsage: {
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          }
         };
       }
       // Handle assistant entries
@@ -627,6 +625,14 @@ class SessionManager {
         const thinkingData = this.extractThinkingContent(entry);
         currentState.thinkingCharCount += thinkingData.charCount;
         currentState.thinkingContent.push(...thinkingData.content);
+        
+        // Extract and accumulate token usage
+        const tokenUsage = this.extractTokenUsage(entry);
+        currentState.tokenUsage.inputTokens += tokenUsage.inputTokens;
+        currentState.tokenUsage.outputTokens += tokenUsage.outputTokens;
+        currentState.tokenUsage.totalTokens += tokenUsage.totalTokens;
+        currentState.tokenUsage.cacheCreationInputTokens += tokenUsage.cacheCreationInputTokens;
+        currentState.tokenUsage.cacheReadInputTokens += tokenUsage.cacheReadInputTokens;
         
         // Add to assistant responses if it has actual content
         if (this.hasActualContent(entry) || tools.length > 0) {
@@ -725,6 +731,32 @@ class SessionManager {
     return results;
   }
 
+
+  /**
+   * Extract token usage from entry
+   */
+  extractTokenUsage(entry) {
+    // Usage data can be in entry.usage or entry.message.usage
+    const usage = entry.usage || (entry.message && entry.message.usage);
+    
+    if (!usage) {
+      return {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      };
+    }
+    return {
+      inputTokens: usage.input_tokens || 0,
+      outputTokens: usage.output_tokens || 0,
+      totalTokens: (usage.input_tokens || 0) + (usage.output_tokens || 0),
+      cacheCreationInputTokens: usage.cache_creation_input_tokens || 0,
+      cacheReadInputTokens: usage.cache_read_input_tokens || 0
+    };
+  }
+
   /**
    * Extract thinking content from entry
    */
@@ -820,6 +852,14 @@ class SessionManager {
       userEntry: state.userMessage,
       assistantEntry: assistantEntry,
       rawAssistantContent: rawAssistantContent, // Add raw content for chronological display
+      tokenUsage: { ...state.tokenUsage }, // Add token usage
+      // Conversation tree fields
+      userUuid: state.userMessage.uuid,
+      userParentUuid: state.userMessage.parentUuid,
+      assistantUuid: assistantEntry.uuid,
+      assistantParentUuid: assistantEntry.parentUuid,
+      isMeta: state.userMessage.isMeta || false,
+      isSidechain: state.userMessage.isSidechain || false,
       // Legacy fields for compatibility
       userMessage: this.extractUserContent(state.userMessage),
       assistantResponse: assistantContent,
@@ -1044,7 +1084,12 @@ class SessionManager {
         totalTools: 0,
         startTime: null,
         endTime: null,
-        lastActivity: null
+        lastActivity: null,
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
       };
     }
     
@@ -1059,6 +1104,24 @@ class SessionManager {
       return 0;
     });
     const totalTools = conversationPairs.reduce((sum, pair) => sum + (pair.toolCount || 0), 0);
+    
+    // Calculate total token usage
+    const tokenUsage = conversationPairs.reduce((acc, pair) => {
+      if (pair.tokenUsage) {
+        acc.inputTokens += pair.tokenUsage.inputTokens || 0;
+        acc.outputTokens += pair.tokenUsage.outputTokens || 0;
+        acc.totalTokens += pair.tokenUsage.totalTokens || 0;
+        acc.cacheCreationInputTokens += pair.tokenUsage.cacheCreationInputTokens || 0;
+        acc.cacheReadInputTokens += pair.tokenUsage.cacheReadInputTokens || 0;
+      }
+      return acc;
+    }, {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0
+    });
     
     // Handle different timestamp field names
     const startTime = conversationPairs[0].userTime || conversationPairs[0].timestamp;
@@ -1080,7 +1143,12 @@ class SessionManager {
       totalTools,
       startTime,
       endTime,
-      lastActivity: endTime
+      lastActivity: endTime,
+      totalTokens: tokenUsage.totalTokens,
+      inputTokens: tokenUsage.inputTokens,
+      outputTokens: tokenUsage.outputTokens,
+      cacheCreationInputTokens: tokenUsage.cacheCreationInputTokens,
+      cacheReadInputTokens: tokenUsage.cacheReadInputTokens
     };
   }
 
@@ -1288,6 +1356,7 @@ class SessionManager {
     this.sessionCache.clear();
   }
 
+
   /**
    * Get statistics
    */
@@ -1348,7 +1417,10 @@ class SessionManager {
             sessions: new Set(),
             conversationCount: 0,
             totalDuration: 0,
-            toolUsageCount: 0
+            toolUsageCount: 0,
+            totalTokens: 0,
+            inputTokens: 0,
+            outputTokens: 0
           });
           dailyTimeRanges.set(dateKey, {
             firstTime: date,
@@ -1364,6 +1436,13 @@ class SessionManager {
         const durationInMs = durationInSeconds * 1000;
         dayStats.totalDuration += durationInMs;
         dayStats.toolUsageCount += conversation.toolCount || 0;
+        
+        // Add token usage
+        if (conversation.tokenUsage) {
+          dayStats.totalTokens += conversation.tokenUsage.totalTokens || 0;
+          dayStats.inputTokens += conversation.tokenUsage.inputTokens || 0;
+          dayStats.outputTokens += conversation.tokenUsage.outputTokens || 0;
+        }
         
         // Update time range for the day
         const timeRange = dailyTimeRanges.get(dateKey);
@@ -1417,7 +1496,10 @@ class SessionManager {
           totalDuration: 0,
           toolUsageCount: 0,
           thinkingTime: 0,
-          thinkingRates: []
+          thinkingRates: [],
+          totalTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0
         });
       }
       
@@ -1430,6 +1512,11 @@ class SessionManager {
       if (session.thinkingRate !== undefined) {
         projectStat.thinkingRates.push(session.thinkingRate);
       }
+      
+      // Add session-level token usage
+      projectStat.totalTokens += session.totalTokens || 0;
+      projectStat.inputTokens += session.inputTokens || 0;
+      projectStat.outputTokens += session.outputTokens || 0;
       
       // Calculate total tools and thinking time from conversations
       const conversations = session.conversationPairs || session.conversations || [];
@@ -1616,6 +1703,116 @@ class SessionManager {
     
     // Sort results by timestamp (newest first)
     return results.sort((a, b) => new Date(b.userTime) - new Date(a.userTime));
+  }
+
+  /**
+   * Build conversation tree structure from conversation pairs
+   */
+  buildConversationTree(conversationPairs) {
+    const tree = {
+      nodes: new Map(), // uuid -> node data
+      roots: [], // conversations with no parent
+      children: new Map() // parentUuid -> [childUuids]
+    };
+
+    // First pass: create all nodes
+    for (const conversation of conversationPairs) {
+      // User message node
+      if (conversation.userUuid) {
+        tree.nodes.set(conversation.userUuid, {
+          uuid: conversation.userUuid,
+          parentUuid: conversation.userParentUuid,
+          type: 'user',
+          content: conversation.userContent,
+          timestamp: conversation.userTime,
+          isMeta: conversation.isMeta,
+          isSidechain: conversation.isSidechain,
+          conversation: conversation
+        });
+      }
+
+      // Assistant message node
+      if (conversation.assistantUuid) {
+        tree.nodes.set(conversation.assistantUuid, {
+          uuid: conversation.assistantUuid,
+          parentUuid: conversation.assistantParentUuid,
+          type: 'assistant',
+          content: conversation.assistantContent,
+          timestamp: conversation.assistantTime,
+          isMeta: false,
+          isSidechain: conversation.isSidechain,
+          conversation: conversation
+        });
+      }
+    }
+
+    // Second pass: build parent-child relationships
+    for (const [uuid, node] of tree.nodes) {
+      if (node.parentUuid && tree.nodes.has(node.parentUuid)) {
+        // Add to parent's children
+        if (!tree.children.has(node.parentUuid)) {
+          tree.children.set(node.parentUuid, []);
+        }
+        tree.children.get(node.parentUuid).push(uuid);
+      } else {
+        // No parent or parent not found - this is a root
+        tree.roots.push(uuid);
+      }
+    }
+
+    // Sort children by timestamp for consistent ordering
+    for (const [parentUuid, childUuids] of tree.children) {
+      childUuids.sort((a, b) => {
+        const nodeA = tree.nodes.get(a);
+        const nodeB = tree.nodes.get(b);
+        return new Date(nodeA.timestamp) - new Date(nodeB.timestamp);
+      });
+    }
+
+    // Sort roots by timestamp
+    tree.roots.sort((a, b) => {
+      const nodeA = tree.nodes.get(a);
+      const nodeB = tree.nodes.get(b);
+      return new Date(nodeA.timestamp) - new Date(nodeB.timestamp);
+    });
+
+    return tree;
+  }
+
+  /**
+   * Get conversation path from root to specified node
+   */
+  getConversationPath(tree, targetUuid) {
+    const path = [];
+    let currentUuid = targetUuid;
+
+    while (currentUuid && tree.nodes.has(currentUuid)) {
+      const node = tree.nodes.get(currentUuid);
+      path.unshift(node);
+      currentUuid = node.parentUuid;
+    }
+
+    return path;
+  }
+
+  /**
+   * Get all descendants of a node
+   */
+  getNodeDescendants(tree, nodeUuid) {
+    const descendants = [];
+    const queue = [nodeUuid];
+
+    while (queue.length > 0) {
+      const currentUuid = queue.shift();
+      const children = tree.children.get(currentUuid) || [];
+      
+      for (const childUuid of children) {
+        descendants.push(tree.nodes.get(childUuid));
+        queue.push(childUuid);
+      }
+    }
+
+    return descendants.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   }
 
 }
