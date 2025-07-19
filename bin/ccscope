@@ -242,10 +242,14 @@ async function main() {
     // Execute command or start interactive mode
     switch (options.command) {
       case 'daily':
+        // Show loading screen for command line mode
+        app.showLoadingScreen();
         await app.showDailyStatistics();
         break;
         
       case 'project':
+        // Show loading screen for command line mode
+        app.showLoadingScreen();
         await app.showProjectStatistics();
         break;
         
@@ -255,12 +259,15 @@ async function main() {
           showCommandHelp('search');
           process.exit(1);
         }
+        // Show loading screen for command line mode
+        app.showLoadingScreen();
         await app.showSearchResults(options.query, { regex: options.regex || false });
         break;
         
         
       default:
         // No command specified, start interactive browser
+        // Loading screen is handled by app.start()
         await app.start();
         break;
     }

@@ -850,9 +850,8 @@ describe('InputHandler', () => {
       // render might be called through debounce, so let's just check updateTerminalSize
     });
 
-    test.skip('handles context range adjustment', () => {
+    test('handles context range adjustment', () => {
       // Test context range increase/decrease
-      // NOTE: This feature is not yet implemented in InputHandler
       inputHandler.handleFullDetailInput('+', { name: '+' });
       expect(mockStateManager.increaseContextRange).toHaveBeenCalled();
       

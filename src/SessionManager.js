@@ -6,6 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const CacheManager = require('./CacheManager');
+const FastParser = require('./FastParser');
 
 class SessionManager {
   constructor() {
@@ -24,10 +26,16 @@ class SessionManager {
       responseTime: null,
       dateRange: null
     };
+    
+    // Initialize cache manager
+    this.cacheManager = new CacheManager();
+    
+    // Initialize fast parser
+    this.fastParser = new FastParser();
   }
 
   /**
-   * Discover and analyze all sessions (optimized)
+   * Discover and analyze all sessions (optimized with caching)
    */
   async discoverSessions() {
     if (this.isLoading) return this.sessions;
@@ -37,7 +45,8 @@ class SessionManager {
     const timings = {};
     
     try {
-      // Loading is handled by CCScope with spinner
+      // Try to load from cache first
+      const cachedData = this.cacheManager.loadCache();
       
       // Discover transcript files
       const fileDiscoveryStart = Date.now();
@@ -50,31 +59,63 @@ class SessionManager {
         return this.sessions;
       }
       
-      // Don't clear - let loading message stay visible
+      let sessions = [];
+      let filesToParse = [];
+      const fileHashes = {};
       
-      // Parse sessions with progress (now uses parallel processing)
-      const parseStart = Date.now();
-      this.sessions = await this.parseSessionsWithProgress(transcriptFiles);
-      timings.sessionParsing = Date.now() - parseStart;
-      
-      // Sort sessions by last activity (optimize by checking if already sorted)
-      const sortStart = Date.now();
-      if (this.sessions.length > 1) {
-        const needsSorting = this.sessions.some((session, i) => 
-          i > 0 && new Date(session.lastActivity) > new Date(this.sessions[i-1].lastActivity)
+      if (cachedData) {
+        // Using cached data
+        
+        // Check which files need updating
+        for (const filePath of transcriptFiles) {
+          const hash = this.cacheManager.getFileHash(filePath);
+          fileHashes[filePath] = { hash };
+          
+          if (this.cacheManager.needsUpdate(filePath, cachedData.metadata)) {
+            filesToParse.push(filePath);
+          }
+        }
+        
+        // Get cached sessions that are still valid
+        const validFiles = new Set(transcriptFiles);
+        sessions = cachedData.sessions.filter(session => 
+          validFiles.has(session.filePath) && 
+          this.cacheManager.isCacheValid(session.filePath, cachedData.metadata)
         );
         
-        if (needsSorting) {
-          this.sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+        if (filesToParse.length > 0) {
+          // Updating changed files
         }
+      } else {
+        filesToParse = transcriptFiles;
+        for (const filePath of transcriptFiles) {
+          const hash = this.cacheManager.getFileHash(filePath);
+          fileHashes[filePath] = { hash };
+        }
+        // Analyzing files
       }
+      
+      // Parse new or updated files with parallel processing
+      if (filesToParse.length > 0) {
+        const parseStart = Date.now();
+        const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0);
+        sessions = [...sessions, ...newSessions];
+        timings.sessionParsing = Date.now() - parseStart;
+      }
+      
+      // Sort sessions by last activity
+      const sortStart = Date.now();
+      sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+      this.sessions = sessions;
       timings.sorting = Date.now() - sortStart;
+      
+      // Save to cache
+      if (sessions.length > 0) {
+        this.cacheManager.saveCache(sessions, fileHashes);
+      }
       
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
-      
-      
-      // Don't clear - will be handled by CCScope
       
       return this.sessions;
       
@@ -184,19 +225,32 @@ class SessionManager {
   /**
    * Parse sessions with progress updates (optimized with parallel processing)
    */
-  async parseSessionsWithProgress(transcriptFiles) {
+  async parseSessionsWithProgress(transcriptFiles, isIncremental = false) {
     if (transcriptFiles.length === 0) return [];
     
-    // Process all files in parallel for maximum speed
     const sessions = [];
     
     // Parse all files in parallel - Node.js can handle it
-    const parsePromises = transcriptFiles.map(file => 
-      this.parseTranscriptFile(file).catch(error => {
-        // Silently skip files with errors
-        return null;
-      })
-    );
+    const parsePromises = transcriptFiles.map(file => {
+      // Check memory cache first
+      const cached = this.cacheManager.getFromMemoryCache(file);
+      if (cached) {
+        return Promise.resolve(cached);
+      }
+      
+      // Parse and store in memory cache
+      return this.parseTranscriptFile(file)
+        .then(session => {
+          if (session) {
+            this.cacheManager.storeInMemoryCache(file, session);
+          }
+          return session;
+        })
+        .catch(error => {
+          // Silently skip files with errors
+          return null;
+        });
+    });
     
     // Wait for all files to be parsed
     const results = await Promise.all(parsePromises);
@@ -206,43 +260,16 @@ class SessionManager {
       if (session) sessions.push(session);
     });
     
-    // No newline needed
     return sessions;
   }
 
   /**
-   * Parse a single transcript file (optimized)
+   * Parse a single transcript file (optimized with FastParser)
    */
   async parseTranscriptFile(filePath) {
     try {
-      // Check cache first
-      const stats = await fs.promises.stat(filePath);
-      const mtime = stats.mtime.getTime();
-      
-      const cached = this.sessionCache.get(filePath);
-      if (cached && cached.mtime === mtime) {
-        // Return cached session if file hasn't changed
-        return cached.session;
-      }
-      
-      const content = await fs.promises.readFile(filePath, 'utf8');
-      const lines = content.trim().split('\n').filter(line => line.trim());
-      
-      if (lines.length === 0) return null;
-      
-      // Parse JSON lines with improved error handling
-      const entries = [];
-      let firstEntry = null;
-      
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          entries.push(entry);
-          if (!firstEntry) firstEntry = entry; // Store first entry for metadata extraction
-        } catch (error) {
-          continue; // Skip malformed lines
-        }
-      }
+      // Use FastParser for optimized parsing
+      const { entries, firstEntry } = await this.fastParser.parseFile(filePath);
       
       if (entries.length === 0) return null;
       
@@ -277,7 +304,8 @@ class SessionManager {
         ...metrics
       };
       
-      // Cache the parsed session with mtime for fast future access
+      // Cache the parsed session for fast future access
+      const stats = await fs.promises.stat(filePath);
       this.sessionCache.set(filePath, {
         session,
         mtime: stats.mtime.getTime()
@@ -775,24 +803,18 @@ class SessionManager {
    * Extract tool uses from assistant message
    */
   extractToolUses(entry) {
-    const toolUses = [];
-    if (!entry.message || !entry.message.content) return toolUses;
+    if (!entry.message || !entry.message.content) return [];
     
-    const content = Array.isArray(entry.message.content) ? 
-      entry.message.content : [entry.message.content];
+    // Use FastParser's optimized tool extraction
+    const tools = this.fastParser.extractToolUsesOptimized(entry.message.content);
     
-    for (const item of content) {
-      if (item.type === 'tool_use' && item.name) {
-        toolUses.push({
-          timestamp: new Date(entry.timestamp),
-          toolName: item.name,
-          toolId: item.id || 'unknown',
-          input: item.input || {}
-        });
-      }
-    }
-    
-    return toolUses;
+    // Transform to expected format
+    return tools.map(tool => ({
+      timestamp: this.fastParser.extractTimestamp(entry),
+      toolName: tool.name,
+      toolId: tool.id || 'unknown',
+      input: tool.input || {}
+    }));
   }
 
   /**
@@ -1293,15 +1315,10 @@ class SessionManager {
    * Generate hash for session ID
    */
   generateHash(content) {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    const hexHash = Math.abs(hash).toString(16);
+    // Use FastParser's optimized hash function
+    const hash = this.fastParser.calculateHash(content);
     // Pad with zeros to ensure at least 8 characters
-    return hexHash.padStart(8, '0');
+    return hash.padStart(8, '0');
   }
 
   /**

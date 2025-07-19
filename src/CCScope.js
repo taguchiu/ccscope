@@ -107,6 +107,8 @@ class CCScopeApplication {
     try {
       // Initialize if not already done
       if (!this.isInitialized) {
+        // Show loading screen before initialization
+        this.showLoadingScreen();
         await this.initialize();
       }
       
@@ -244,7 +246,7 @@ class CCScopeApplication {
       // Get daily statistics
       const dailyStatsResult = this.sessionManager.getDailyStatistics();
       
-      // Render daily statistics view
+      // Render
       this.viewRenderer.renderDailyStatistics(dailyStatsResult);
       
     } catch (error) {
@@ -269,7 +271,7 @@ class CCScopeApplication {
       // Get project statistics
       const projectStats = this.sessionManager.getProjectStatistics();
       
-      // Render project statistics view
+      // Render
       this.viewRenderer.renderProjectStatistics(projectStats);
       
     } catch (error) {

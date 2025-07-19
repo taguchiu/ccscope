@@ -87,6 +87,7 @@ describe('SessionManager', () => {
       const sessions = await sessionManager.discoverSessions();
       
       expect(sessions).toEqual([]);
+      // No longer outputs message when no files found
     });
 
     test('discovers and parses transcript files', async () => {

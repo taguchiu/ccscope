@@ -406,6 +406,14 @@ class InputHandler {
         this.render();
       }
     }
+    // Context range adjustment
+    else if (keyName === '+' || keyName === '=') {
+      this.state.increaseContextRange();
+      this.render();
+    } else if (keyName === '-' || keyName === '_') {
+      this.state.decreaseContextRange();
+      this.render();
+    }
     // Jump to top/bottom
     else if (this.isKey(keyName, this.keyBindings.navigation.home)) {
       this.state.scrollToTop();
