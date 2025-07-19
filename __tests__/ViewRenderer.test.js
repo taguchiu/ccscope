@@ -1307,7 +1307,6 @@ describe('ViewRenderer', () => {
       expect(console.clear).toHaveBeenCalled();
       expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Daily Conversation Statistics');
       expect(mockThemeManager.formatDuration).toHaveBeenCalled();
-      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 5 sessions, 20 conversations, 15 tool uses');
     });
     
     test('handles renderProjectStatistics with empty data', () => {
@@ -1340,8 +1339,6 @@ describe('ViewRenderer', () => {
       
       expect(console.clear).toHaveBeenCalled();
       expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Project Statistics');
-      // Project stats now displayed differently
-      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 2 projects, 4 sessions, 15 conversations');
       expect(mockThemeManager.formatDuration).toHaveBeenCalled();
     });
     

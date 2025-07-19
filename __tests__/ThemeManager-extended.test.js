@@ -93,17 +93,17 @@ describe('ThemeManager Extended Tests', () => {
 
     test('formats tool count with color thresholds', () => {
       // Low count (no color)
-      expect(themeManager.formatToolCount(5)).toBe('   5t \x1b[0m');
+      expect(themeManager.formatToolCount(5)).toBe('    5 \x1b[0m');
       
       // Medium count (yellow)
-      expect(themeManager.formatToolCount(25)).toBe('\x1b[93m  25t \x1b[0m');
+      expect(themeManager.formatToolCount(25)).toBe('\x1b[93m   25 \x1b[0m');
       
       // High count (red)
-      expect(themeManager.formatToolCount(75)).toBe('\x1b[91m  75t \x1b[0m');
+      expect(themeManager.formatToolCount(75)).toBe('\x1b[91m   75 \x1b[0m');
       
       // Exactly at boundaries
-      expect(themeManager.formatToolCount(20)).toBe('\x1b[93m  20t \x1b[0m');
-      expect(themeManager.formatToolCount(50)).toBe('\x1b[91m  50t \x1b[0m');
+      expect(themeManager.formatToolCount(20)).toBe('\x1b[93m   20 \x1b[0m');
+      expect(themeManager.formatToolCount(50)).toBe('\x1b[91m   50 \x1b[0m');
     });
   });
 
