@@ -42,13 +42,16 @@ class SessionManager {
     
     this.isLoading = true;
     const startTime = Date.now();
+    const timings = {};
     
     try {
       // Try to load from cache first
       const cachedData = this.cacheManager.loadCache();
       
       // Discover transcript files
+      const fileDiscoveryStart = Date.now();
       const transcriptFiles = await this.discoverTranscriptFiles();
+      timings.fileDiscovery = Date.now() - fileDiscoveryStart;
       
       // Early return if no files found
       if (transcriptFiles.length === 0) {
@@ -92,16 +95,19 @@ class SessionManager {
         // Analyzing files
       }
       
-      // Parse new or updated files
+      // Parse new or updated files with parallel processing
       if (filesToParse.length > 0) {
+        const parseStart = Date.now();
         const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0);
         sessions = [...sessions, ...newSessions];
+        timings.sessionParsing = Date.now() - parseStart;
       }
       
       // Sort sessions by last activity
+      const sortStart = Date.now();
       sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-      
       this.sessions = sessions;
+      timings.sorting = Date.now() - sortStart;
       
       // Save to cache
       if (sessions.length > 0) {
@@ -110,10 +116,6 @@ class SessionManager {
       
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
-      
-      // Clear the progress line
-      const clearLine = '\r' + ' '.repeat(process.stdout.columns || 80) + '\r';
-      process.stdout.write(clearLine);
       
       return this.sessions;
       
@@ -226,65 +228,37 @@ class SessionManager {
   async parseSessionsWithProgress(transcriptFiles, isIncremental = false) {
     if (transcriptFiles.length === 0) return [];
     
-    // Process files in batches to avoid overwhelming the system
-    const BATCH_SIZE = 20; // Increased batch size for better performance
     const sessions = [];
-    let processed = 0;
     
-    // Only show progress for significant work
-    const showProgress = false; // Disable all progress output
-    
-    // Process files in batches for better performance
-    for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
-      const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
-      
-      // Process batch in parallel
-      const batchPromises = batch.map(file => {
-        // Check memory cache first
-        const cached = this.cacheManager.getFromMemoryCache(file);
-        if (cached) {
-          return Promise.resolve(cached);
-        }
-        
-        // Parse and store in memory cache
-        return this.parseTranscriptFile(file)
-          .then(session => {
-            if (session) {
-              this.cacheManager.storeInMemoryCache(file, session);
-            }
-            return session;
-          })
-          .catch(() => null); // Return null for errors
-      });
-      
-      const batchResults = await Promise.all(batchPromises);
-      
-      // Add successful results
-      batchResults.forEach(session => {
-        if (session) sessions.push(session);
-      });
-      
-      processed += batch.length;
-      const progress = Math.round((processed / transcriptFiles.length) * 100);
-      
-      // Update progress less frequently for better performance
-      if (showProgress && (progress % 20 === 0 || processed === transcriptFiles.length)) {
-        const barWidth = 20;
-        const filled = Math.round((progress / 100) * barWidth);
-        const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-        const progressText = isIncremental ?
-          `🔄 Updating... [${bar}] ${progress}%` :
-          `📊 Analyzing sessions... [${bar}] ${progress}%`;
-        
-        // Clear line and write progress
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
-        process.stdout.write(progressText);
+    // Parse all files in parallel - Node.js can handle it
+    const parsePromises = transcriptFiles.map(file => {
+      // Check memory cache first
+      const cached = this.cacheManager.getFromMemoryCache(file);
+      if (cached) {
+        return Promise.resolve(cached);
       }
-    }
+      
+      // Parse and store in memory cache
+      return this.parseTranscriptFile(file)
+        .then(session => {
+          if (session) {
+            this.cacheManager.storeInMemoryCache(file, session);
+          }
+          return session;
+        })
+        .catch(error => {
+          // Silently skip files with errors
+          return null;
+        });
+    });
     
-    if (showProgress) {
-      console.log(); // New line after progress
-    }
+    // Wait for all files to be parsed
+    const results = await Promise.all(parsePromises);
+    
+    // Filter out null results (failed parses)
+    results.forEach(session => {
+      if (session) sessions.push(session);
+    });
     
     return sessions;
   }
@@ -307,7 +281,7 @@ class SessionManager {
       // Extract project path efficiently using cached first entry
       const projectPath = this.extractProjectPathOptimized(filePath, projectName, firstEntry);
       
-      // Build conversation pairs
+      
       const conversationPairs = this.buildConversationPairs(entries);
       
       if (conversationPairs.length === 0) return null;
@@ -318,7 +292,7 @@ class SessionManager {
       // Generate session summary
       const summary = this.generateSessionSummary(conversationPairs);
       
-      return {
+      const session = {
         sessionId,
         fullSessionId: fullSessionId || sessionId,
         projectName,
@@ -329,6 +303,15 @@ class SessionManager {
         summary,
         ...metrics
       };
+      
+      // Cache the parsed session for fast future access
+      const stats = await fs.promises.stat(filePath);
+      this.sessionCache.set(filePath, {
+        session,
+        mtime: stats.mtime.getTime()
+      });
+      
+      return session;
       
     } catch (error) {
       throw new Error(`Failed to parse transcript: ${error.message}`);
@@ -623,7 +606,15 @@ class SessionManager {
       toolResults: new Map(), // Map toolId to result
       thinkingCharCount: 0,
       thinkingContent: [],
-      assistantResponses: []
+      assistantResponses: [],
+      subAgentCommands: [],
+      tokenUsage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      }
     };
 
     for (const entry of entries) {
@@ -640,21 +631,45 @@ class SessionManager {
           continue;
         }
         
-        // Complete previous conversation if exists
-        if (currentState.userMessage && currentState.assistantResponses.length > 0) {
-          const lastAssistant = currentState.assistantResponses[currentState.assistantResponses.length - 1];
-          this.createConversationPair(pairs, currentState, lastAssistant);
-        }
+        // Check if this is a sub-agent command (follows a Task tool)
+        const isSubAgentCommand = this.isSubAgentCommand(entry, currentState);
         
-        // Start new conversation
-        currentState = {
-          userMessage: entry,
-          toolUses: [],
-          toolResults: new Map(),
-          thinkingCharCount: 0,
-          thinkingContent: [],
-          assistantResponses: []
-        };
+        if (isSubAgentCommand && currentState.userMessage) {
+          // This is a sub-agent command, add it to the current conversation
+          // Store the sub-agent command in the current state
+          if (!currentState.subAgentCommands) {
+            currentState.subAgentCommands = [];
+          }
+          currentState.subAgentCommands.push({
+            command: entry,
+            response: null, // Will be filled when assistant responds
+            commandIndex: currentState.subAgentCommands.length
+          });
+        } else {
+          // Complete previous conversation if exists
+          if (currentState.userMessage && currentState.assistantResponses.length > 0) {
+            const lastAssistant = currentState.assistantResponses[currentState.assistantResponses.length - 1];
+            this.createConversationPair(pairs, currentState, lastAssistant);
+          }
+          
+          // Start new conversation
+          currentState = {
+            userMessage: entry,
+            toolUses: [],
+            toolResults: new Map(),
+            thinkingCharCount: 0,
+            thinkingContent: [],
+            assistantResponses: [],
+            subAgentCommands: [],
+            tokenUsage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              totalTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0
+            }
+          };
+        }
       }
       // Handle assistant entries
       else if (entry.type === 'assistant' && currentState.userMessage) {
@@ -662,7 +677,7 @@ class SessionManager {
         const tools = this.extractToolUses(entry);
         currentState.toolUses.push(...tools);
         
-        // Extract tool results from assistant message
+        // Extract tool results from assistant message (including Task tools)
         const toolResults = this.extractToolResults(entry);
         toolResults.forEach(result => {
           currentState.toolResults.set(result.toolId, result);
@@ -672,6 +687,25 @@ class SessionManager {
         const thinkingData = this.extractThinkingContent(entry);
         currentState.thinkingCharCount += thinkingData.charCount;
         currentState.thinkingContent.push(...thinkingData.content);
+        
+        // Extract and accumulate token usage
+        const tokenUsage = this.extractTokenUsage(entry);
+        currentState.tokenUsage.inputTokens += tokenUsage.inputTokens;
+        currentState.tokenUsage.outputTokens += tokenUsage.outputTokens;
+        currentState.tokenUsage.totalTokens += tokenUsage.totalTokens;
+        currentState.tokenUsage.cacheCreationInputTokens += tokenUsage.cacheCreationInputTokens;
+        currentState.tokenUsage.cacheReadInputTokens += tokenUsage.cacheReadInputTokens;
+        
+        // Check if this is a response to a sub-agent command
+        const isSubAgentResponse = this.isSubAgentResponse(entry, currentState);
+        
+        if (isSubAgentResponse && currentState.subAgentCommands && currentState.subAgentCommands.length > 0) {
+          // Find the most recent sub-agent command without a response
+          const unresponded = currentState.subAgentCommands.find(cmd => cmd.response === null);
+          if (unresponded) {
+            unresponded.response = entry;
+          }
+        }
         
         // Add to assistant responses if it has actual content
         if (this.hasActualContent(entry) || tools.length > 0) {
@@ -687,6 +721,48 @@ class SessionManager {
     }
     
     return pairs;
+  }
+
+  /**
+   * Check if entry is a sub-agent command (follows a Task tool)
+   */
+  isSubAgentCommand(entry, currentState) {
+    // Check if there's a previous Task tool in the current conversation
+    if (!currentState.toolUses || currentState.toolUses.length === 0) {
+      return false;
+    }
+    
+    // Check if the last tool used was a Task tool
+    const lastTool = currentState.toolUses[currentState.toolUses.length - 1];
+    if (lastTool && lastTool.toolName === 'Task') {
+      return true;
+    }
+    
+    // Also check if the content contains sub-agent indicators
+    const content = this.extractUserContent(entry);
+    if (content.includes('⎿ task:') || content.includes('task:')) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if entry is a sub-agent response (follows a sub-agent command)
+   */
+  isSubAgentResponse(entry, currentState) {
+    // Check if there are any sub-agent commands waiting for responses
+    if (!currentState.subAgentCommands || currentState.subAgentCommands.length === 0) {
+      return false;
+    }
+    
+    // Check if there's at least one sub-agent command without a response
+    const unresponded = currentState.subAgentCommands.find(cmd => cmd.response === null);
+    if (unresponded) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**
@@ -753,15 +829,61 @@ class SessionManager {
     
     for (const item of content) {
       if (item.type === 'tool_result' && item.tool_use_id) {
+        // Try multiple ways to get the result content
+        let resultContent = '';
+        
+        if (item.content) {
+          // Handle both string and array content
+          if (typeof item.content === 'string') {
+            resultContent = item.content;
+          } else if (Array.isArray(item.content)) {
+            resultContent = item.content.map(c => c.text || c.content || JSON.stringify(c)).join('\n');
+          } else if (item.content.text) {
+            resultContent = item.content.text;
+          } else {
+            resultContent = JSON.stringify(item.content);
+          }
+        } else if (item.text) {
+          resultContent = item.text;
+        } else if (item.result) {
+          resultContent = typeof item.result === 'string' ? item.result : JSON.stringify(item.result);
+        }
+        
         results.push({
           toolId: item.tool_use_id,
-          result: item.content || '',
+          result: resultContent,
           isError: item.is_error || false
         });
       }
     }
     
     return results;
+  }
+
+
+  /**
+   * Extract token usage from entry
+   */
+  extractTokenUsage(entry) {
+    // Usage data can be in entry.usage or entry.message.usage
+    const usage = entry.usage || (entry.message && entry.message.usage);
+    
+    if (!usage) {
+      return {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      };
+    }
+    return {
+      inputTokens: usage.input_tokens || 0,
+      outputTokens: usage.output_tokens || 0,
+      totalTokens: (usage.input_tokens || 0) + (usage.output_tokens || 0),
+      cacheCreationInputTokens: usage.cache_creation_input_tokens || 0,
+      cacheReadInputTokens: usage.cache_read_input_tokens || 0
+    };
   }
 
   /**
@@ -832,8 +954,8 @@ class SessionManager {
     const responseTime = this.calculateResponseTime(state.userMessage.timestamp, assistantEntry.timestamp);
     const assistantContent = this.extractAssistantContent(assistantEntry);
     
-    // Merge tool uses with their results
-    const toolUsesWithResults = state.toolUses.map(tool => {
+    // Merge tool uses with their results, keep Task tools for display but exclude from count
+    const allToolUsesWithResults = state.toolUses.map(tool => {
       const result = state.toolResults.get(tool.toolId);
       return {
         ...tool,
@@ -841,6 +963,9 @@ class SessionManager {
         isError: result ? result.isError : false
       };
     });
+    
+    // Filter out Task tools for counting purposes only
+    const toolUsesWithResults = allToolUsesWithResults.filter(tool => tool.toolName !== 'Task');
     
     // Build chronological raw assistant content from all assistant responses
     const rawAssistantContent = this.buildChronologicalContent(state.assistantResponses);
@@ -854,17 +979,27 @@ class SessionManager {
       thinkingCharCount: state.thinkingCharCount,
       thinkingContent: [...state.thinkingContent],
       toolUses: toolUsesWithResults,
-      toolCount: state.toolUses.length,
+      allToolUses: allToolUsesWithResults, // Include Task tools for display
+      toolCount: toolUsesWithResults.length,
       toolResults: Array.from(state.toolResults.values()), // Add toolResults for tests
       userEntry: state.userMessage,
       assistantEntry: assistantEntry,
       rawAssistantContent: rawAssistantContent, // Add raw content for chronological display
+      tokenUsage: { ...state.tokenUsage }, // Add token usage
+      // Conversation tree fields
+      userUuid: state.userMessage.uuid,
+      userParentUuid: state.userMessage.parentUuid,
+      assistantUuid: assistantEntry.uuid,
+      assistantParentUuid: assistantEntry.parentUuid,
+      isMeta: state.userMessage.isMeta || false,
+      isSidechain: state.userMessage.isSidechain || false,
       // Legacy fields for compatibility
       userMessage: this.extractUserContent(state.userMessage),
       assistantResponse: assistantContent,
       assistantResponsePreview: this.sanitizeForDisplay(assistantContent, 200),
       timestamp: state.userMessage.timestamp,
-      toolsUsed: state.toolUses.map(t => t.toolName)
+      toolsUsed: toolUsesWithResults.map(t => t.toolName),
+      subAgentCommands: state.subAgentCommands || []
     });
   }
 
@@ -1083,7 +1218,12 @@ class SessionManager {
         totalTools: 0,
         startTime: null,
         endTime: null,
-        lastActivity: null
+        lastActivity: null,
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
       };
     }
     
@@ -1098,6 +1238,24 @@ class SessionManager {
       return 0;
     });
     const totalTools = conversationPairs.reduce((sum, pair) => sum + (pair.toolCount || 0), 0);
+    
+    // Calculate total token usage
+    const tokenUsage = conversationPairs.reduce((acc, pair) => {
+      if (pair.tokenUsage) {
+        acc.inputTokens += pair.tokenUsage.inputTokens || 0;
+        acc.outputTokens += pair.tokenUsage.outputTokens || 0;
+        acc.totalTokens += pair.tokenUsage.totalTokens || 0;
+        acc.cacheCreationInputTokens += pair.tokenUsage.cacheCreationInputTokens || 0;
+        acc.cacheReadInputTokens += pair.tokenUsage.cacheReadInputTokens || 0;
+      }
+      return acc;
+    }, {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0
+    });
     
     // Handle different timestamp field names
     const startTime = conversationPairs[0].userTime || conversationPairs[0].timestamp;
@@ -1117,9 +1275,15 @@ class SessionManager {
       actualDuration: Math.max(0, actualDuration), // Actual session time in milliseconds
       avgResponseTime,
       totalTools,
+      toolUsageCount: totalTools, // Add toolUsageCount field for sorting
       startTime,
       endTime,
-      lastActivity: endTime
+      lastActivity: endTime,
+      totalTokens: tokenUsage.totalTokens,
+      inputTokens: tokenUsage.inputTokens,
+      outputTokens: tokenUsage.outputTokens,
+      cacheCreationInputTokens: tokenUsage.cacheCreationInputTokens,
+      cacheReadInputTokens: tokenUsage.cacheReadInputTokens
     };
   }
 
@@ -1322,6 +1486,7 @@ class SessionManager {
     this.sessionCache.clear();
   }
 
+
   /**
    * Get statistics
    */
@@ -1382,7 +1547,10 @@ class SessionManager {
             sessions: new Set(),
             conversationCount: 0,
             totalDuration: 0,
-            toolUsageCount: 0
+            toolUsageCount: 0,
+            totalTokens: 0,
+            inputTokens: 0,
+            outputTokens: 0
           });
           dailyTimeRanges.set(dateKey, {
             firstTime: date,
@@ -1398,6 +1566,13 @@ class SessionManager {
         const durationInMs = durationInSeconds * 1000;
         dayStats.totalDuration += durationInMs;
         dayStats.toolUsageCount += conversation.toolCount || 0;
+        
+        // Add token usage
+        if (conversation.tokenUsage) {
+          dayStats.totalTokens += conversation.tokenUsage.totalTokens || 0;
+          dayStats.inputTokens += conversation.tokenUsage.inputTokens || 0;
+          dayStats.outputTokens += conversation.tokenUsage.outputTokens || 0;
+        }
         
         // Update time range for the day
         const timeRange = dailyTimeRanges.get(dateKey);
@@ -1451,7 +1626,10 @@ class SessionManager {
           totalDuration: 0,
           toolUsageCount: 0,
           thinkingTime: 0,
-          thinkingRates: []
+          thinkingRates: [],
+          totalTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0
         });
       }
       
@@ -1464,6 +1642,11 @@ class SessionManager {
       if (session.thinkingRate !== undefined) {
         projectStat.thinkingRates.push(session.thinkingRate);
       }
+      
+      // Add session-level token usage
+      projectStat.totalTokens += session.totalTokens || 0;
+      projectStat.inputTokens += session.inputTokens || 0;
+      projectStat.outputTokens += session.outputTokens || 0;
       
       // Calculate total tools and thinking time from conversations
       const conversations = session.conversationPairs || session.conversations || [];
@@ -1650,6 +1833,116 @@ class SessionManager {
     
     // Sort results by timestamp (newest first)
     return results.sort((a, b) => new Date(b.userTime) - new Date(a.userTime));
+  }
+
+  /**
+   * Build conversation tree structure from conversation pairs
+   */
+  buildConversationTree(conversationPairs) {
+    const tree = {
+      nodes: new Map(), // uuid -> node data
+      roots: [], // conversations with no parent
+      children: new Map() // parentUuid -> [childUuids]
+    };
+
+    // First pass: create all nodes
+    for (const conversation of conversationPairs) {
+      // User message node
+      if (conversation.userUuid) {
+        tree.nodes.set(conversation.userUuid, {
+          uuid: conversation.userUuid,
+          parentUuid: conversation.userParentUuid,
+          type: 'user',
+          content: conversation.userContent,
+          timestamp: conversation.userTime,
+          isMeta: conversation.isMeta,
+          isSidechain: conversation.isSidechain,
+          conversation: conversation
+        });
+      }
+
+      // Assistant message node
+      if (conversation.assistantUuid) {
+        tree.nodes.set(conversation.assistantUuid, {
+          uuid: conversation.assistantUuid,
+          parentUuid: conversation.assistantParentUuid,
+          type: 'assistant',
+          content: conversation.assistantContent,
+          timestamp: conversation.assistantTime,
+          isMeta: false,
+          isSidechain: conversation.isSidechain,
+          conversation: conversation
+        });
+      }
+    }
+
+    // Second pass: build parent-child relationships
+    for (const [uuid, node] of tree.nodes) {
+      if (node.parentUuid && tree.nodes.has(node.parentUuid)) {
+        // Add to parent's children
+        if (!tree.children.has(node.parentUuid)) {
+          tree.children.set(node.parentUuid, []);
+        }
+        tree.children.get(node.parentUuid).push(uuid);
+      } else {
+        // No parent or parent not found - this is a root
+        tree.roots.push(uuid);
+      }
+    }
+
+    // Sort children by timestamp for consistent ordering
+    for (const [parentUuid, childUuids] of tree.children) {
+      childUuids.sort((a, b) => {
+        const nodeA = tree.nodes.get(a);
+        const nodeB = tree.nodes.get(b);
+        return new Date(nodeA.timestamp) - new Date(nodeB.timestamp);
+      });
+    }
+
+    // Sort roots by timestamp
+    tree.roots.sort((a, b) => {
+      const nodeA = tree.nodes.get(a);
+      const nodeB = tree.nodes.get(b);
+      return new Date(nodeA.timestamp) - new Date(nodeB.timestamp);
+    });
+
+    return tree;
+  }
+
+  /**
+   * Get conversation path from root to specified node
+   */
+  getConversationPath(tree, targetUuid) {
+    const path = [];
+    let currentUuid = targetUuid;
+
+    while (currentUuid && tree.nodes.has(currentUuid)) {
+      const node = tree.nodes.get(currentUuid);
+      path.unshift(node);
+      currentUuid = node.parentUuid;
+    }
+
+    return path;
+  }
+
+  /**
+   * Get all descendants of a node
+   */
+  getNodeDescendants(tree, nodeUuid) {
+    const descendants = [];
+    const queue = [nodeUuid];
+
+    while (queue.length > 0) {
+      const currentUuid = queue.shift();
+      const children = tree.children.get(currentUuid) || [];
+      
+      for (const childUuid of children) {
+        descendants.push(tree.nodes.get(childUuid));
+        queue.push(childUuid);
+      }
+    }
+
+    return descendants.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   }
 
 }

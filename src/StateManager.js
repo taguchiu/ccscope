@@ -33,8 +33,13 @@ class StateManager {
     this.contextRange = config.contextFlow.defaultRange;
     
     // Conversation sorting (for detail view)
-    this.conversationSortOrder = 'dateTime'; // dateTime, duration, tools
+    this.conversationSortOrder = 'dateTime'; // dateTime, duration, tools, tokens
     this.conversationSortDirection = 'desc';
+    
+    // Conversation tree state
+    this.selectedTreeNodeUuid = null;
+    this.expandedTreeNodes = new Set();
+    this.treeMode = 'full'; // 'full' shows all nodes, 'path' shows path to selected node
     
     // UI state
     this.language = config.localization.defaultLanguage;
@@ -75,6 +80,11 @@ class StateManager {
     this.currentToolId = null; // Track current tool for Ctrl+R
     this.visibleToolIds = new Set(); // Track visible tools in viewport
     this.allToolIds = new Set(); // Track all tool IDs in current conversation
+    
+    // Sub-agent selection state
+    this.selectedSubAgent = null; // Format: "task-{taskId}-subagent-{index}"
+    this.currentTaskId = null;
+    this.selectedSubAgentData = null; // Store selected sub-agent data for detail view
   }
 
   /**
@@ -219,6 +229,28 @@ class StateManager {
           scrollOffset: this.scrollOffset
         };
         
+      case 'conversation_tree':
+        const treeSession = sessions[this.selectedSessionIndex];
+        if (treeSession) {
+          const conversationTree = this.sessionManager.buildConversationTree(treeSession.conversationPairs);
+          return {
+            session: treeSession,
+            conversationTree: conversationTree,
+            selectedNodeUuid: this.selectedTreeNodeUuid,
+            expandedNodes: this.expandedTreeNodes,
+            treeMode: this.treeMode,
+            scrollOffset: this.scrollOffset
+          };
+        }
+        return { session: null, conversationTree: null };
+        
+      case 'subagent_detail':
+        return {
+          selectedSubAgentData: this.selectedSubAgentData,
+          sessions,
+          selectedIndex: this.selectedSessionIndex
+        };
+        
       default:
         return { sessions, selectedIndex: this.selectedSessionIndex };
     }
@@ -282,6 +314,14 @@ class StateManager {
         case 'projectName':
           aValue = a.projectName.toLowerCase();
           bValue = b.projectName.toLowerCase();
+          break;
+        case 'tokens':
+          aValue = a.totalTokens || 0;
+          bValue = b.totalTokens || 0;
+          break;
+        case 'tools':
+          aValue = a.toolUsageCount || 0;
+          bValue = b.toolUsageCount || 0;
           break;
         default:
           aValue = new Date(a.lastActivity);
@@ -641,7 +681,7 @@ class StateManager {
   }
 
   cycleSortOrder() {
-    const sortOrders = ['conversations', 'duration', 'startTime', 'lastActivity'];
+    const sortOrders = ['conversations', 'duration', 'tools', 'tokens', 'startTime', 'lastActivity'];
     const currentIndex = sortOrders.indexOf(this.sortOrder);
     const nextIndex = (currentIndex + 1) % sortOrders.length;
     
@@ -664,7 +704,7 @@ class StateManager {
   }
 
   cycleConversationSortOrder() {
-    const sortOrders = ['dateTime', 'duration', 'tools'];
+    const sortOrders = ['dateTime', 'duration', 'tools', 'tokens'];
     const currentIndex = sortOrders.indexOf(this.conversationSortOrder);
     const nextIndex = (currentIndex + 1) % sortOrders.length;
     
@@ -693,6 +733,10 @@ class StateManager {
         case 'tools':
           aValue = (a.toolsUsed && a.toolsUsed.length) || 0;
           bValue = (b.toolsUsed && b.toolsUsed.length) || 0;
+          break;
+        case 'tokens':
+          aValue = (a.tokenUsage && a.tokenUsage.totalTokens) || 0;
+          bValue = (b.tokenUsage && b.tokenUsage.totalTokens) || 0;
           break;
         default:
           aValue = new Date(a.timestamp || 0);
@@ -965,6 +1009,59 @@ class StateManager {
   }
 
   /**
+   * Toggle sub-agent expansion
+   */
+  toggleSubAgentExpansion(subAgentId) {
+    const currentState = this.expandedTools.get(subAgentId) || false;
+    this.expandedTools.set(subAgentId, !currentState);
+    return !currentState;
+  }
+
+  /**
+   * Set selected sub-agent
+   */
+  setSelectedSubAgent(subAgentId) {
+    this.selectedSubAgent = subAgentId;
+  }
+
+  /**
+   * Get current selected sub-agent
+   */
+  getSelectedSubAgent() {
+    return this.selectedSubAgent;
+  }
+
+  /**
+   * Clear sub-agent selection
+   */
+  clearSubAgentSelection() {
+    this.selectedSubAgent = null;
+    this.selectedSubAgentData = null;
+  }
+
+  /**
+   * Navigate to sub-agent detail view
+   */
+  navigateToSubAgentDetail(subAgentIndex, conversation) {
+    if (conversation && conversation.subAgentCommands && 
+        subAgentIndex >= 0 && subAgentIndex < conversation.subAgentCommands.length) {
+      
+      const subAgentPair = conversation.subAgentCommands[subAgentIndex];
+      this.selectedSubAgentData = {
+        index: subAgentIndex,
+        command: subAgentPair.command,
+        response: subAgentPair.response,
+        conversation: conversation
+      };
+      
+      this.setPreviousView();
+      this.setView('subagent_detail');
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Clear all tool IDs
    */
   clearAllToolIds() {
@@ -1063,6 +1160,174 @@ class StateManager {
     // Track if this is from command-line search
     this.isCommandLineSearch = options.isCommandLineSearch || false;
     this.trackStateChange();
+  }
+
+  // Conversation tree navigation methods
+
+  /**
+   * Navigate to tree view for current session
+   */
+  navigateToTreeView() {
+    const sessions = this.getFilteredSessions();
+    const currentSession = sessions[this.selectedSessionIndex];
+    
+    if (currentSession && currentSession.conversationPairs.length > 0) {
+      this.previousView = this.currentView;
+      this.currentView = 'conversation_tree';
+      
+      // Initialize tree selection if not set
+      if (!this.selectedTreeNodeUuid) {
+        const tree = this.sessionManager.buildConversationTree(currentSession.conversationPairs);
+        if (tree.roots.length > 0) {
+          this.selectedTreeNodeUuid = tree.roots[0];
+        }
+      }
+      
+      this.scrollOffset = 0;
+      this.trackStateChange();
+    }
+  }
+
+  /**
+   * Navigate tree nodes up/down
+   */
+  navigateTreeVertical(direction) {
+    if (this.currentView !== 'conversation_tree') return;
+    
+    const sessions = this.getFilteredSessions();
+    const currentSession = sessions[this.selectedSessionIndex];
+    if (!currentSession) return;
+    
+    const tree = this.sessionManager.buildConversationTree(currentSession.conversationPairs);
+    const visibleNodes = this.getVisibleTreeNodes(tree);
+    
+    if (visibleNodes.length === 0) return;
+    
+    const currentIndex = visibleNodes.findIndex(node => node.uuid === this.selectedTreeNodeUuid);
+    let newIndex;
+    
+    if (direction === 'up') {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : visibleNodes.length - 1;
+    } else {
+      newIndex = currentIndex < visibleNodes.length - 1 ? currentIndex + 1 : 0;
+    }
+    
+    this.selectedTreeNodeUuid = visibleNodes[newIndex].uuid;
+    this.trackStateChange();
+  }
+
+  /**
+   * Get visible nodes in tree (respecting collapsed states)
+   */
+  getVisibleTreeNodes(tree) {
+    const visibleNodes = [];
+    
+    const addNodeAndChildren = (nodeUuid, depth = 0) => {
+      const node = tree.nodes.get(nodeUuid);
+      if (!node) return;
+      
+      // Add current node
+      visibleNodes.push({
+        ...node,
+        depth: depth
+      });
+      
+      // Add children if node is expanded
+      if (this.expandedTreeNodes.has(nodeUuid)) {
+        const children = tree.children.get(nodeUuid) || [];
+        for (const childUuid of children) {
+          addNodeAndChildren(childUuid, depth + 1);
+        }
+      }
+    };
+    
+    // Start with root nodes
+    for (const rootUuid of tree.roots) {
+      addNodeAndChildren(rootUuid);
+    }
+    
+    return visibleNodes;
+  }
+
+  /**
+   * Toggle tree node expansion
+   */
+  toggleTreeNodeExpansion(nodeUuid) {
+    if (!nodeUuid) nodeUuid = this.selectedTreeNodeUuid;
+    if (!nodeUuid) return;
+    
+    if (this.expandedTreeNodes.has(nodeUuid)) {
+      this.expandedTreeNodes.delete(nodeUuid);
+    } else {
+      this.expandedTreeNodes.add(nodeUuid);
+    }
+    
+    this.trackStateChange();
+  }
+
+  /**
+   * Expand all tree nodes
+   */
+  expandAllTreeNodes() {
+    const sessions = this.getFilteredSessions();
+    const currentSession = sessions[this.selectedSessionIndex];
+    if (!currentSession) return;
+    
+    const tree = this.sessionManager.buildConversationTree(currentSession.conversationPairs);
+    
+    // Add all nodes that have children to expanded set
+    for (const [nodeUuid, children] of tree.children) {
+      if (children.length > 0) {
+        this.expandedTreeNodes.add(nodeUuid);
+      }
+    }
+    
+    this.trackStateChange();
+  }
+
+  /**
+   * Collapse all tree nodes
+   */
+  collapseAllTreeNodes() {
+    this.expandedTreeNodes.clear();
+    this.trackStateChange();
+  }
+
+  /**
+   * Switch tree mode (full/path)
+   */
+  switchTreeMode() {
+    this.treeMode = this.treeMode === 'full' ? 'path' : 'full';
+    this.trackStateChange();
+  }
+
+  /**
+   * Navigate to selected tree node's conversation
+   */
+  navigateToTreeNodeConversation() {
+    if (!this.selectedTreeNodeUuid) return;
+    
+    const sessions = this.getFilteredSessions();
+    const currentSession = sessions[this.selectedSessionIndex];
+    if (!currentSession) return;
+    
+    // Find the conversation pair that contains this node
+    const selectedNode = currentSession.conversationPairs.find(conv => 
+      conv.userUuid === this.selectedTreeNodeUuid || 
+      conv.assistantUuid === this.selectedTreeNodeUuid
+    );
+    
+    if (selectedNode) {
+      // Find the index of this conversation
+      const conversationIndex = currentSession.conversationPairs.indexOf(selectedNode);
+      if (conversationIndex !== -1) {
+        this.selectedConversationIndex = conversationIndex;
+        this.previousView = this.currentView;
+        this.currentView = 'full_detail';
+        this.scrollOffset = 0;
+        this.trackStateChange();
+      }
+    }
   }
 }
 

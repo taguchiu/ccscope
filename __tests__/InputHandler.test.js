@@ -125,6 +125,7 @@ describe('InputHandler', () => {
       navigateRight: jest.fn(),
       navigateToFirst: jest.fn(),
       navigateToLast: jest.fn(),
+      navigateToTreeView: jest.fn(),
       setView: jest.fn(),
       setPreviousView: jest.fn(),
       scrollUp: jest.fn(),

@@ -10,7 +10,6 @@ const ThemeManager = require('./ThemeManager');
 const StateManager = require('./StateManager');
 const ViewRenderer = require('./ViewRenderer');
 const InputHandler = require('./InputHandler');
-const LoadingSpinner = require('./LoadingSpinner');
 const config = require('./config');
 
 class CCScopeApplication {
@@ -24,9 +23,6 @@ class CCScopeApplication {
     this.stateManager = new StateManager(this.sessionManager);
     this.viewRenderer = new ViewRenderer(this.sessionManager, this.themeManager, this.stateManager);
     this.inputHandler = new InputHandler(this.stateManager, this.sessionManager, this.viewRenderer, this.themeManager);
-    
-    // Initialize loading spinner
-    this.loadingSpinner = new LoadingSpinner();
     
     // Bind methods
     this.handleExit = this.handleExit.bind(this);
@@ -46,25 +42,47 @@ class CCScopeApplication {
     if (this.isInitialized) return;
     
     try {
+      // Performance measurement
+      const totalStartTime = Date.now();
+      const timings = {};
+      
+      // Show loading screen immediately
+      this.showLoadingScreen();
+      
+      // Track loading start time
+      const loadingStartTime = Date.now();
+      timings.loadingScreen = loadingStartTime - totalStartTime;
+      
       // Initialize session manager
+      const sessionStartTime = Date.now();
       await this.sessionManager.discoverSessions();
+      timings.sessionDiscovery = Date.now() - sessionStartTime;
+      
+      timings.totalLoadingDelay = Date.now() - loadingStartTime;
+      
+      // Clear loading message
+      console.clear();
       
       // Initialize theme
+      const themeStartTime = Date.now();
       this.themeManager.setTheme(config.theme || 'default');
+      timings.themeInit = Date.now() - themeStartTime;
       
       // Initialize state
+      const stateStartTime = Date.now();
       this.stateManager.resetState();
+      timings.stateInit = Date.now() - stateStartTime;
       
       // Hide cursor for better UI
       process.stdout.write('\x1b[?25l');
       
+      // Calculate total time
+      timings.total = Date.now() - totalStartTime;
+      
       this.isInitialized = true;
       
-      // Stop spinner
-      this.loadingSpinner.stop();
-      
     } catch (error) {
-      this.loadingSpinner.stop();
+      console.clear();
       console.error('❌ Failed to initialize Claude Code Scope:', error);
       process.exit(1);
     }
@@ -75,8 +93,10 @@ class CCScopeApplication {
    */
   showLoadingScreen() {
     console.clear();
-    this.loadingSpinner.start('Loading');
+    console.log('Loading...');
   }
+
+  // Spinner methods removed - using simple static loading message instead
 
   /**
    * Start the application
@@ -109,9 +129,8 @@ class CCScopeApplication {
    * Show welcome message
    */
   showWelcomeMessage() {
-    // Clear screen and render immediately without welcome message
-    console.clear();
-    this.viewRenderer.render();
+    // Don't show welcome message - go directly to the interface
+    // The initial render will be handled by startRenderLoop
   }
 
   /**
@@ -215,18 +234,22 @@ class CCScopeApplication {
    */
   async showDailyStatistics() {
     try {
+      // Show loading screen
+      this.showLoadingScreen();
+      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
+      
+      // Clear loading screen
+      console.clear();
       
       // Get daily statistics
       const dailyStatsResult = this.sessionManager.getDailyStatistics();
       
-      // Stop spinner and render
-      this.loadingSpinner.stop();
+      // Render
       this.viewRenderer.renderDailyStatistics(dailyStatsResult);
       
     } catch (error) {
-      this.loadingSpinner.stop();
       console.error(this.themeManager.formatError('❌ Failed to show daily statistics:'), error);
     }
   }
@@ -236,21 +259,26 @@ class CCScopeApplication {
    */
   async showProjectStatistics() {
     try {
+      // Show loading screen
+      this.showLoadingScreen();
+      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
+      
+      // Clear loading screen
+      console.clear();
       
       // Get project statistics
       const projectStats = this.sessionManager.getProjectStatistics();
       
-      // Stop spinner and render
-      this.loadingSpinner.stop();
+      // Render
       this.viewRenderer.renderProjectStatistics(projectStats);
       
     } catch (error) {
-      this.loadingSpinner.stop();
       console.error(this.themeManager.formatError('❌ Failed to show project statistics:'), error);
     }
   }
+
 
   /**
    * Show search results
@@ -259,14 +287,17 @@ class CCScopeApplication {
    */
   async showSearchResults(query, options = {}) {
     try {
+      // Show loading screen
+      this.showLoadingScreen();
+      
       // Initialize session manager
       await this.sessionManager.discoverSessions();
       
+      // Clear loading screen
+      console.clear();
+      
       // Search conversations
       const results = this.sessionManager.searchConversations(query, options);
-      
-      // Stop spinner
-      this.loadingSpinner.stop();
       
       // Store search results in state with command-line flag
       const searchOptions = { ...options, isCommandLineSearch: true };
@@ -287,7 +318,6 @@ class CCScopeApplication {
       this.startRenderLoop();
       
     } catch (error) {
-      this.loadingSpinner.stop();
       console.error(this.themeManager.formatError('❌ Failed to show search results:'), error);
     }
   }

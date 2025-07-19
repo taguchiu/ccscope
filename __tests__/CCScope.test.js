@@ -155,13 +155,10 @@ describe('CCScopeApplication', () => {
 
   describe('showLoadingScreen', () => {
     test('displays loading screen', () => {
-      // Mock the spinner start method
-      app.loadingSpinner.start = jest.fn();
-      
       app.showLoadingScreen();
       
       expect(mockConsoleClear).toHaveBeenCalled();
-      expect(app.loadingSpinner.start).toHaveBeenCalledWith('Loading');
+      expect(mockConsoleLog).toHaveBeenCalledWith('Loading...');
     });
   });
 
@@ -215,9 +212,9 @@ describe('CCScopeApplication', () => {
     test('displays welcome message', () => {
       app.showWelcomeMessage();
       
-      expect(mockConsoleClear).toHaveBeenCalled();
-      // No longer displays welcome messages
-      expect(app.viewRenderer.render).toHaveBeenCalled();
+      // showWelcomeMessage now does nothing - goes directly to interface
+      expect(mockConsoleClear).not.toHaveBeenCalled();
+      expect(app.viewRenderer.render).not.toHaveBeenCalled();
     });
   });
 

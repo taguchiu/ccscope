@@ -213,6 +213,7 @@ EXAMPLES:
   ccscope search --regex "\\berror\\b"
       `);
       break;
+      
   }
 }
 
@@ -254,7 +255,7 @@ async function main() {
         
       case 'search':
         if (!options.query) {
-          console.error('❌ Search query is required');
+          console.error('Search query is required');
           showCommandHelp('search');
           process.exit(1);
         }
@@ -262,6 +263,7 @@ async function main() {
         app.showLoadingScreen();
         await app.showSearchResults(options.query, { regex: options.regex || false });
         break;
+        
         
       default:
         // No command specified, start interactive browser

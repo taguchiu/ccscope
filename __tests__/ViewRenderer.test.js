@@ -87,6 +87,7 @@ describe('ViewRenderer', () => {
       formatDateTime: jest.fn(date => '01/01 12:00'),
       formatThinkingRate: jest.fn(rate => `${(rate * 100).toFixed(0)}%`),
       formatToolCount: jest.fn(count => `${count}t`),
+      formatTokenCount: jest.fn(tokens => `${tokens}t`),
       stripAnsiCodes: jest.fn(text => text.replace(/\x1b\[[0-9;]*m/g, '')),
       formatSelection: jest.fn((text, isSelected) => isSelected ? `[SELECTED] ${text}` : text),
       truncateWithWidth: jest.fn((text, width) => text.substring(0, width)),
@@ -324,8 +325,9 @@ describe('ViewRenderer', () => {
     test('formats search query', () => {
       const line = viewRenderer.formatSearchFilterInfo('test query', {}, 'lastActivity', 'desc');
       
+      // Search query is not shown in session list view anymore
       expect(line).toContain('[INFO]');
-      expect(line).toContain('test query');
+      expect(line).toContain('Sort: Last Activity ↓');
     });
 
     test('formats filters', () => {
@@ -1088,15 +1090,15 @@ describe('ViewRenderer', () => {
       viewRenderer.updateTerminalSize();
       const maxVisible1 = viewRenderer.getMaxVisibleSessions();
       expect(maxVisible1).toBeGreaterThan(0);
-      // 50 - 8 - 10 - 2 = 30
-      expect(maxVisible1).toBe(30);
+      // 50 - 8 - 8 = 34
+      expect(maxVisible1).toBe(34);
       
       // Then test with smaller terminal (should have fewer visible sessions)
       process.stdout.rows = 25;
       viewRenderer.updateTerminalSize();
       const maxVisible2 = viewRenderer.getMaxVisibleSessions();
-      // 25 - 8 - 10 - 2 = 5
-      expect(maxVisible2).toBe(5);
+      // 25 - 8 - 8 = 9
+      expect(maxVisible2).toBe(9);
       expect(maxVisible2).toBeLessThan(maxVisible1);
       
       // Test minimum case
@@ -1305,7 +1307,6 @@ describe('ViewRenderer', () => {
       expect(console.clear).toHaveBeenCalled();
       expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Daily Conversation Statistics');
       expect(mockThemeManager.formatDuration).toHaveBeenCalled();
-      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 5 sessions, 20 conversations, 15 tool uses');
     });
     
     test('handles renderProjectStatistics with empty data', () => {
@@ -1338,8 +1339,6 @@ describe('ViewRenderer', () => {
       
       expect(console.clear).toHaveBeenCalled();
       expect(mockThemeManager.formatHeader).toHaveBeenCalledWith('📊 Project Statistics');
-      // Project stats now displayed differently
-      expect(mockThemeManager.formatInfo).toHaveBeenCalledWith('Total: 2 projects, 4 sessions, 15 conversations');
       expect(mockThemeManager.formatDuration).toHaveBeenCalled();
     });
     

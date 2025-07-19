@@ -4,6 +4,7 @@
  */
 
 const config = require('./config');
+const { formatWithUnit } = require('./utils/formatters');
 
 class ThemeManager {
   constructor() {
@@ -111,7 +112,7 @@ class ThemeManager {
     }
 
     const theme = this.getTheme();
-    const toolStr = `${count}t`;
+    const toolStr = formatWithUnit(count);
     const paddedToolStr = toolStr.padStart(5) + ' '; // Right-align with trailing space
     
     let color = '';
@@ -125,6 +126,40 @@ class ThemeManager {
     }
 
     const formatted = `${color}${paddedToolStr}${theme.colors.reset}`;
+    this.formatCache.set(cacheKey, formatted);
+    return formatted;
+  }
+
+  /**
+   * Format token count with color and right alignment
+   */
+  formatTokenCount(tokens, thresholds = null) {
+    const cacheKey = `token_${tokens}_${thresholds ? JSON.stringify(thresholds) : 'default'}`;
+    if (this.formatCache.has(cacheKey)) {
+      return this.formatCache.get(cacheKey);
+    }
+
+    const theme = this.getTheme();
+    const { formatWithUnit } = require('./utils/formatters');
+    const tokenStr = formatWithUnit(tokens);
+    const paddedTokenStr = tokenStr.padStart(7) + ' '; // Right-align with trailing space (8 chars total)
+    
+    let color = '';
+    // Apply color only when thresholds are provided (conversation detail view)
+    if (thresholds) {
+      const activeThresholds = thresholds;
+      
+      if (tokens >= activeThresholds.error) {
+        color = theme.colors.slowResponse; // Red for high token usage
+      } else if (tokens >= activeThresholds.warning) {
+        color = theme.colors.mediumResponse; // Yellow for moderate token usage
+      } else {
+        color = ''; // No color for normal token usage
+      }
+    }
+    // No color for session list (when thresholds is null)
+    
+    const formatted = color ? `${color}${paddedTokenStr}${theme.colors.reset}` : paddedTokenStr;
     this.formatCache.set(cacheKey, formatted);
     return formatted;
   }

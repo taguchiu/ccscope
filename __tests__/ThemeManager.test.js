@@ -151,7 +151,7 @@ describe('ThemeManager', () => {
     test('formats tool count with color', () => {
       // Less than 20 - no special color
       const few = themeManager.formatToolCount(10);
-      expect(few).toContain('  10t ');
+      expect(few).toContain('   10 ');
       
       // 20-49 - yellow
       const moderate = themeManager.formatToolCount(30);
@@ -163,9 +163,9 @@ describe('ThemeManager', () => {
     });
 
     test('right-aligns tool count', () => {
-      expect(themeManager.stripAnsiCodes(themeManager.formatToolCount(5))).toBe('   5t ');
-      expect(themeManager.stripAnsiCodes(themeManager.formatToolCount(50))).toBe('  50t ');
-      expect(themeManager.stripAnsiCodes(themeManager.formatToolCount(100))).toBe(' 100t ');
+      expect(themeManager.stripAnsiCodes(themeManager.formatToolCount(5))).toBe('    5 ');
+      expect(themeManager.stripAnsiCodes(themeManager.formatToolCount(50))).toBe('   50 ');
+      expect(themeManager.stripAnsiCodes(themeManager.formatToolCount(100))).toBe('  100 ');
     });
 
     test('caches formatted values', () => {

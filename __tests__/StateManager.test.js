@@ -478,6 +478,9 @@ describe('StateManager', () => {
       expect(stateManager.conversationSortOrder).toBe('tools');
       
       stateManager.cycleConversationSortOrder();
+      expect(stateManager.conversationSortOrder).toBe('tokens');
+      
+      stateManager.cycleConversationSortOrder();
       expect(stateManager.conversationSortOrder).toBe('dateTime');
     });
   });
