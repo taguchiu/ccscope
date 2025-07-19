@@ -8,6 +8,12 @@ const path = require('path');
 const config = require('./config');
 const CacheManager = require('./CacheManager');
 const FastParser = require('./FastParser');
+const FileDiscoveryService = require('./services/FileDiscoveryService');
+const ProjectExtractor = require('./services/ProjectExtractor');
+const ContentExtractor = require('./services/ContentExtractor');
+const ConversationBuilder = require('./services/ConversationBuilder');
+const SessionStatisticsCalculator = require('./services/SessionStatisticsCalculator');
+const TranscriptParser = require('./services/TranscriptParser');
 
 class SessionManager {
   constructor() {
@@ -32,6 +38,22 @@ class SessionManager {
     
     // Initialize fast parser
     this.fastParser = new FastParser();
+    
+    // Initialize core services
+    this.fileDiscoveryService = new FileDiscoveryService();
+    this.projectExtractor = new ProjectExtractor();
+    this.contentExtractor = new ContentExtractor();
+    this.conversationBuilder = new ConversationBuilder(this.contentExtractor, this.fastParser);
+    this.sessionCalculator = new SessionStatisticsCalculator();
+    
+    // Initialize transcript parser with all dependencies
+    this.transcriptParser = new TranscriptParser(
+      this.fastParser,
+      this.cacheManager,
+      this.projectExtractor,
+      this.conversationBuilder,
+      this.sessionCalculator
+    );
   }
 
   /**
@@ -50,7 +72,7 @@ class SessionManager {
       
       // Discover transcript files
       const fileDiscoveryStart = Date.now();
-      const transcriptFiles = await this.discoverTranscriptFiles();
+      const transcriptFiles = await this.fileDiscoveryService.discoverTranscriptFiles();
       timings.fileDiscovery = Date.now() - fileDiscoveryStart;
       
       // Early return if no files found
@@ -98,7 +120,7 @@ class SessionManager {
       // Parse new or updated files with parallel processing
       if (filesToParse.length > 0) {
         const parseStart = Date.now();
-        const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0);
+        const newSessions = await this.transcriptParser.parseSessionsWithProgress(filesToParse, sessions.length > 0);
         sessions = [...sessions, ...newSessions];
         timings.sessionParsing = Date.now() - parseStart;
       }
@@ -127,236 +149,73 @@ class SessionManager {
     }
   }
 
-  /**
-   * Discover transcript files from configured directories
-   */
-  async discoverTranscriptFiles() {
-    const transcriptFiles = [];
-    const directories = config.filesystem.transcriptDirectories;
-    
-    for (const dir of directories) {
-      const expandedDir = dir.startsWith('~') ? 
-        path.join(require('os').homedir(), dir.slice(1)) : 
-        path.resolve(dir);
-      
-      try {
-        // Silently search directories
-        const files = await this.scanDirectory(expandedDir);
-        transcriptFiles.push(...files);
-      } catch (error) {
-        // Directory doesn't exist or not accessible, skip silently
-        continue;
-      }
-    }
-    
-    return transcriptFiles;
-  }
-
-  /**
-   * Scan directory for transcript files (optimized)
-   */
+  // Proxy methods for backwards compatibility with tests
   async scanDirectory(directory, depth = 0, maxDepth = 5) {
-    const files = [];
-    
-    // Prevent infinite recursion
-    if (depth > maxDepth) {
-      return files;
-    }
-    
-    try {
-      const entries = fs.readdirSync(directory, { withFileTypes: true });
-      
-      // Pre-filter entries to reduce iterations
-      const transcriptFiles = [];
-      const subdirectories = [];
-      
-      for (const entry of entries) {
-        // Skip hidden directories and common ignored directories
-        if (entry.name.startsWith('.') || 
-            entry.name === 'node_modules' || 
-            entry.name === 'venv' || 
-            entry.name === '__pycache__' ||
-            entry.name === 'dist' ||
-            entry.name === 'build') {
-          continue;
-        }
-        
-        const fullPath = path.join(directory, entry.name);
-        
-        if (entry.isDirectory()) {
-          subdirectories.push(fullPath);
-        } else if (entry.name.endsWith(config.filesystem.transcriptExtension)) {
-          transcriptFiles.push(fullPath);
-        }
-      }
-      
-      // Add transcript files first (immediate results)
-      files.push(...transcriptFiles);
-      
-      // Early termination: if we found transcript files at depth 0-1, 
-      // and no subdirectories suggest deeper structure, skip deep recursion
-      if (depth <= 1 && transcriptFiles.length > 0 && subdirectories.length === 0) {
-        return files;
-      }
-      
-      // Process subdirectories in parallel for better performance
-      if (subdirectories.length > 0) {
-        // Use Promise.all but limit concurrency to avoid overwhelming the filesystem
-        const MAX_CONCURRENT_DIRS = 5;
-        
-        for (let i = 0; i < subdirectories.length; i += MAX_CONCURRENT_DIRS) {
-          const batch = subdirectories.slice(i, i + MAX_CONCURRENT_DIRS);
-          const batchPromises = batch.map(subDir => 
-            this.scanDirectory(subDir, depth + 1, maxDepth).catch(() => [])
-          );
-          
-          const batchResults = await Promise.all(batchPromises);
-          batchResults.forEach(subFiles => files.push(...subFiles));
-        }
-      }
-      
-    } catch (error) {
-      // Skip inaccessible directories
-    }
-    
-    return files;
+    return this.fileDiscoveryService.scanDirectory(directory, depth, maxDepth);
   }
 
-  /**
-   * Parse sessions with progress updates (optimized with parallel processing)
-   */
-  async parseSessionsWithProgress(transcriptFiles, isIncremental = false) {
-    if (transcriptFiles.length === 0) return [];
-    
-    const sessions = [];
-    
-    // Parse all files in parallel - Node.js can handle it
-    const parsePromises = transcriptFiles.map(file => {
-      // Check memory cache first
-      const cached = this.cacheManager.getFromMemoryCache(file);
-      if (cached) {
-        return Promise.resolve(cached);
-      }
-      
-      // Parse and store in memory cache
-      return this.parseTranscriptFile(file)
-        .then(session => {
-          if (session) {
-            this.cacheManager.storeInMemoryCache(file, session);
-          }
-          return session;
-        })
-        .catch(error => {
-          // Silently skip files with errors
-          return null;
-        });
-    });
-    
-    // Wait for all files to be parsed
-    const results = await Promise.all(parsePromises);
-    
-    // Filter out null results (failed parses)
-    results.forEach(session => {
-      if (session) sessions.push(session);
-    });
-    
-    return sessions;
-  }
-
-  /**
-   * Parse a single transcript file (optimized with FastParser)
-   */
   async parseTranscriptFile(filePath) {
-    try {
-      // Use FastParser for optimized parsing
-      const { entries, firstEntry } = await this.fastParser.parseFile(filePath);
-      
-      if (entries.length === 0) return null;
-      
-      // Extract session metadata (use cached first entry)
-      const sessionId = this.extractSessionId(entries);
-      const fullSessionId = this.extractFullSessionId(filePath);
-      const projectName = this.extractProjectName(entries, filePath);
-      
-      // Extract project path efficiently using cached first entry
-      const projectPath = this.extractProjectPathOptimized(filePath, projectName, firstEntry);
-      
-      
-      const conversationPairs = this.buildConversationPairs(entries);
-      
-      if (conversationPairs.length === 0) return null;
-      
-      // Calculate metrics
-      const metrics = this.calculateSessionMetrics(conversationPairs);
-      
-      // Generate session summary
-      const summary = this.generateSessionSummary(conversationPairs);
-      
-      const session = {
-        sessionId,
-        fullSessionId: fullSessionId || sessionId,
-        projectName,
-        projectPath,
-        filePath,
-        conversationPairs,
-        totalConversations: conversationPairs.length,
-        summary,
-        ...metrics
-      };
-      
-      // Cache the parsed session for fast future access
-      const stats = await fs.promises.stat(filePath);
-      this.sessionCache.set(filePath, {
-        session,
-        mtime: stats.mtime.getTime()
-      });
-      
-      return session;
-      
-    } catch (error) {
-      throw new Error(`Failed to parse transcript: ${error.message}`);
-    }
+    return this.transcriptParser.parseTranscriptFile(filePath);
   }
 
-  /**
-   * Extract session ID from entries
-   */
   extractSessionId(entries) {
-    // Try to find session ID in various places
-    for (const entry of entries) {
-      if (entry.session_id) return entry.session_id;
-      if (entry.conversation_id) return entry.conversation_id;
-    }
-    
-    // Fallback to generating from content
-    const content = JSON.stringify(entries.slice(0, 3));
-    const hash = this.generateHash(content);
-    return hash.substring(0, 8);
+    return this.transcriptParser.extractSessionId(entries);
   }
 
-  /**
-   * Extract full session ID from filename
-   */
   extractFullSessionId(filePath) {
-    const filename = path.basename(filePath);
-    
-    // Look for UUID pattern in filename (8-4-4-4-12 format)
-    const uuidPattern = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i;
-    const match = filename.match(uuidPattern);
-    
-    if (match) {
-      return match[1];
-    }
-    
-    // Look for other long ID patterns (e.g., 32 character hex string)
-    const hexPattern = /([a-f0-9]{32,})/i;
-    const hexMatch = filename.match(hexPattern);
-    
-    if (hexMatch) {
-      return hexMatch[1];
-    }
-    
-    return null;
+    return this.transcriptParser.extractFullSessionId(filePath);
+  }
+
+  extractProjectName(entries, filePath) {
+    return this.projectExtractor.extractProjectName(entries, filePath);
+  }
+
+  async discoverTranscriptFiles() {
+    return this.fileDiscoveryService.discoverTranscriptFiles();
+  }
+
+  buildConversationPairs(entries) {
+    return this.conversationBuilder.buildConversationPairs(entries);
+  }
+
+  calculateSessionMetrics(conversationPairs) {
+    return this.sessionCalculator.calculateSessionMetrics(conversationPairs);
+  }
+
+  generateSessionSummary(conversationPairs) {
+    return this.sessionCalculator.generateSessionSummary(conversationPairs);
+  }
+
+  extractToolUses(entry) {
+    return this.conversationBuilder.extractToolUses(entry);
+  }
+
+  extractToolResults(entry) {
+    return this.contentExtractor.extractToolResults(entry);
+  }
+
+  extractThinkingContent(entry) {
+    return this.contentExtractor.extractThinkingContent(entry);
+  }
+
+  extractTokenUsage(entry) {
+    return this.contentExtractor.extractTokenUsage(entry);
+  }
+
+  extractUserContent(entry) {
+    return this.contentExtractor.extractUserContent(entry);
+  }
+
+  extractAssistantContent(entry) {
+    return this.contentExtractor.extractAssistantContent(entry);
+  }
+
+  hasActualContent(entry) {
+    return this.contentExtractor.hasActualContent(entry);
+  }
+
+  sanitizeForDisplay(text, maxLength) {
+    return this.contentExtractor.sanitizeForDisplay(text, maxLength);
   }
 
   /**
@@ -448,152 +307,6 @@ class SessionManager {
     return process.env.HOME || '/';
   }
 
-  /**
-   * Extract project name from entries or file path
-   */
-  extractProjectName(entries, filePath) {
-    // Try to extract from entries
-    for (const entry of entries) {
-      if (entry.project_name) return entry.project_name;
-      if (entry.project) return entry.project;
-      // Extract project name from cwd if available
-      if (entry.cwd) {
-        const cwdParts = entry.cwd.split(path.sep).filter(p => p.length > 0);
-        if (cwdParts.length > 0) {
-          return cwdParts[cwdParts.length - 1];
-        }
-      }
-    }
-    
-    // Extract from file path - look for actual project names in path
-    const parts = filePath.split(path.sep);
-    
-    // Debug: Check if filename itself contains the full path
-    const filename = parts[parts.length - 1];
-    const nameWithoutExt = filename.replace(config.filesystem.transcriptExtension, '');
-    
-    // If filename contains dashes and looks like a path, it's likely a mangled path
-    if ((nameWithoutExt.includes('-') && (nameWithoutExt.startsWith('-Users-') || nameWithoutExt.startsWith('Users-')))) {
-      // This is a path that got turned into a filename
-      // Try to extract meaningful parts from the mangled path
-      const pathParts = nameWithoutExt.split('-');
-      
-      // Look for known project names in the path parts
-      for (let i = 0; i < pathParts.length; i++) {
-        const part = pathParts[i];
-        
-        // Direct matches
-        if (part === 'ccscope') return 'ccscope';
-        if (part === 'sms' && pathParts.includes('proto')) return 'sms-proto';
-        
-        // Check after workspace directory
-        if (part === 'workspace' && i + 1 < pathParts.length) {
-          const nextPart = pathParts[i + 1];
-          if (nextPart && !['Users', 'Documents', 'taguchiu'].includes(nextPart)) {
-            return nextPart;
-          }
-        }
-        
-        // Check after Documents directory
-        if (part === 'Documents' && i + 1 < pathParts.length) {
-          const nextPart = pathParts[i + 1];
-          if (nextPart && nextPart !== 'workspace' && !['Users', 'taguchiu'].includes(nextPart)) {
-            return nextPart;
-          }
-        }
-      }
-      
-      // If no project found in path, try to extract from content
-      if (entries.length > 0) {
-        const firstUserMessage = entries.find(e => e.type === 'user' && e.message && e.message.content);
-        if (firstUserMessage && firstUserMessage.message.content) {
-          const content = typeof firstUserMessage.message.content === 'string' ? 
-            firstUserMessage.message.content : 
-            JSON.stringify(firstUserMessage.message.content);
-          
-          // Extract project hints from content
-          if (content.includes('ccscope') || content.includes('CCScope') || content.includes('interactive-conversation-browser')) return 'ccscope';
-          if (content.includes('sms-proto') || content.includes('SMS') || content.includes('sms/proto')) return 'sms-proto';
-          if (content.includes('refactor')) return 'refactor-project';
-          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'ccscope';
-        }
-      }
-      
-      return 'unknown';
-    }
-    
-    // Check if path contains .claude/projects/PROJECT_NAME/
-    const projectsIndex = parts.indexOf('projects');
-    if (projectsIndex !== -1 && projectsIndex + 1 < parts.length) {
-      const projectName = parts[projectsIndex + 1];
-      // Clean up project name if needed
-      if (projectName && !projectName.includes('.jsonl')) {
-        return projectName;
-      }
-    }
-    
-    // Check if file is in a cclens, sms-proto, etc. directory
-    for (let i = parts.length - 2; i >= 0; i--) {
-      const part = parts[i];
-      // Skip generic directory names and user paths
-      if (part && !['transcripts', 'logs', 'claude', 'config', 'Documents', 'workspace', 'Users', 'taguchiu', 'home'].includes(part)) {
-        // Check if it looks like a project name
-        if (part.match(/^[a-zA-Z0-9-_]+$/) && part.length > 2 && !part.match(/^[0-9]+$/)) {
-          return part;
-        }
-      }
-    }
-    
-    // If filename is just a hash/ID, use a better fallback
-    if (nameWithoutExt.match(/^[a-f0-9-]+$/)) {
-      // Look for conversation content to infer project
-      if (entries.length > 0) {
-        const firstUserMessage = entries.find(e => e.type === 'user' && e.message && e.message.content);
-        if (firstUserMessage && firstUserMessage.message.content) {
-          const content = typeof firstUserMessage.message.content === 'string' ? 
-            firstUserMessage.message.content : 
-            JSON.stringify(firstUserMessage.message.content);
-          
-          // Extract project hints from content
-          if (content.includes('ccscope') || content.includes('CCScope') || content.includes('interactive-conversation-browser')) return 'ccscope';
-          if (content.includes('sms-proto') || content.includes('SMS') || content.includes('sms/proto')) return 'sms-proto';
-          if (content.includes('refactor')) return 'refactor-project';
-          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'ccscope';
-        }
-      }
-      
-      // If still no match, use the parent directory name if reasonable
-      const parentDir = parts[parts.length - 2];
-      if (parentDir && parentDir.length > 2 && !parentDir.match(/^[0-9]+$/) && !parentDir.includes('-')) {
-        return parentDir;
-      }
-      
-      return 'unknown-project';
-    }
-    
-    // Check if nameWithoutExt looks like a path
-    if (nameWithoutExt.includes('-') && nameWithoutExt.length > 30) {
-      // This is likely a path fragment, try to extract from content
-      if (entries.length > 0) {
-        const firstUserMessage = entries.find(e => e.type === 'user' && e.message && e.message.content);
-        if (firstUserMessage && firstUserMessage.message.content) {
-          const content = typeof firstUserMessage.message.content === 'string' ? 
-            firstUserMessage.message.content : 
-            JSON.stringify(firstUserMessage.message.content);
-          
-          // Extract project hints from content
-          if (content.includes('ccscope') || content.includes('CCScope') || content.includes('interactive-conversation-browser')) return 'ccscope';
-          if (content.includes('sms-proto') || content.includes('SMS') || content.includes('sms/proto')) return 'sms-proto';
-          if (content.includes('refactor')) return 'refactor-project';
-          if (content.includes('ViewRenderer') || content.includes('ThemeManager') || content.includes('SessionManager')) return 'ccscope';
-        }
-      }
-      
-      return 'unknown-project';
-    }
-    
-    return nameWithoutExt;
-  }
 
   /**
    * Build conversation pairs from entries
