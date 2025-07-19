@@ -3274,7 +3274,7 @@ class ViewRenderer {
       line += this.theme.formatDuration(day.totalDuration).padEnd(colWidths[3]);
       line += this.theme.formatDuration(avgDuration).padEnd(colWidths[4]);
       line += (day.toolUsageCount || 0).toString().padEnd(colWidths[5]);
-      line += formatLargeNumber(day.totalTokens || 0).padEnd(colWidths[6]);
+      line += formatWithUnit(day.totalTokens || 0).padEnd(colWidths[6]);
       
       console.log(line);
     });
