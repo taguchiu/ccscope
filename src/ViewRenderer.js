@@ -93,6 +93,9 @@ class ViewRenderer {
       case 'help':
         this.renderHelp();
         break;
+      case 'subagent_detail':
+        this.renderSubAgentDetail(viewData);
+        break;
       default:
         this.renderSessionList(viewData);
     }
@@ -1870,6 +1873,76 @@ class ViewRenderer {
           }
           
         } else if (item.type === 'tool_use') {
+          // Handle Task tools specially - they are sub-agent launches
+          if (item.name === 'Task') {
+            // Show Task tool with nested sub-agent content
+            lines.push('');
+            
+            // Create Task tool header
+            let toolHeader = `⏺ ${item.name}`;
+            if (item.input) {
+              const keyParams = this.getKeyParams(item.name, item.input);
+              if (keyParams) {
+                toolHeader += `(${keyParams})`;
+              }
+            }
+            
+            // Add timestamp if available
+            if (conversation.timestamp) {
+              const toolTime = this.formatDateTimeWithSeconds(conversation.timestamp);
+              toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+            }
+            
+            lines.push(this.theme.formatSuccess(toolHeader));
+            
+            // Show Task input (description and prompt)
+            if (item.input) {
+              lines.push('');
+              if (item.input.description) {
+                lines.push(`  ${this.theme.formatMuted('Description:')} ${item.input.description}`);
+              }
+              if (item.input.prompt) {
+                lines.push(`  ${this.theme.formatMuted('Prompt:')}`);
+                const promptLines = item.input.prompt.split('\n');
+                promptLines.forEach(line => {
+                  lines.push(`    ${this.theme.formatDim(line)}`);
+                });
+              }
+            }
+            
+            // Show sub-agent execution results inline
+            if (conversation.subAgentCommands && conversation.subAgentCommands.length > 0) {
+              lines.push('');
+              lines.push(`  ${this.theme.formatAccent('🤖 Sub-Agent Execution:')}`);
+              
+              conversation.subAgentCommands.forEach((subAgentPair, index) => {
+                lines.push('');
+                lines.push(`  ${this.theme.formatHeader(`── Sub-Agent #${index + 1} ──`)}`);
+                
+                // Get the sub-agent command
+                const subCommandContent = this.sessionManager.extractUserContent(subAgentPair.command);
+                // Split command into lines for proper indentation
+                const commandLines = subCommandContent.split('\n');
+                lines.push(`  ${this.theme.formatMuted('Command:')} ${commandLines[0]}`);
+                // Add remaining lines with proper indentation
+                for (let i = 1; i < commandLines.length; i++) {
+                  lines.push(`    ${commandLines[i]}`);
+                }
+                lines.push('');
+                
+                // Display sub-agent execution content directly from response
+                if (subAgentPair.response) {
+                  // Sub-agent response is embedded in the response field
+                  this.renderNestedSubAgentFromResponse(lines, subAgentPair.response, 2); // 2 spaces indent for proper alignment
+                } else {
+                  lines.push(`  ${this.theme.formatDim('⏳ Sub-agent execution in progress...')}`);
+                }
+              });
+            }
+            
+            return;
+          }
+          
           // Add tool execution section - Claude Code style
           lines.push('');
           
@@ -2896,6 +2969,119 @@ class ViewRenderer {
   /**
    * Render help view
    */
+  /**
+   * Render sub-agent detail view
+   */
+  renderSubAgentDetail(viewData) {
+    const { selectedSubAgentData } = viewData;
+    
+    if (!selectedSubAgentData) {
+      this.clearScreen();
+      console.log(this.theme.formatError('No sub-agent data available'));
+      return;
+    }
+    
+    const { index, command, response, conversation } = selectedSubAgentData;
+    
+    // Clear and build header
+    this.clearScreen();
+    console.log(this.theme.formatHeader(`Sub-Agent #${index + 1} Details`));
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log('');
+    
+    // Command section
+    console.log(this.theme.formatAccent('📋 COMMAND'));
+    console.log('');
+    const commandContent = this.sessionManager.extractUserContent(command);
+    const commandLines = this.wrapTextWithWidth(commandContent, this.terminalWidth - 4);
+    commandLines.forEach(line => console.log('  ' + line));
+    
+    // Response section
+    console.log('');
+    console.log(this.theme.formatAccent('🤖 RESPONSE'));
+    console.log('');
+    
+    if (response) {
+      // Debug: Show full response structure
+      console.log('');
+      console.log('  ' + this.theme.formatDim('=== FULL RESPONSE DEBUG ==='));
+      console.log('  ' + this.theme.formatDim('Response keys:'), Object.keys(response));
+      console.log('  ' + this.theme.formatDim('Response type:'), response.type);
+      console.log('  ' + this.theme.formatDim('Has message:'), !!response.message);
+      
+      if (response.message) {
+        console.log('  ' + this.theme.formatDim('Message keys:'), Object.keys(response.message));
+        console.log('  ' + this.theme.formatDim('Message content type:'), typeof response.message.content);
+        console.log('  ' + this.theme.formatDim('Message content is array:'), Array.isArray(response.message.content));
+        
+        if (response.message.content) {
+          if (Array.isArray(response.message.content)) {
+            console.log('  ' + this.theme.formatDim('Content array length:'), response.message.content.length);
+            response.message.content.forEach((item, index) => {
+              console.log('  ' + this.theme.formatDim(`Content[${index}] type:`), typeof item);
+              console.log('  ' + this.theme.formatDim(`Content[${index}] item type:`), item?.type);
+              console.log('  ' + this.theme.formatDim(`Content[${index}] keys:`), Object.keys(item || {}));
+            });
+          } else {
+            console.log('  ' + this.theme.formatDim('Content (string):'), response.message.content.substring(0, 100) + '...');
+          }
+        }
+      }
+      
+      console.log('  ' + this.theme.formatDim('=== END DEBUG ==='));
+      console.log('');
+      
+      // Check if we have access to the full sub-agent session data
+      if (response.sessionId) {
+        console.log('  ' + this.theme.formatDim('Sub-agent session ID:'), response.sessionId);
+        console.log('  ' + this.theme.formatDim('Searching for full sub-agent data...'));
+        
+        // Try to find the full sub-agent session
+        const fullSubAgentData = this.findFullSubAgentData(response.sessionId);
+        if (fullSubAgentData) {
+          console.log('  ' + this.theme.formatDim('Found full sub-agent data!'));
+          
+          // Display the sub-agent session like a normal conversation
+          const subAgentLines = this.buildFullDetailContent(
+            {sessionId: response.sessionId}, 
+            fullSubAgentData, 
+            0
+          );
+          
+          subAgentLines.forEach(line => {
+            if (line.trim()) {
+              console.log('  ' + line);
+            }
+          });
+        } else {
+          console.log('  ' + this.theme.formatDim('Full sub-agent data not found. Showing summary only.'));
+          // Show the text content we have
+          const lines = this.buildSubAgentDetailContent(response, conversation);
+          lines.forEach(line => {
+            if (line.trim()) {
+              console.log('  ' + line);
+            }
+          });
+        }
+      } else {
+        // No session ID available, show what we have
+        const lines = this.buildSubAgentDetailContent(response, conversation);
+        lines.forEach(line => {
+          if (line.trim()) {
+            console.log('  ' + line);
+          }
+        });
+      }
+    } else {
+      console.log('  ' + this.theme.formatDim('Response: (In progress or not available)'));
+    }
+    
+    // Footer
+    console.log('');
+    console.log(this.theme.formatSeparator(this.terminalWidth));
+    console.log(this.theme.formatMuted('Esc to return  |  Ctrl+R to toggle tool outputs  |  q to quit'));
+  }
+
   renderHelp() {
     this.clearScreen();
     
@@ -3522,6 +3708,355 @@ class ViewRenderer {
     }
     
     return truncated;
+  }
+
+  /**
+   * Build sub-agent detail content (similar to buildFullDetailContent but for sub-agents)
+   */
+  buildSubAgentDetailContent(response, conversation) {
+    const lines = [];
+    
+    // Clear tool IDs for this sub-agent
+    this.state.clearAllToolIds();
+    
+    // Parse the response content directly - sub-agents may have different structure
+    if (response.message && response.message.content) {
+      const content = Array.isArray(response.message.content) ? response.message.content : [response.message.content];
+      
+      // Create chronological content from the raw message content
+      const chronologicalContent = this.createChronologicalContentFromRaw(content, conversation);
+      const chronologicalLines = chronologicalContent.split('\n');
+      chronologicalLines.forEach(line => lines.push(line));
+    } else {
+      // Fallback: extract content using existing methods
+      const assistantContent = this.sessionManager.extractAssistantContent(response);
+      if (assistantContent) {
+        const textLines = assistantContent.split('\n');
+        textLines.forEach(line => lines.push(line));
+      }
+    }
+    
+    return lines;
+  }
+
+  /**
+   * Create chronological content from raw message content array
+   */
+  createChronologicalContentFromRaw(content, conversation) {
+    const lines = [];
+    
+    // Process content in order
+    for (const item of content) {
+      if (typeof item === 'string') {
+        // Plain text content
+        if (item.trim()) {
+          const textLines = item.split('\n');
+          textLines.forEach(line => lines.push(line));
+        }
+      } else if (item && typeof item === 'object') {
+        if (item.type === 'thinking') {
+          // Thinking content
+          lines.push('');
+          lines.push(this.theme.formatThinking('[Thinking]'));
+          
+          const thinkingContent = item.content || item.text || '';
+          const thinkingLines = thinkingContent.split('\n');
+          
+          const thinkingId = `thinking-${Date.now()}`;
+          const isExpanded = this.state.isToolExpanded(thinkingId);
+          
+          // Register thinking ID for Ctrl+R
+          this.state.registerToolId(thinkingId);
+          
+          if (thinkingLines.length <= 20 || isExpanded) {
+            thinkingLines.forEach(line => {
+              lines.push(this.theme.formatThinking(line));
+            });
+          } else {
+            // Show first 20 lines and collapsed indicator
+            for (let i = 0; i < 20; i++) {
+              lines.push(this.theme.formatThinking(thinkingLines[i]));
+            }
+            const remainingLines = thinkingLines.length - 20;
+            lines.push(this.theme.formatDim(`… +${remainingLines} lines (ctrl+r to expand)`));
+          }
+        } else if (item.type === 'text') {
+          // Text content in object format
+          if (item.text && item.text.trim()) {
+            lines.push('');
+            const textLines = item.text.split('\n');
+            textLines.forEach(line => lines.push(line));
+          }
+        } else if (item.type === 'tool_use') {
+          // Tool use
+          lines.push('');
+          
+          // Format tool header
+          let toolHeader = `⏺ ${item.name}`;
+          if (item.input) {
+            const keyParams = this.getKeyParams(item.name, item.input);
+            if (keyParams) {
+              toolHeader += `(${keyParams})`;
+            }
+          }
+          
+          // Add timestamp
+          const toolTime = this.formatDateTimeWithSeconds(new Date());
+          toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          
+          lines.push(this.theme.formatSuccess(toolHeader));
+          
+          // Format tool input
+          if (item.input) {
+            this.formatToolInput(item, this.terminalWidth - 6).forEach(line => {
+              lines.push('  ' + line);
+            });
+          }
+          
+          // Format tool result if available
+          const toolResult = conversation.toolResults && conversation.toolResults.get(item.id);
+          if (toolResult) {
+            lines.push('');
+            const resultIcon = toolResult.isError ? '❌' : '✅';
+            const resultLabel = toolResult.isError ? 'Error' : 'Result';
+            lines.push(`  ${resultIcon} ${this.theme.formatAccent(resultLabel)}:`);
+            
+            // Format result content
+            let resultText = toolResult.result;
+            if (typeof resultText === 'object') {
+              resultText = JSON.stringify(resultText, null, 2);
+            }
+            
+            resultText = resultText.toString();
+            
+            // Apply collapsible behavior for long tool outputs
+            const resultLines = resultText.split('\n');
+            const toolId = `tool-${item.id}`;
+            const isExpanded = this.state.isToolExpanded(toolId);
+            
+            // Register tool ID for Ctrl+R
+            this.state.registerToolId(toolId);
+            
+            if (resultLines.length <= 20 || isExpanded) {
+              // Show all lines if short or expanded
+              resultLines.forEach(line => {
+                lines.push('    ' + (toolResult.isError ? this.theme.formatError(line) : line));
+              });
+            } else {
+              // Show first 20 lines and collapsed indicator
+              for (let i = 0; i < 20; i++) {
+                lines.push('    ' + (toolResult.isError ? this.theme.formatError(resultLines[i]) : resultLines[i]));
+              }
+              const remainingLines = resultLines.length - 20;
+              lines.push('    ' + this.theme.formatDim(`… +${remainingLines} lines (ctrl+r to expand)`));
+            }
+          }
+        }
+      }
+    }
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * Render nested sub-agent content from embedded response data
+   */
+  renderNestedSubAgentFromResponse(lines, response, baseIndent) {
+    const indent = ' '.repeat(baseIndent);
+    
+    try {
+      // Check if response has message content
+      if (!response.message || !response.message.content) {
+        lines.push(`${indent}${this.theme.formatDim('No response content available')}`);
+        return;
+      }
+      
+      const content = response.message.content;
+      if (!Array.isArray(content)) {
+        lines.push(`${indent}${this.theme.formatDim('Invalid response content format')}`);
+        return;
+      }
+      
+      // Add timestamp if available
+      if (response.timestamp) {
+        const time = this.formatDateTimeWithSeconds(response.timestamp);
+        lines.push(`  ${this.theme.formatDim(`[${time}]`)}`);
+      }
+      
+      // Render each content item
+      content.forEach((item, index) => {
+        if (item.type === 'thinking') {
+          // Show thinking content
+          lines.push(`  ${this.theme.formatThinking('🧠 Thinking:')}`);
+          const thinkingLines = item.content.split('\n');
+          thinkingLines.forEach(line => {
+            if (line.trim()) {
+              lines.push(`    ${this.theme.formatDim(line)}`);
+            }
+          });
+          lines.push('');
+          
+        } else if (item.type === 'tool_use') {
+          // Show tool usage
+          lines.push('');
+          let toolHeader = `⏺ ${item.name}`;
+          if (item.input) {
+            const keyParams = this.getKeyParams(item.name, item.input);
+            if (keyParams) {
+              toolHeader += `(${keyParams})`;
+            }
+          }
+          lines.push(`  ${this.theme.formatSuccess(toolHeader)}`);
+          
+          // Show tool input parameters using existing pattern
+          if (item.input) {
+            const params = Object.entries(item.input)
+              .filter(([key, value]) => value !== undefined && value !== null && key !== 'edits');
+            
+            params.forEach(([key, value]) => {
+              let displayValue = typeof value === 'string' ? value : JSON.stringify(value);
+              // Truncate very long values
+              if (displayValue.length > 100) {
+                displayValue = displayValue.substring(0, 97) + '...';
+              }
+              lines.push(`    ${this.theme.formatMuted(key + ':')} ${displayValue}`);
+            });
+          }
+          
+        } else if (item.type === 'text') {
+          // Show text response
+          lines.push(`  ${this.theme.formatInfo('💬 Response:')}`);
+          const textLines = item.text.split('\n');
+          textLines.forEach(line => {
+            if (line.trim()) {
+              lines.push(`    ${line}`);
+            }
+          });
+        }
+      });
+      
+    } catch (error) {
+      lines.push(`${indent}${this.theme.formatError('Error rendering sub-agent response: ' + error.message)}`);
+    }
+  }
+
+  /**
+   * Render nested sub-agent content with proper indentation
+   */
+  renderNestedSubAgentContent(lines, subAgentData, baseIndent) {
+    const indent = ' '.repeat(baseIndent);
+    
+    try {
+      // Create a chronological list from the sub-agent conversation
+      const chronologicalContent = this.createChronologicalContentFromRaw(subAgentData);
+      
+      if (!chronologicalContent || chronologicalContent.length === 0) {
+        lines.push(`${indent}${this.theme.formatDim('No content available')}`);
+        return;
+      }
+      
+      // Render each item in the chronological content
+      chronologicalContent.forEach((item, index) => {
+        if (item.type === 'thinking') {
+          // Show thinking content
+          lines.push(`${indent}${this.theme.formatThinking('🧠 Thinking:')}`);
+          const thinkingLines = item.content.split('\n');
+          thinkingLines.forEach(line => {
+            if (line.trim()) {
+              lines.push(`${indent}  ${this.theme.formatDim(line)}`);
+            }
+          });
+          lines.push('');
+          
+        } else if (item.type === 'tool_use') {
+          // Show tool usage
+          let toolHeader = `🔧 ${item.name}`;
+          if (item.input) {
+            const keyParams = this.getKeyParams(item.name, item.input);
+            if (keyParams) {
+              toolHeader += `(${keyParams})`;
+            }
+          }
+          lines.push(`${indent}${this.theme.formatSuccess(toolHeader)}`);
+          
+          // Show tool input parameters using existing pattern
+          if (item.input) {
+            // Use the same pattern as the main tool display logic
+            const params = Object.entries(item.input)
+              .filter(([key, value]) => value !== undefined && value !== null && key !== 'edits');
+            
+            params.forEach(([key, value]) => {
+              let displayValue = typeof value === 'string' ? value : JSON.stringify(value);
+              // Truncate very long values
+              if (displayValue.length > 100) {
+                displayValue = displayValue.substring(0, 97) + '...';
+              }
+              lines.push(`${indent}  ${this.theme.formatMuted(key + ':')} ${displayValue}`);
+            });
+          }
+          
+        } else if (item.type === 'tool_result') {
+          // Show tool result
+          lines.push(`${indent}${this.theme.formatMuted('📋 Result:')}`);
+          if (item.content) {
+            const resultLines = item.content.split('\n');
+            const maxLines = 10; // Limit tool result display
+            const displayLines = resultLines.slice(0, maxLines);
+            
+            displayLines.forEach(line => {
+              if (line.trim()) {
+                lines.push(`${indent}  ${this.theme.formatDim(line)}`);
+              }
+            });
+            
+            if (resultLines.length > maxLines) {
+              lines.push(`${indent}  ${this.theme.formatDim(`... +${resultLines.length - maxLines} more lines`)}`);
+            }
+          }
+          lines.push('');
+          
+        } else if (item.type === 'text') {
+          // Show text response
+          lines.push(`${indent}${this.theme.formatInfo('💬 Response:')}`);
+          const textLines = item.content.split('\n');
+          textLines.forEach(line => {
+            if (line.trim()) {
+              lines.push(`${indent}  ${line}`);
+            }
+          });
+          lines.push('');
+        }
+      });
+      
+    } catch (error) {
+      lines.push(`${indent}${this.theme.formatError('Error rendering sub-agent content: ' + error.message)}`);
+    }
+  }
+
+  /**
+   * Find full sub-agent data by session ID
+   */
+  findFullSubAgentData(sessionId) {
+    // Search through SessionManager.sessions for a session with this ID
+    const sessions = this.sessionManager.sessions;
+    
+    for (const session of sessions) {
+      // Check if this session matches the sub-agent session ID
+      if (session.fullSessionId === sessionId || session.sessionId === sessionId) {
+        console.log('  ' + this.theme.formatDim(`Found sub-agent session: ${session.sessionId}`));
+        
+        // Return the first conversation from this session
+        // (sub-agent sessions usually have one main conversation)
+        if (session.conversationPairs && session.conversationPairs.length > 0) {
+          return session.conversationPairs[0];
+        }
+      }
+    }
+    
+    // If not found in current sessions, try to search transcript files
+    // This is a more advanced feature that would require file system access
+    console.log('  ' + this.theme.formatDim('Session not found in current sessions'));
+    return null;
   }
 
 }

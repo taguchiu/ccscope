@@ -563,6 +563,7 @@ class SessionManager {
       thinkingCharCount: 0,
       thinkingContent: [],
       assistantResponses: [],
+      subAgentCommands: [],
       tokenUsage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -586,28 +587,45 @@ class SessionManager {
           continue;
         }
         
-        // Complete previous conversation if exists
-        if (currentState.userMessage && currentState.assistantResponses.length > 0) {
-          const lastAssistant = currentState.assistantResponses[currentState.assistantResponses.length - 1];
-          this.createConversationPair(pairs, currentState, lastAssistant);
-        }
+        // Check if this is a sub-agent command (follows a Task tool)
+        const isSubAgentCommand = this.isSubAgentCommand(entry, currentState);
         
-        // Start new conversation
-        currentState = {
-          userMessage: entry,
-          toolUses: [],
-          toolResults: new Map(),
-          thinkingCharCount: 0,
-          thinkingContent: [],
-          assistantResponses: [],
-          tokenUsage: {
-            inputTokens: 0,
-            outputTokens: 0,
-            totalTokens: 0,
-            cacheCreationInputTokens: 0,
-            cacheReadInputTokens: 0
+        if (isSubAgentCommand && currentState.userMessage) {
+          // This is a sub-agent command, add it to the current conversation
+          // Store the sub-agent command in the current state
+          if (!currentState.subAgentCommands) {
+            currentState.subAgentCommands = [];
           }
-        };
+          currentState.subAgentCommands.push({
+            command: entry,
+            response: null, // Will be filled when assistant responds
+            commandIndex: currentState.subAgentCommands.length
+          });
+        } else {
+          // Complete previous conversation if exists
+          if (currentState.userMessage && currentState.assistantResponses.length > 0) {
+            const lastAssistant = currentState.assistantResponses[currentState.assistantResponses.length - 1];
+            this.createConversationPair(pairs, currentState, lastAssistant);
+          }
+          
+          // Start new conversation
+          currentState = {
+            userMessage: entry,
+            toolUses: [],
+            toolResults: new Map(),
+            thinkingCharCount: 0,
+            thinkingContent: [],
+            assistantResponses: [],
+            subAgentCommands: [],
+            tokenUsage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              totalTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0
+            }
+          };
+        }
       }
       // Handle assistant entries
       else if (entry.type === 'assistant' && currentState.userMessage) {
@@ -615,7 +633,7 @@ class SessionManager {
         const tools = this.extractToolUses(entry);
         currentState.toolUses.push(...tools);
         
-        // Extract tool results from assistant message
+        // Extract tool results from assistant message (including Task tools)
         const toolResults = this.extractToolResults(entry);
         toolResults.forEach(result => {
           currentState.toolResults.set(result.toolId, result);
@@ -634,6 +652,17 @@ class SessionManager {
         currentState.tokenUsage.cacheCreationInputTokens += tokenUsage.cacheCreationInputTokens;
         currentState.tokenUsage.cacheReadInputTokens += tokenUsage.cacheReadInputTokens;
         
+        // Check if this is a response to a sub-agent command
+        const isSubAgentResponse = this.isSubAgentResponse(entry, currentState);
+        
+        if (isSubAgentResponse && currentState.subAgentCommands && currentState.subAgentCommands.length > 0) {
+          // Find the most recent sub-agent command without a response
+          const unresponded = currentState.subAgentCommands.find(cmd => cmd.response === null);
+          if (unresponded) {
+            unresponded.response = entry;
+          }
+        }
+        
         // Add to assistant responses if it has actual content
         if (this.hasActualContent(entry) || tools.length > 0) {
           currentState.assistantResponses.push(entry);
@@ -648,6 +677,48 @@ class SessionManager {
     }
     
     return pairs;
+  }
+
+  /**
+   * Check if entry is a sub-agent command (follows a Task tool)
+   */
+  isSubAgentCommand(entry, currentState) {
+    // Check if there's a previous Task tool in the current conversation
+    if (!currentState.toolUses || currentState.toolUses.length === 0) {
+      return false;
+    }
+    
+    // Check if the last tool used was a Task tool
+    const lastTool = currentState.toolUses[currentState.toolUses.length - 1];
+    if (lastTool && lastTool.toolName === 'Task') {
+      return true;
+    }
+    
+    // Also check if the content contains sub-agent indicators
+    const content = this.extractUserContent(entry);
+    if (content.includes('⎿ task:') || content.includes('task:')) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if entry is a sub-agent response (follows a sub-agent command)
+   */
+  isSubAgentResponse(entry, currentState) {
+    // Check if there are any sub-agent commands waiting for responses
+    if (!currentState.subAgentCommands || currentState.subAgentCommands.length === 0) {
+      return false;
+    }
+    
+    // Check if there's at least one sub-agent command without a response
+    const unresponded = currentState.subAgentCommands.find(cmd => cmd.response === null);
+    if (unresponded) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**
@@ -720,9 +791,29 @@ class SessionManager {
     
     for (const item of content) {
       if (item.type === 'tool_result' && item.tool_use_id) {
+        // Try multiple ways to get the result content
+        let resultContent = '';
+        
+        if (item.content) {
+          // Handle both string and array content
+          if (typeof item.content === 'string') {
+            resultContent = item.content;
+          } else if (Array.isArray(item.content)) {
+            resultContent = item.content.map(c => c.text || c.content || JSON.stringify(c)).join('\n');
+          } else if (item.content.text) {
+            resultContent = item.content.text;
+          } else {
+            resultContent = JSON.stringify(item.content);
+          }
+        } else if (item.text) {
+          resultContent = item.text;
+        } else if (item.result) {
+          resultContent = typeof item.result === 'string' ? item.result : JSON.stringify(item.result);
+        }
+        
         results.push({
           toolId: item.tool_use_id,
-          result: item.content || '',
+          result: resultContent,
           isError: item.is_error || false
         });
       }
@@ -825,8 +916,8 @@ class SessionManager {
     const responseTime = this.calculateResponseTime(state.userMessage.timestamp, assistantEntry.timestamp);
     const assistantContent = this.extractAssistantContent(assistantEntry);
     
-    // Merge tool uses with their results
-    const toolUsesWithResults = state.toolUses.map(tool => {
+    // Merge tool uses with their results, keep Task tools for display but exclude from count
+    const allToolUsesWithResults = state.toolUses.map(tool => {
       const result = state.toolResults.get(tool.toolId);
       return {
         ...tool,
@@ -834,6 +925,9 @@ class SessionManager {
         isError: result ? result.isError : false
       };
     });
+    
+    // Filter out Task tools for counting purposes only
+    const toolUsesWithResults = allToolUsesWithResults.filter(tool => tool.toolName !== 'Task');
     
     // Build chronological raw assistant content from all assistant responses
     const rawAssistantContent = this.buildChronologicalContent(state.assistantResponses);
@@ -847,7 +941,8 @@ class SessionManager {
       thinkingCharCount: state.thinkingCharCount,
       thinkingContent: [...state.thinkingContent],
       toolUses: toolUsesWithResults,
-      toolCount: state.toolUses.length,
+      allToolUses: allToolUsesWithResults, // Include Task tools for display
+      toolCount: toolUsesWithResults.length,
       toolResults: Array.from(state.toolResults.values()), // Add toolResults for tests
       userEntry: state.userMessage,
       assistantEntry: assistantEntry,
@@ -865,7 +960,8 @@ class SessionManager {
       assistantResponse: assistantContent,
       assistantResponsePreview: this.sanitizeForDisplay(assistantContent, 200),
       timestamp: state.userMessage.timestamp,
-      toolsUsed: state.toolUses.map(t => t.toolName)
+      toolsUsed: toolUsesWithResults.map(t => t.toolName),
+      subAgentCommands: state.subAgentCommands || []
     });
   }
 

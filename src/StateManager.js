@@ -80,6 +80,11 @@ class StateManager {
     this.currentToolId = null; // Track current tool for Ctrl+R
     this.visibleToolIds = new Set(); // Track visible tools in viewport
     this.allToolIds = new Set(); // Track all tool IDs in current conversation
+    
+    // Sub-agent selection state
+    this.selectedSubAgent = null; // Format: "task-{taskId}-subagent-{index}"
+    this.currentTaskId = null;
+    this.selectedSubAgentData = null; // Store selected sub-agent data for detail view
   }
 
   /**
@@ -238,6 +243,13 @@ class StateManager {
           };
         }
         return { session: null, conversationTree: null };
+        
+      case 'subagent_detail':
+        return {
+          selectedSubAgentData: this.selectedSubAgentData,
+          sessions,
+          selectedIndex: this.selectedSessionIndex
+        };
         
       default:
         return { sessions, selectedIndex: this.selectedSessionIndex };
@@ -990,6 +1002,59 @@ class StateManager {
       this.allToolIds = new Set();
     }
     this.allToolIds.add(toolId);
+  }
+
+  /**
+   * Toggle sub-agent expansion
+   */
+  toggleSubAgentExpansion(subAgentId) {
+    const currentState = this.expandedTools.get(subAgentId) || false;
+    this.expandedTools.set(subAgentId, !currentState);
+    return !currentState;
+  }
+
+  /**
+   * Set selected sub-agent
+   */
+  setSelectedSubAgent(subAgentId) {
+    this.selectedSubAgent = subAgentId;
+  }
+
+  /**
+   * Get current selected sub-agent
+   */
+  getSelectedSubAgent() {
+    return this.selectedSubAgent;
+  }
+
+  /**
+   * Clear sub-agent selection
+   */
+  clearSubAgentSelection() {
+    this.selectedSubAgent = null;
+    this.selectedSubAgentData = null;
+  }
+
+  /**
+   * Navigate to sub-agent detail view
+   */
+  navigateToSubAgentDetail(subAgentIndex, conversation) {
+    if (conversation && conversation.subAgentCommands && 
+        subAgentIndex >= 0 && subAgentIndex < conversation.subAgentCommands.length) {
+      
+      const subAgentPair = conversation.subAgentCommands[subAgentIndex];
+      this.selectedSubAgentData = {
+        index: subAgentIndex,
+        command: subAgentPair.command,
+        response: subAgentPair.response,
+        conversation: conversation
+      };
+      
+      this.setPreviousView();
+      this.setView('subagent_detail');
+      return true;
+    }
+    return false;
   }
 
   /**

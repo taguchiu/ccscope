@@ -334,6 +334,7 @@ class InputHandler {
       // Do nothing to prevent error
       return;
     } else if (this.isKey(keyName, this.keyBindings.navigation.enter)) {
+      // Always go to full detail view regardless of sub-agents
       this.state.setView('full_detail');
       this.render();
     } else if (this.isKey(keyName, this.keyBindings.navigation.escape)) {
@@ -608,6 +609,7 @@ class InputHandler {
     this.state.setPreviousView();
     this.render();
   }
+
 
   /**
    * Handle search input
@@ -965,6 +967,7 @@ class InputHandler {
     this.state.scrollToSearchMatch = true;
     this.state.searchMatchType = searchResult.matchType;
   }
+
 
   /**
    * Resume the current session using claude -r
