@@ -153,8 +153,10 @@ class ViewRenderer {
   formatStatsLine(stats) {
     const sessions = this.theme.formatHeader(`${stats.totalSessions}`);
     const conversations = this.theme.formatHeader(`${stats.totalConversations}`);
+    const tools = this.theme.formatHeader(formatWithUnit(stats.totalTools || 0));
+    const tokens = this.theme.formatHeader(formatWithUnit(stats.totalTokens || 0));
     const duration = this.theme.formatHeader(this.theme.formatDuration(stats.totalDuration || 0));
-    let line = `📊 ${sessions} Sessions | 💬 ${conversations} Convos | ⏱️  ${duration}`;
+    let line = `📊 ${sessions} Sessions | ⏱️ ${duration} Duration | 💬 ${conversations} Convos | 🔧 ${tools} Tools | 🎯 ${tokens} Tokens`;
     
     return line;
   }
@@ -164,8 +166,10 @@ class ViewRenderer {
    */
   formatSessionStatsLine(stats) {
     const conversations = this.theme.formatHeader(`${stats.totalConversations}`);
+    const tools = this.theme.formatHeader(formatWithUnit(stats.totalTools || 0));
+    const tokens = this.theme.formatHeader(formatWithUnit(stats.totalTokens || 0));
     const duration = this.theme.formatHeader(this.theme.formatDuration(stats.totalDuration || 0));
-    let line = `💬 ${conversations} Convos | ⏱️  ${duration}`;
+    let line = `💬 ${conversations} Convos | 🔧 ${tools} Tools | 🎯 ${tokens} Tokens | ⏱️ ${duration} Duration`;
     
     return line;
   }
@@ -260,9 +264,10 @@ class ViewRenderer {
       'No.'.padEnd(5),
       'ID'.padEnd(16),
       'Project'.padEnd(config.layout.projectNameLength),
-      'Conv.'.padEnd(6),
-      'Tokens'.padEnd(8),
+      'Conv.'.padStart(6),
       'Duration'.padEnd(12),
+      'Tools'.padStart(8),
+      'Tokens'.padStart(8),
       'Started'.padEnd(12),
       'Last Updated'.padEnd(12)
     ];
@@ -286,11 +291,7 @@ class ViewRenderer {
       const truncatedProject = this.truncateWithWidth(session.projectName, config.layout.projectNameLength - 1);
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
-      const conversations = session.totalConversations.toString().padEnd(6);
-      
-      // Format tokens with right alignment
-      const totalTokens = session.totalTokens || 0;
-      const tokens = this.theme.formatTokenCount(totalTokens);
+      const conversations = session.totalConversations.toString().padStart(6);
       
       // Format duration without ANSI codes
       const durationMs = session.duration;
@@ -329,11 +330,19 @@ class ViewRenderer {
         durationStr = `${seconds}s`;
       }
       const duration = durationStr.padEnd(12);
+      
+      // Format tools count
+      const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
+      
+      // Format tokens with right alignment
+      const totalTokens = session.totalTokens || 0;
+      const tokens = this.theme.formatTokenCount(totalTokens);
+      
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
-      // Build plain content
-      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${tokens} ${duration} ${startTime} ${lastUpdated}`;
+      // Build plain content - Conv, Duration, Tools, Tokens, Started, Last Updated
+      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
@@ -353,18 +362,22 @@ class ViewRenderer {
       const truncatedProject = this.truncateWithWidth(session.projectName, config.layout.projectNameLength - 1);
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
-      const conversations = session.totalConversations.toString().padEnd(6);
+      const conversations = session.totalConversations.toString().padStart(6);
+      
+      const durationText = this.theme.formatDuration(session.duration);
+      const duration = durationText + ' '.repeat(Math.max(0, 12 - this.theme.getDisplayWidth(durationText)));
+      
+      // Format tools count
+      const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
       
       // Format tokens with color coding and right alignment
       const totalTokens = session.totalTokens || 0;
       const tokens = this.theme.formatTokenCount(totalTokens);
       
-      const durationText = this.theme.formatDuration(session.duration);
-      const duration = durationText + ' '.repeat(Math.max(0, 12 - this.theme.getDisplayWidth(durationText)));
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
-      const content = `${no} ${id} ${project} ${conversations} ${tokens} ${duration} ${startTime} ${lastUpdated}`;
+      const content = `${no} ${id} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
@@ -555,10 +568,20 @@ class ViewRenderer {
       return sum + (session.duration || 0);
     }, 0);
 
+    const totalTools = sessions.reduce((sum, session) => {
+      return sum + (session.toolUsageCount || session.totalTools || 0);
+    }, 0);
+
+    const totalTokens = sessions.reduce((sum, session) => {
+      return sum + (session.totalTokens || 0);
+    }, 0);
+
     return {
       totalSessions: sessions.length,
       totalConversations,
-      totalDuration
+      totalDuration,
+      totalTools,
+      totalTokens
     };
   }
 
@@ -570,14 +593,18 @@ class ViewRenderer {
       return {
         totalSessions: 0,
         totalConversations: 0,
-        totalDuration: 0
+        totalDuration: 0,
+        totalTools: 0,
+        totalTokens: 0
       };
     }
 
     return {
       totalSessions: 1,
       totalConversations: session.totalConversations || 0,
-      totalDuration: session.duration || 0
+      totalDuration: session.duration || 0,
+      totalTools: session.toolUsageCount || session.totalTools || 0,
+      totalTokens: session.totalTokens || 0
     };
   }
 
@@ -820,10 +847,10 @@ class ViewRenderer {
       const responseRaw = conversation.responseTime >= 60 
         ? `${Math.floor(conversation.responseTime / 60)}m${Math.floor(conversation.responseTime % 60)}s`
         : `${conversation.responseTime.toFixed(1)}s`;
-      const toolCountRaw = `${conversation.toolsUsed.length}t`;
+      const { formatWithUnit } = require('./utils/formatters');
+      const toolCountRaw = formatWithUnit(conversation.toolsUsed.length);
       
       // Format tokens without color codes but keep the same formatting as non-selected rows
-      const { formatWithUnit } = require('./utils/formatters');
       const tokenStr = formatWithUnit(totalTokens);
       
       // Build plain content for full-width selection, ensuring it fits within terminal width
@@ -3310,10 +3337,10 @@ class ViewRenderer {
     console.log(this.theme.formatHeader('Summary'));
     console.log(this.theme.formatSeparator(this.terminalWidth));
     console.log(`📁 Total Projects: ${this.theme.formatHeader(projectStats.length.toString())}`);
-    console.log(`💼 Total Sessions: ${this.theme.formatHeader(totals.sessionCount.toString())}`);
-    console.log(`💬 Total Conversations: ${this.theme.formatHeader(totals.conversationCount.toString())}`);
+    console.log(`💼 Total Sessions: ${this.theme.formatHeader(formatWithUnit(totals.sessionCount))}`);
+    console.log(`💬 Total Conversations: ${this.theme.formatHeader(formatWithUnit(totals.conversationCount))}`);
     console.log(`⏱️  Total Duration: ${this.theme.formatHeader(this.theme.formatDuration(totals.totalDuration))}`);
-    console.log(`🎯 Total Tokens: ${this.theme.formatHeader(formatLargeNumber(totals.totalTokens))} (In: ${formatLargeNumber(totals.inputTokens)}, Out: ${formatLargeNumber(totals.outputTokens)})`);;
+    console.log(`🎯 Total Tokens: ${this.theme.formatHeader(formatWithUnit(totals.totalTokens))} (In: ${formatWithUnit(totals.inputTokens)}, Out: ${formatWithUnit(totals.outputTokens)})`);;
     console.log('');
     
     // Table header
@@ -3341,16 +3368,16 @@ class ViewRenderer {
         : project.project;
       
       line += this.theme.formatHeader(projectName.padEnd(colWidths[0]));
-      line += project.sessionCount.toString().padEnd(colWidths[1]);
-      line += project.conversationCount.toString().padEnd(colWidths[2]);
+      line += formatWithUnit(project.sessionCount).padEnd(colWidths[1]);
+      line += formatWithUnit(project.conversationCount).padEnd(colWidths[2]);
       line += this.theme.formatDuration(project.totalDuration).padEnd(colWidths[3]);
       
       // Calculate average duration
       const avgDuration = project.conversationCount > 0 ? project.totalDuration / project.conversationCount : 0;
       line += this.theme.formatDuration(avgDuration).padEnd(colWidths[4]);
       
-      line += (project.toolUsageCount || 0).toString().padEnd(colWidths[5]);
-      line += formatLargeNumber(project.totalTokens || 0).padEnd(colWidths[6]);
+      line += formatWithUnit(project.toolUsageCount || 0).padEnd(colWidths[5]);
+      line += formatWithUnit(project.totalTokens || 0).padEnd(colWidths[6]);
       
       console.log(line);
     });

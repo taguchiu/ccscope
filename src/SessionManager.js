@@ -34,12 +34,15 @@ class SessionManager {
     
     this.isLoading = true;
     const startTime = Date.now();
+    const timings = {};
     
     try {
       // Loading is handled by CCScope with spinner
       
       // Discover transcript files
+      const fileDiscoveryStart = Date.now();
       const transcriptFiles = await this.discoverTranscriptFiles();
+      timings.fileDiscovery = Date.now() - fileDiscoveryStart;
       
       // Early return if no files found
       if (transcriptFiles.length === 0) {
@@ -50,9 +53,12 @@ class SessionManager {
       // Don't clear - let loading message stay visible
       
       // Parse sessions with progress (now uses parallel processing)
+      const parseStart = Date.now();
       this.sessions = await this.parseSessionsWithProgress(transcriptFiles);
+      timings.sessionParsing = Date.now() - parseStart;
       
       // Sort sessions by last activity (optimize by checking if already sorted)
+      const sortStart = Date.now();
       if (this.sessions.length > 1) {
         const needsSorting = this.sessions.some((session, i) => 
           i > 0 && new Date(session.lastActivity) > new Date(this.sessions[i-1].lastActivity)
@@ -62,9 +68,11 @@ class SessionManager {
           this.sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
         }
       }
+      timings.sorting = Date.now() - sortStart;
       
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
+      
       
       // Don't clear - will be handled by CCScope
       
@@ -179,34 +187,24 @@ class SessionManager {
   async parseSessionsWithProgress(transcriptFiles) {
     if (transcriptFiles.length === 0) return [];
     
-    // Process files in batches to avoid overwhelming the system
-    const BATCH_SIZE = 10;
+    // Process all files in parallel for maximum speed
     const sessions = [];
-    let processed = 0;
     
-    // Remove loading text - keep it simple
+    // Parse all files in parallel - Node.js can handle it
+    const parsePromises = transcriptFiles.map(file => 
+      this.parseTranscriptFile(file).catch(error => {
+        // Silently skip files with errors
+        return null;
+      })
+    );
     
-    // Process files in batches for better performance
-    for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
-      const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
-      
-      // Process batch in parallel
-      const batchPromises = batch.map(file => 
-        this.parseTranscriptFile(file).catch(() => null) // Return null for errors
-      );
-      
-      const batchResults = await Promise.all(batchPromises);
-      
-      // Add successful results
-      batchResults.forEach(session => {
-        if (session) sessions.push(session);
-      });
-      
-      processed += batch.length;
-      const progress = Math.round((processed / transcriptFiles.length) * 100);
-      
-      // No progress updates - keep it simple
-    }
+    // Wait for all files to be parsed
+    const results = await Promise.all(parsePromises);
+    
+    // Filter out null results (failed parses)
+    results.forEach(session => {
+      if (session) sessions.push(session);
+    });
     
     // No newline needed
     return sessions;
@@ -217,7 +215,17 @@ class SessionManager {
    */
   async parseTranscriptFile(filePath) {
     try {
-      const content = fs.readFileSync(filePath, 'utf8');
+      // Check cache first
+      const stats = await fs.promises.stat(filePath);
+      const mtime = stats.mtime.getTime();
+      
+      const cached = this.sessionCache.get(filePath);
+      if (cached && cached.mtime === mtime) {
+        // Return cached session if file hasn't changed
+        return cached.session;
+      }
+      
+      const content = await fs.promises.readFile(filePath, 'utf8');
       const lines = content.trim().split('\n').filter(line => line.trim());
       
       if (lines.length === 0) return null;
@@ -257,7 +265,7 @@ class SessionManager {
       // Generate session summary
       const summary = this.generateSessionSummary(conversationPairs);
       
-      return {
+      const session = {
         sessionId,
         fullSessionId: fullSessionId || sessionId,
         projectName,
@@ -268,6 +276,14 @@ class SessionManager {
         summary,
         ...metrics
       };
+      
+      // Cache the parsed session with mtime for fast future access
+      this.sessionCache.set(filePath, {
+        session,
+        mtime: stats.mtime.getTime()
+      });
+      
+      return session;
       
     } catch (error) {
       throw new Error(`Failed to parse transcript: ${error.message}`);
@@ -1237,6 +1253,7 @@ class SessionManager {
       actualDuration: Math.max(0, actualDuration), // Actual session time in milliseconds
       avgResponseTime,
       totalTools,
+      toolUsageCount: totalTools, // Add toolUsageCount field for sorting
       startTime,
       endTime,
       lastActivity: endTime,

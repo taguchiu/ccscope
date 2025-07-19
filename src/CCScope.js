@@ -42,35 +42,42 @@ class CCScopeApplication {
     if (this.isInitialized) return;
     
     try {
+      // Performance measurement
+      const totalStartTime = Date.now();
+      const timings = {};
+      
       // Show loading screen immediately
       this.showLoadingScreen();
       
-      // Add small delay to ensure loading screen is visible
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
       // Track loading start time
       const loadingStartTime = Date.now();
+      timings.loadingScreen = loadingStartTime - totalStartTime;
       
       // Initialize session manager
+      const sessionStartTime = Date.now();
       await this.sessionManager.discoverSessions();
+      timings.sessionDiscovery = Date.now() - sessionStartTime;
       
-      // Ensure loading is visible for at least 1 second
-      const elapsedTime = Date.now() - loadingStartTime;
-      if (elapsedTime < 1000) {
-        await new Promise(resolve => setTimeout(resolve, 1000 - elapsedTime));
-      }
+      timings.totalLoadingDelay = Date.now() - loadingStartTime;
       
       // Clear loading message
       console.clear();
       
       // Initialize theme
+      const themeStartTime = Date.now();
       this.themeManager.setTheme(config.theme || 'default');
+      timings.themeInit = Date.now() - themeStartTime;
       
       // Initialize state
+      const stateStartTime = Date.now();
       this.stateManager.resetState();
+      timings.stateInit = Date.now() - stateStartTime;
       
       // Hide cursor for better UI
       process.stdout.write('\x1b[?25l');
+      
+      // Calculate total time
+      timings.total = Date.now() - totalStartTime;
       
       this.isInitialized = true;
       

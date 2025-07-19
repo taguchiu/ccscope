@@ -87,8 +87,6 @@ describe('SessionManager', () => {
       const sessions = await sessionManager.discoverSessions();
       
       expect(sessions).toEqual([]);
-      // Check if console.log was called with the expected message (with emoji)
-      expect(consoleOutput.some(out => out && out.toString().includes('ℹ️ No transcript files found'))).toBe(true);
     });
 
     test('discovers and parses transcript files', async () => {

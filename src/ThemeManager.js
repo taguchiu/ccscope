@@ -4,6 +4,7 @@
  */
 
 const config = require('./config');
+const { formatWithUnit } = require('./utils/formatters');
 
 class ThemeManager {
   constructor() {
@@ -111,7 +112,7 @@ class ThemeManager {
     }
 
     const theme = this.getTheme();
-    const toolStr = `${count}t`;
+    const toolStr = formatWithUnit(count);
     const paddedToolStr = toolStr.padStart(5) + ' '; // Right-align with trailing space
     
     let color = '';

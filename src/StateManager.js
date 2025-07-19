@@ -319,6 +319,10 @@ class StateManager {
           aValue = a.totalTokens || 0;
           bValue = b.totalTokens || 0;
           break;
+        case 'tools':
+          aValue = a.toolUsageCount || 0;
+          bValue = b.toolUsageCount || 0;
+          break;
         default:
           aValue = new Date(a.lastActivity);
           bValue = new Date(b.lastActivity);
@@ -677,7 +681,7 @@ class StateManager {
   }
 
   cycleSortOrder() {
-    const sortOrders = ['conversations', 'tokens', 'duration', 'startTime', 'lastActivity'];
+    const sortOrders = ['conversations', 'duration', 'tools', 'tokens', 'startTime', 'lastActivity'];
     const currentIndex = sortOrders.indexOf(this.sortOrder);
     const nextIndex = (currentIndex + 1) % sortOrders.length;
     
