@@ -81,8 +81,8 @@ describe('SessionManager', () => {
 
   describe('discoverSessions', () => {
     test('returns empty array when no transcript files found', async () => {
-      // Mock scanDirectory to return empty
-      jest.spyOn(sessionManager, 'scanDirectory').mockResolvedValue([]);
+      // Mock discoverTranscriptFiles to return empty
+      jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([]);
       
       const sessions = await sessionManager.discoverSessions();
       
@@ -428,7 +428,7 @@ describe('SessionManager', () => {
       const { tempDir: dir, transcriptPath } = createTempTranscriptFile();
       tempDir = dir;
       
-      jest.spyOn(sessionManager, 'scanDirectory').mockResolvedValue([transcriptPath]);
+      jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([transcriptPath]);
       await sessionManager.discoverSessions();
     });
 
