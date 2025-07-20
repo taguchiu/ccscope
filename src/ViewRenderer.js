@@ -588,7 +588,7 @@ class ViewRenderer {
           const prefix = `   ${conversationNumber}. `;
           // Calculate ultra-conservative width for message content  
           const prefixWidth = textTruncator.getDisplayWidth(prefix);
-          const maxMessageLength = Math.min(160, this.terminalWidth - prefixWidth - 30); // Cap at 160 chars (2x length)
+          const maxMessageLength = Math.min(180, this.terminalWidth - prefixWidth - 30); // Cap at 180 chars (extended by 20)
           let originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
           
           // Check if this is a continuation session or contains thinking content
@@ -4294,13 +4294,22 @@ class ViewRenderer {
     const totalTokens = dailyStats.reduce((sum, day) => sum + day.totalTokens, 0);
     
     // Summary section - formatted like main header
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(65, '='));
     console.log(`📊 ${dailyStatsResult.totalSessions} Sessions | ⏱️ ${this.theme.formatDuration(totalDuration)} Duration | 💬 ${totalConversations} Convos | 🔧 ${formatWithUnit(totalTools)} Tools | 🎯 ${formatWithUnit(totalTokens)} Tokens`);
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(65, '='));
     console.log();
     
-    // Header
-    const header = 'Date       Sessions  Conv.   Duration    Avg Dur.  Tools   Tokens';
+    // Header with proper spacing
+    const header = [
+      'Date'.padEnd(10),
+      'Sessions'.padStart(8),
+      'Conv.'.padStart(6),
+      'Duration'.padStart(10),
+      'Avg Dur.'.padStart(8),
+      'Tools'.padStart(6),
+      'Tokens'.padStart(8)
+    ].join('  ');
+    
     console.log(this.theme.formatAccent(header));
     console.log(this.theme.formatSeparator(header.length));
     
@@ -4314,7 +4323,7 @@ class ViewRenderer {
         String(day.sessionCount).padStart(8),
         String(day.conversationCount).padStart(6),
         this.theme.formatDuration(day.totalDuration).padStart(10),
-        this.theme.formatResponseTime(avgDuration).trim().padStart(8),
+        this.theme.formatDuration(avgDuration * 1000).padStart(8),
         formatWithUnit(day.toolUsageCount).padStart(6),
         formatWithUnit(day.totalTokens).padStart(8)
       ].join('  ');
@@ -4351,7 +4360,7 @@ class ViewRenderer {
     
     // Summary section
     console.log('Summary');
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(65, '='));
     console.log(`📁 Total Projects: ${totalProjects}`);
     console.log(`💼 Total Sessions: ${totalSessions}`);
     console.log(`💬 Total Conversations: ${totalConversations}`);
@@ -4361,12 +4370,21 @@ class ViewRenderer {
     
     // Project breakdown
     console.log('Project Breakdown');
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(95, '='));
     
-    // Header
-    const header = 'Project                              Sessions  Conv.   Duration    Avg Dur.  Tools   Tokens';
+    // Header with proper spacing
+    const header = [
+      'Project'.padEnd(35),
+      'Sessions'.padStart(8),
+      'Conv.'.padStart(6),
+      'Duration'.padStart(10),
+      'Avg Dur.'.padStart(8),
+      'Tools'.padStart(6),
+      'Tokens'.padStart(10)
+    ].join('  ');
+    
     console.log(this.theme.formatAccent(header));
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(95, '='));
     
     // Data rows
     projectStats.forEach(project => {
@@ -4382,9 +4400,9 @@ class ViewRenderer {
         String(project.sessionCount).padStart(8),
         String(project.conversationCount).padStart(6),
         this.theme.formatDuration(project.totalDuration).padStart(10),
-        this.theme.formatResponseTime(avgDuration).trim().padStart(8),
+        this.theme.formatDuration(avgDuration * 1000).padStart(8),
         formatWithUnit(project.toolUsageCount).padStart(6),
-        formatLargeNumber(project.totalTokens).padStart(10)
+        formatWithUnit(project.totalTokens).padStart(10)
       ].join('  ');
       
       console.log(row);
