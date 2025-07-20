@@ -898,7 +898,7 @@ class ViewRenderer {
     const targetMessageWidth = this.terminalWidth - exactFixedWidth - 5;
     
     // Ensure minimum readable width but use most of available space
-    const availableWidth = Math.max(30, targetMessageWidth + 30);
+    const availableWidth = Math.max(30, targetMessageWidth + 60);
     
     // Extract only the clean user message (without assistant responses or thinking content)
     const cleanUserOnly = this.extractCleanUserMessage(conversation.userMessage);
@@ -1226,13 +1226,13 @@ class ViewRenderer {
       const userMessage = this.extractMeaningfulMessage(cleanSection);
       if (userMessage && userMessage.length > 10) { // Must be substantial
         // Always apply a reasonable length limit to prevent layout issues
-        return textTruncator.smartTruncate(userMessage, 150);
+        return textTruncator.smartTruncate(userMessage, 180);
       }
     }
     
     // Fallback: try to extract any meaningful text from the entire content
     const fallbackMessage = this.extractMeaningfulMessage(text) || this.extractFirstMeaningfulLine(text) || '';
-    return textTruncator.smartTruncate(fallbackMessage, 150);
+    return textTruncator.smartTruncate(fallbackMessage, 180);
   }
   
   isToolExecutionSection(text) {
