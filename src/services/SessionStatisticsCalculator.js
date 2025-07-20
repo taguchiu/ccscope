@@ -4,6 +4,8 @@
  * Extracted from SessionManager following Single Responsibility Principle
  */
 
+const textTruncator = require('../utils/textTruncator');
+
 class SessionStatisticsCalculator {
   constructor() {
     // Action patterns for summary generation
@@ -244,7 +246,7 @@ class SessionStatisticsCalculator {
    */
   createFallbackSummary(firstConversation) {
     return {
-      short: firstConversation.userContent.substring(0, 50),
+      short: textTruncator.smartTruncate(firstConversation.userContent, 50),
       detailed: [firstConversation.userContent]
     };
   }
@@ -317,7 +319,7 @@ class SessionStatisticsCalculator {
     if (topics.length > 0) {
       return topics.slice(0, 5).join(' • ');
     } else {
-      return summaryPairs[0].userContent.substring(0, 60) + '...';
+      return textTruncator.smartTruncate(summaryPairs[0].userContent, 60);
     }
   }
 }

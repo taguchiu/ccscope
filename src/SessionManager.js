@@ -8,6 +8,7 @@ const path = require('path');
 const config = require('./config');
 const CacheManager = require('./CacheManager');
 const FastParser = require('./FastParser');
+const textTruncator = require('./utils/textTruncator');
 const FileDiscoveryService = require('./services/FileDiscoveryService');
 const ProjectExtractor = require('./services/ProjectExtractor');
 const ContentExtractor = require('./services/ContentExtractor');
@@ -792,9 +793,7 @@ class SessionManager {
       .replace(/[\x00-\x1F\x7F]/g, '')
       .trim();
     
-    if (sanitized.length > maxLength) {
-      sanitized = sanitized.substring(0, maxLength) + '...';
-    }
+    sanitized = textTruncator.smartTruncate(sanitized, maxLength);
     
     return sanitized;
   }
@@ -934,7 +933,7 @@ class SessionManager {
     
     if (summaryPairs.length === 0) {
       return {
-        short: conversationPairs[0].userContent.substring(0, 50),
+        short: textTruncator.smartTruncate(conversationPairs[0].userContent, 50),
         detailed: [conversationPairs[0].userContent]
       };
     }
@@ -994,7 +993,7 @@ class SessionManager {
     if (topics.length > 0) {
       shortSummary = topics.slice(0, 5).join(' • ');
     } else {
-      shortSummary = summaryPairs[0].userContent.substring(0, 60) + '...';
+      shortSummary = textTruncator.smartTruncate(summaryPairs[0].userContent, 60);
     }
     
     return {
@@ -1341,7 +1340,7 @@ class SessionManager {
           if (line.match(/^(The user|User|ユーザー).*[:：]/i) || 
               line.match(/requested|asked|want|リクエスト|依頼|要求/i) ||
               line.match(/表示方法|見直し|修正|改善/i)) {
-            return '[Continued session] ' + line.substring(0, 100) + (line.length > 100 ? '...' : '');
+            return '[Continued session] ' + textTruncator.smartTruncate(line, 100);
           }
         }
         // If no specific request found, return a generic message
@@ -1352,9 +1351,7 @@ class SessionManager {
       if (this.containsThinkingContent(text)) {
         // Extract clean user message for context
         const cleanMessage = this.extractActualUserMessage(text);
-        return cleanMessage.length > 100 ? 
-          cleanMessage.substring(0, 100) + '...' : 
-          cleanMessage || text.substring(0, 100).replace(/\s+/g, ' ').trim();
+        return textTruncator.smartTruncate(cleanMessage || text.replace(/\s+/g, ' ').trim(), 100);
       }
       
       // Normal context extraction

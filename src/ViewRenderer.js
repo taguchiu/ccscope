@@ -6,6 +6,7 @@
 const config = require('./config');
 const path = require('path');
 const { formatWithUnit, formatLargeNumber } = require('./utils/formatters');
+const textTruncator = require('./utils/textTruncator');
 
 class ViewRenderer {
   constructor(sessionManager, themeManager, stateManager) {
@@ -291,9 +292,9 @@ class ViewRenderer {
     // Use the improved message extraction logic
     if (this.containsThinkingContent(userMessage)) {
       const cleanMessage = this.extractCleanUserMessage(userMessage);
-      const result = cleanMessage || userMessage.substring(0, 50).replace(/\s+/g, ' ').trim();
+      const result = cleanMessage || textTruncator.smartTruncate(userMessage.replace(/\s+/g, ' '), 100);
       // Apply consistent 60 char limit
-      return result.length > 60 ? result.substring(0, 60) + '...' : result;
+      return textTruncator.smartTruncate(result, 120);
     }
     
     // Clean and truncate the message - apply strict 60 char limit
@@ -304,7 +305,7 @@ class ViewRenderer {
       .replace(/\s+/g, ' ')
       .trim();
     
-    return cleaned.length > 60 ? cleaned.substring(0, 60) + '...' : cleaned;
+    return textTruncator.smartTruncate(cleaned, 120);
   }
 
   /**
@@ -377,8 +378,8 @@ class ViewRenderer {
       const mainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${endTime}`;
       
       // Calculate remaining space for first message
-      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
       const remainingWidth = Math.max(20, this.terminalWidth - usedWidth); // Minimum 20 chars for message
       
@@ -386,7 +387,7 @@ class ViewRenderer {
       const plainContent = `${mainContent} ${truncatedMessage}`;
       
       // Calculate padding to fill entire terminal width
-      const contentWidth = this.theme.getDisplayWidth(plainContent);
+      const contentWidth = textTruncator.getDisplayWidth(plainContent);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -398,14 +399,14 @@ class ViewRenderer {
       // For non-selected rows, use colored formatting
       const no = `${index + 1}`.padEnd(3);
       const formattedId = this.theme.formatSessionId(session.sessionId);
-      const id = formattedId + ' '.repeat(Math.max(0, 16 - this.theme.getDisplayWidth(formattedId)));
+      const id = formattedId + ' '.repeat(Math.max(0, 16 - textTruncator.getDisplayWidth(formattedId)));
       const truncatedProject = this.truncateWithWidth(session.projectName, config.layout.projectNameLength - 1);
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
       const conversations = session.totalConversations.toString().padStart(6);
       
       const durationText = this.theme.formatDuration(session.duration);
-      const duration = durationText + ' '.repeat(Math.max(0, config.layout.durationLength - this.theme.getDisplayWidth(durationText)));
+      const duration = durationText + ' '.repeat(Math.max(0, config.layout.durationLength - textTruncator.getDisplayWidth(durationText)));
       
       // Format tools count
       const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
@@ -423,8 +424,8 @@ class ViewRenderer {
       const mainContent = `${no} ${id} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
       
       // Calculate remaining space for first message
-      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
       const remainingWidth = Math.max(20, this.terminalWidth - usedWidth); // Minimum 20 chars for message
       
@@ -495,8 +496,8 @@ class ViewRenderer {
       const mainContent = `${no} ${paddedId} ${conversations} ${tokens}`;
       
       // Calculate remaining space for first message
-      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
       const remainingWidth = Math.max(30, this.terminalWidth - usedWidth); // Minimum 30 chars for message in compact
       
@@ -504,7 +505,7 @@ class ViewRenderer {
       const plainContent = `${mainContent} ${truncatedMessage}`;
       
       // Calculate padding to fill entire terminal width
-      const contentWidth = this.theme.getDisplayWidth(plainContent);
+      const contentWidth = textTruncator.getDisplayWidth(plainContent);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -516,7 +517,7 @@ class ViewRenderer {
       // For non-selected rows, use colored formatting
       const no = `${index + 1}`.padEnd(3);
       const formattedId = this.theme.formatSessionId(session.sessionId);
-      const id = formattedId + ' '.repeat(Math.max(0, 16 - this.theme.getDisplayWidth(formattedId)));
+      const id = formattedId + ' '.repeat(Math.max(0, 16 - textTruncator.getDisplayWidth(formattedId)));
       
       const conversations = session.totalConversations.toString().padEnd(5);
       
@@ -530,8 +531,8 @@ class ViewRenderer {
       const mainContent = `${no} ${id} ${conversations} ${tokens}`;
       
       // Calculate remaining space for first message
-      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
       const remainingWidth = Math.max(30, this.terminalWidth - usedWidth); // Minimum 30 chars for message in compact
       
@@ -586,16 +587,16 @@ class ViewRenderer {
           const conversationNumber = startIndex + i;
           const prefix = `   ${conversationNumber}. `;
           // Calculate ultra-conservative width for message content  
-          const prefixWidth = this.theme.getDisplayWidth(prefix);
-          const maxMessageLength = this.terminalWidth - prefixWidth - 25; // Large 25 char margin for safety
+          const prefixWidth = textTruncator.getDisplayWidth(prefix);
+          const maxMessageLength = Math.min(160, this.terminalWidth - prefixWidth - 30); // Cap at 160 chars (2x length)
           let originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
           
           // Check if this is a continuation session or contains thinking content
           if (originalMsg.includes('This session is being continued from a previous conversation')) {
-            originalMsg = '[Continued] ' + originalMsg.substring(0, 50) + '...';
+            originalMsg = '[Continued] ' + originalMsg.substring(0, 80) + '...'
           } else if (this.containsThinkingContent(originalMsg)) {
             const cleanMsg = this.extractCleanUserMessage(originalMsg);
-            originalMsg = cleanMsg || originalMsg.substring(0, 100).replace(/\s+/g, ' ').trim();
+            originalMsg = cleanMsg || originalMsg.substring(0, 120).replace(/\s+/g, ' ').trim();
           }
           
           // Clean and truncate message using the same logic as conversation rows
@@ -948,8 +949,8 @@ class ViewRenderer {
       const baseContent = baseParts.join(' ');
       
       // Calculate available width for message in selected row
-      const baseWidth = this.theme.getDisplayWidth(baseContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const baseWidth = textTruncator.getDisplayWidth(baseContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + baseWidth;
       const messageMaxWidth = Math.max(10, this.terminalWidth - usedWidth - 2); // Ultra-large margin for safety
       
@@ -959,7 +960,7 @@ class ViewRenderer {
       const plainContent = baseContent + ' ' + selectedMessage; // Add space before message
       
       // Calculate padding to fill entire terminal width
-      const contentWidth = this.theme.getDisplayWidth(plainContent);
+      const contentWidth = textTruncator.getDisplayWidth(plainContent);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -973,7 +974,7 @@ class ViewRenderer {
       const content = `${no} ${startDateTime} ${endDateTime} ${response} ${toolCount} ${tokens} ${userMessage}`;
       
       // Double-check that total line width doesn't exceed terminal width
-      const totalLineWidth = this.theme.getDisplayWidth(prefix + content);
+      const totalLineWidth = textTruncator.getDisplayWidth(prefix + content);
       if (totalLineWidth > this.terminalWidth) {
         // Emergency truncation if line is still too long
         const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 5;
@@ -988,154 +989,13 @@ class ViewRenderer {
 
   /**
    * Truncate string to fit within specified display width
+   * Uses unified TextTruncator for consistent behavior across all character types
    */
   truncateWithWidth(text, maxWidth) {
-    // Clean text of any remaining ANSI codes and control characters
-    const cleanText = text
-      .replace(/\x1b\[[0-9;]*m/g, '')         // Remove ANSI codes
-      .replace(/[\u0000-\u001F]/g, ' ')       // Replace remaining control characters
-      .replace(/[\u007F-\u009F]/g, ' ')       // Replace DEL and C1 control characters
-      .replace(/\s+/g, ' ')                   // Collapse multiple spaces again
-      .trim();
-    
-    let currentWidth = 0;
-    let truncateIndex = 0;
-    const ellipsis = '...';
-    const ellipsisWidth = 3;
-    
-    // Calculate total width first, handling surrogate pairs
-    let totalWidth = 0;
-    for (let i = 0; i < cleanText.length; i++) {
-      const code = cleanText.charCodeAt(i);
-      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < cleanText.length) {
-        const lowCode = cleanText.charCodeAt(i + 1);
-        if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
-          totalWidth += 2;
-          i++; // Skip low surrogate
-          continue;
-        }
-      }
-      totalWidth += this.getCharWidth(cleanText[i]);
-    }
-    
-    // Return original if it fits
-    if (totalWidth <= maxWidth) {
-      return cleanText;
-    }
-    
-    // Use ultra-conservative width calculation with large safety buffer
-    // Account for potential errors in character width calculation
-    const targetMaxWidth = maxWidth - ellipsisWidth - 10; // Extra 10 char safety buffer
-    
-    for (let i = 0; i < cleanText.length; i++) {
-      const code = cleanText.charCodeAt(i);
-      let charWidth = 1;
-      
-      // Handle surrogate pairs properly
-      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < cleanText.length) {
-        const lowCode = cleanText.charCodeAt(i + 1);
-        if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
-          charWidth = 2;
-          if (currentWidth + charWidth > targetMaxWidth) {
-            break;
-          }
-          currentWidth += charWidth;
-          truncateIndex = i + 2; // Include both surrogate chars
-          i++; // Skip low surrogate
-          continue;
-        }
-      }
-      
-      charWidth = this.getCharWidth(cleanText[i]);
-      
-      // Ultra-conservative character width handling
-      // Assume any non-ASCII character might be wider than calculated
-      if (cleanText.charCodeAt(i) > 127) {
-        charWidth = Math.max(charWidth, 2); // Assume at least 2-width for non-ASCII
-      }
-      
-      if (currentWidth + charWidth > targetMaxWidth) {
-        break;
-      }
-      currentWidth += charWidth;
-      truncateIndex = i + 1;
-    }
-    
-    const truncated = cleanText.substring(0, truncateIndex) + ellipsis;
-    
-    // Return truncated with ellipsis
-    return truncated;
+    // Use exact width to prevent wrapping
+    return textTruncator.smartTruncate(text, maxWidth);
   }
 
-  /**
-   * Get character width (1 for half-width, 2 for full-width)
-   */
-  getCharWidth(char) {
-    const code = char.charCodeAt(0);
-    
-    // Check for emoji sequences (surrogate pairs) - always width 2
-    if (code >= 0xD800 && code <= 0xDBFF) {
-      return 2;
-    }
-    
-    // Specific problematic characters that appear in the display
-    const specificWideChars = {
-      0x23FA: 2, // ⏺ Record button
-      0x23BF: 2, // ⎿ Horizontal scan line
-      0x1F527: 2, // 🔧 Wrench
-      0x1F4CA: 2, // 📊 Bar chart
-      0x1F4C5: 2, // 📅 Calendar
-      0x1F4C1: 2, // 📁 Folder
-      0x1F4C4: 2, // 📄 Document
-      0x1F4DD: 2, // 📝 Memo
-      0x2B06: 2, // ⬆ Up arrow
-      0x2B07: 2, // ⬇ Down arrow
-      0x25B6: 2, // ▶ Play button
-      0x25C0: 2, // ◀ Reverse button
-      0x2705: 2, // ✅ Check mark
-      0x274C: 2, // ❌ Cross mark
-      0x26A0: 2, // ⚠ Warning
-      0x2139: 2, // ℹ Information
-    };
-    
-    if (specificWideChars[code]) {
-      return specificWideChars[code];
-    }
-    
-    // Extended emoji and symbol ranges - be more conservative (assume width 2)
-    if ((code >= 0x2600 && code <= 0x27BF) || // Miscellaneous Symbols
-        (code >= 0x1F300 && code <= 0x1F6FF) || // Miscellaneous Symbols and Pictographs
-        (code >= 0x1F900 && code <= 0x1F9FF) || // Supplemental Symbols and Pictographs
-        (code >= 0x1F000 && code <= 0x1F02F) || // Mahjong/Domino Tiles
-        (code >= 0x2300 && code <= 0x23FF) || // Miscellaneous Technical
-        (code >= 0x2000 && code <= 0x206F) || // General Punctuation
-        (code >= 0x25A0 && code <= 0x25FF) || // Geometric Shapes
-        (code >= 0x2190 && code <= 0x21FF) || // Arrows
-        (code >= 0x1F780 && code <= 0x1F7FF) || // Geometric Shapes Extended
-        (code >= 0x1F1E6 && code <= 0x1F1FF) || // Regional Indicator Symbols
-        (code >= 0x1F700 && code <= 0x1F77F) || // Alchemical Symbols
-        (code >= 0x1F800 && code <= 0x1F8FF)) { // Supplemental Arrows-C
-      return 2;
-    }
-    
-    // Comprehensive full-width character detection
-    if ((code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
-        (code >= 0x2E80 && code <= 0x9FFF) || // CJK (includes Hiragana, Katakana, Kanji)
-        (code >= 0xAC00 && code <= 0xD7AF) || // Hangul Syllables
-        (code >= 0xF900 && code <= 0xFAFF) || // CJK Compatibility Ideographs
-        (code >= 0xFE30 && code <= 0xFE4F) || // CJK Compatibility Forms
-        (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth Forms
-        (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth Forms Currency
-        (code >= 0x3000 && code <= 0x303F) || // CJK Symbols and Punctuation
-        (code >= 0x3040 && code <= 0x309F) || // Hiragana
-        (code >= 0x30A0 && code <= 0x30FF) || // Katakana
-        (code >= 0x2018 && code <= 0x201F) || // Quotation marks
-        (code >= 0x2010 && code <= 0x2017)) { // Dashes and punctuation
-      return 2;
-    }
-    
-    return 1;
-  }
 
   /**
    * Get maximum visible conversations
@@ -1173,14 +1033,14 @@ class ViewRenderer {
       userPrefix = '📦 ';  // Box emoji to indicate compact continuation
     } else if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
       userPrefix = '🔗 ';  // Chain link emoji to indicate continuation
-      userMessage = '[Continued session] ' + (userMessage.length > 100 ? userMessage.substring(0, 100) + '...' : userMessage);
+      userMessage = '[Continued session] ' + textTruncator.smartTruncate(userMessage, 180);
     } else if (this.containsThinkingContent(conversation.userMessage)) {
       // Extract just the user message part
       const cleanMessage = this.extractCleanUserMessage(conversation.userMessage);
-      userMessage = cleanMessage || conversation.userMessage.substring(0, 100).replace(/\s+/g, ' ').trim();
+      userMessage = cleanMessage || textTruncator.smartTruncate(conversation.userMessage.replace(/\s+/g, ' '), 180);
     }
     
-    const userPrefixWidth = this.theme.getDisplayWidth(userPrefix);
+    const userPrefixWidth = textTruncator.getDisplayWidth(userPrefix);
     const maxUserWidth = this.terminalWidth - userPrefixWidth;
     
     if (highlightQuery && this.textMatchesQuery(userMessage, highlightQuery, highlightOptions)) {
@@ -1195,7 +1055,7 @@ class ViewRenderer {
     
     // Assistant response (truncate to fit one line considering display width)
     const assistantPrefix = '🤖 ';
-    const assistantPrefixWidth = this.theme.getDisplayWidth(assistantPrefix);
+    const assistantPrefixWidth = textTruncator.getDisplayWidth(assistantPrefix);
     const maxAssistantWidth = this.terminalWidth - assistantPrefixWidth;
     const assistantMessage = conversation.assistantResponse.replace(/\n/g, ' ').trim();
     
@@ -1221,7 +1081,7 @@ class ViewRenderer {
         .join(', ');
         
       const toolsPrefix = '🔧 Tools: ';
-      const toolsPrefixWidth = this.theme.getDisplayWidth(toolsPrefix);
+      const toolsPrefixWidth = textTruncator.getDisplayWidth(toolsPrefix);
       const maxToolsWidth = this.terminalWidth - toolsPrefixWidth;
       const truncatedToolsFormatted = this.truncateWithWidth(toolsFormatted, maxToolsWidth);
       console.log(`${toolsPrefix}${truncatedToolsFormatted}`);
@@ -1235,7 +1095,7 @@ class ViewRenderer {
       for (const thinking of conversation.thinkingContent) {
         if (thinking.text && this.textMatchesQuery(thinking.text, highlightQuery, highlightOptions)) {
           const thinkingPrefix = '💭 ';
-          const thinkingPrefixWidth = this.theme.getDisplayWidth(thinkingPrefix);
+          const thinkingPrefixWidth = textTruncator.getDisplayWidth(thinkingPrefix);
           const maxThinkingWidth = this.terminalWidth - thinkingPrefixWidth;
           const thinkingText = thinking.text.replace(/\n/g, ' ').trim();
           const highlighted = this.highlightText(thinkingText, highlightQuery, highlightOptions);
@@ -1366,13 +1226,13 @@ class ViewRenderer {
       const userMessage = this.extractMeaningfulMessage(cleanSection);
       if (userMessage && userMessage.length > 10) { // Must be substantial
         // Always apply a reasonable length limit to prevent layout issues
-        return userMessage.length > 60 ? userMessage.substring(0, 60) + '...' : userMessage;
+        return textTruncator.smartTruncate(userMessage, 120);
       }
     }
     
     // Fallback: try to extract any meaningful text from the entire content
     const fallbackMessage = this.extractMeaningfulMessage(text) || this.extractFirstMeaningfulLine(text) || '';
-    return fallbackMessage.length > 60 ? fallbackMessage.substring(0, 60) + '...' : fallbackMessage;
+    return textTruncator.smartTruncate(fallbackMessage, 120);
   }
   
   isToolExecutionSection(text) {
@@ -1499,16 +1359,19 @@ class ViewRenderer {
    */
   renderConversationDetailControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓ or k/j') + ' to select conversation',
-      this.theme.formatMuted('Enter') + ' to view detail',
-      this.theme.formatMuted('←/→ or h/l') + ' switch session',
+      this.theme.formatMuted('↑/↓ or k/j') + ' select',
+      this.theme.formatMuted('Enter') + ' detail',
+      this.theme.formatMuted('←/→ or h/l') + ' switch',
       this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
     ];
     
-    console.log(controls.join(' · '));
+    // Apply truncation to fit terminal width
+    const controlsText = controls.join(' · ');
+    const truncatedControls = this.truncateWithWidth(controlsText, this.terminalWidth - 5);
+    console.log(truncatedControls);
   }
 
   /**
@@ -1691,7 +1554,7 @@ class ViewRenderer {
     }
     
     // Calculate available space for title
-    const indicatorLength = this.theme.getDisplayWidth(indicator);
+    const indicatorLength = textTruncator.getDisplayWidth(indicator);
     const availableWidth = this.terminalWidth - indicatorLength - 2; // 2 spaces padding
     
     // Don't truncate the title - let it show completely
@@ -1702,7 +1565,7 @@ class ViewRenderer {
     const indicatorFormatted = this.theme.formatMuted(indicator);
     
     // Calculate actual lengths after formatting
-    const actualTitleLength = this.theme.getDisplayWidth(displayTitle);
+    const actualTitleLength = textTruncator.getDisplayWidth(displayTitle);
     const totalNeeded = actualTitleLength + indicatorLength + 2; // 2 spaces padding
     
     if (totalNeeded <= this.terminalWidth) {
@@ -1810,7 +1673,7 @@ class ViewRenderer {
     // Simple title with underline
     lines.push('');
     lines.push(`${color}${title}\x1b[0m`);
-    lines.push(this.theme.formatDim('─'.repeat(Math.min(40, this.theme.getDisplayWidth(title)))));
+    lines.push(this.theme.formatDim('─'.repeat(Math.min(40, textTruncator.getDisplayWidth(title)))));
     
     // Content without box borders
     content.forEach(item => {
@@ -1858,7 +1721,7 @@ class ViewRenderer {
       
       for (let i = 0; i < words.length; i++) {
         const word = words[i];
-        const wordWidth = this.theme.getDisplayWidth(word);
+        const wordWidth = textTruncator.getDisplayWidth(word);
         const spaceWidth = i > 0 ? 1 : 0;
         
         if (currentWidth + spaceWidth + wordWidth <= maxWidth) {
@@ -1884,7 +1747,7 @@ class ViewRenderer {
               for (let j = 0; j < remainingWord.length; j++) {
                 const char = remainingWord[j];
                 const charCode = char.charCodeAt(0);
-                const charWidth = this.getCharWidth(charCode);
+                const charWidth = textTruncator.getCharWidth(String.fromCharCode(charCode));
                 
                 if (lineWidth + charWidth > maxWidth) break;
                 lineWidth += charWidth;
@@ -1911,32 +1774,6 @@ class ViewRenderer {
     return lines;
   }
 
-  /**
-   * Get character width (1 for half-width, 2 for full-width)
-   */
-  getCharWidth(charCode) {
-    // Full-width characters
-    if ((charCode >= 0x1100 && charCode <= 0x115F) || // Hangul Jamo
-        (charCode >= 0x2E80 && charCode <= 0x9FFF) || // CJK
-        (charCode >= 0xAC00 && charCode <= 0xD7AF) || // Hangul Syllables
-        (charCode >= 0xF900 && charCode <= 0xFAFF) || // CJK Compatibility
-        (charCode >= 0xFE30 && charCode <= 0xFE4F) || // CJK Compatibility Forms
-        (charCode >= 0xFF00 && charCode <= 0xFF60) || // Fullwidth Forms
-        (charCode >= 0xFFE0 && charCode <= 0xFFE6) || // Fullwidth Forms
-        (charCode >= 0x3000 && charCode <= 0x303F) || // CJK Symbols
-        (charCode >= 0x2018 && charCode <= 0x201F)) { // Quotation marks
-      return 2;
-    }
-    
-    // Emoji and symbols (simplified check)
-    if ((charCode >= 0x2600 && charCode <= 0x27BF) || // Miscellaneous Symbols
-        (charCode >= 0x1F300 && charCode <= 0x1F6FF) || // Misc Symbols and Pictographs
-        (charCode >= 0x1F900 && charCode <= 0x1F9FF)) { // Supplemental Symbols
-      return 2;
-    }
-    
-    return 1;
-  }
 
   /**
    * Create a special thinking content box with enhanced visualization
@@ -2369,7 +2206,7 @@ class ViewRenderer {
       case 'Write':
         return input.file_path ? path.basename(input.file_path) : '';
       case 'Bash':
-        return input.command ? input.command.substring(0, 30) + (input.command.length > 30 ? '...' : '') : '';
+        return input.command ? textTruncator.smartTruncate(input.command, 30) : '';
       case 'Task':
         return input.description || '';
       case 'Grep':
@@ -3115,7 +2952,7 @@ class ViewRenderer {
       
       // Timestamp
       const timestamp = this.formatTimestamp(node.timestamp);
-      const paddingNeeded = Math.max(0, this.terminalWidth - this.theme.getDisplayWidth(line) - timestamp.length - 2);
+      const paddingNeeded = Math.max(0, this.terminalWidth - textTruncator.getDisplayWidth(line) - timestamp.length - 2);
       line += ' '.repeat(paddingNeeded) + this.theme.formatMuted(timestamp);
       
       // Apply selection highlighting
@@ -3632,7 +3469,7 @@ class ViewRenderer {
       
       // Truncate if too long (considering ANSI codes)
       const maxWidth = this.terminalWidth - 4;
-      const displayWidth = this.theme.getDisplayWidth(this.theme.stripAnsiCodes(contextLine));
+      const displayWidth = textTruncator.getDisplayWidth(this.theme.stripAnsiCodes(contextLine));
       
       if (displayWidth > maxWidth) {
         // Need more sophisticated truncation that preserves highlights
@@ -3849,7 +3686,7 @@ class ViewRenderer {
   truncateText(text, maxWidth) {
     const strippedText = this.theme.stripAnsiCodes(text);
     
-    if (this.theme.getDisplayWidth(strippedText) <= maxWidth) {
+    if (textTruncator.getDisplayWidth(strippedText) <= maxWidth) {
       return text;
     }
     
@@ -3862,7 +3699,7 @@ class ViewRenderer {
       const mid = Math.floor((left + right + 1) / 2);
       const substr = strippedText.substring(0, mid);
       
-      if (this.theme.getDisplayWidth(substr) <= maxWidth) {
+      if (textTruncator.getDisplayWidth(substr) <= maxWidth) {
         result = substr;
         left = mid;
       } else {
