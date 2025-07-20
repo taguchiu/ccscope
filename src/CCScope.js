@@ -89,11 +89,16 @@ class CCScopeApplication {
   }
 
   /**
-   * Show loading screen
+   * Show loading screen with optional progress message
+   * @param {string} message - Optional progress message
    */
-  showLoadingScreen() {
+  showLoadingScreen(message = null) {
     console.clear();
-    console.log('Loading...');
+    if (message) {
+      console.log(`Loading... ${message}`);
+    } else {
+      console.log('Loading...');
+    }
   }
 
   // Spinner methods removed - using simple static loading message instead

@@ -1457,12 +1457,17 @@ class SessionManager {
     if (transcriptFiles.length === 0) return [];
     
     const sessions = [];
+    const totalFiles = transcriptFiles.length;
     
     // Limit concurrent parsing to prevent memory issues
     const BATCH_SIZE = 5;
     
     for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
       const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
+      
+      // Update loading progress
+      const progress = Math.min(i + batch.length, totalFiles);
+      process.stdout.write(`\rLoading... (${progress}/${totalFiles} files)`);
       
       const parsePromises = batch.map(file => {
         // Check memory cache first
@@ -1493,6 +1498,9 @@ class SessionManager {
         if (session) sessions.push(session);
       });
     }
+    
+    // Clear the progress line
+    process.stdout.write('\r' + ' '.repeat(50) + '\r');
     
     return sessions;
   }
