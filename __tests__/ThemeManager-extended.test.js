@@ -24,18 +24,18 @@ describe('ThemeManager Extended Tests', () => {
       expect(themeManager.getDisplayWidth('😀')).toBe(2);
       expect(themeManager.getDisplayWidth('👨‍👩‍👧‍👦')).toBeGreaterThan(2);
       
-      // Control characters
-      expect(themeManager.getDisplayWidth('\t\n\r')).toBe(3);
+      // Control characters (have width 0 in TextTruncator)
+      expect(themeManager.getDisplayWidth('\t\n\r')).toBe(0);
     });
 
     test('handles surrogate pairs correctly', () => {
       // Emoji with surrogate pair
       const emoji = '𝄞'; // Musical symbol
-      expect(themeManager.getDisplayWidth(emoji)).toBe(2);
+      expect(themeManager.getDisplayWidth(emoji)).toBe(1);
       
       // Invalid surrogate pair
       const invalid = '\uD800'; // High surrogate without low
-      expect(themeManager.getDisplayWidth(invalid)).toBe(2);
+      expect(themeManager.getDisplayWidth(invalid)).toBe(1);
     });
 
     test('strips ANSI codes before calculating width', () => {

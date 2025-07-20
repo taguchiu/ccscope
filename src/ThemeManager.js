@@ -5,6 +5,7 @@
 
 const config = require('./config');
 const { formatWithUnit } = require('./utils/formatters');
+const textTruncator = require('./utils/textTruncator');
 
 class ThemeManager {
   constructor() {
@@ -275,48 +276,10 @@ class ThemeManager {
 
   /**
    * Get display width accounting for full-width characters and emojis
+   * Uses unified TextTruncator for consistent behavior
    */
   getDisplayWidth(text) {
-    const stripped = this.stripAnsiCodes(text);
-    let width = 0;
-    
-    for (let i = 0; i < stripped.length; i++) {
-      const code = stripped.charCodeAt(i);
-      
-      // Check for emoji sequences (surrogate pairs)
-      if (code >= 0xD800 && code <= 0xDBFF) {
-        // This is a high surrogate, skip the low surrogate
-        if (i + 1 < stripped.length) {
-          const lowCode = stripped.charCodeAt(i + 1);
-          if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
-            i++; // Skip the low surrogate
-          }
-        }
-        width += 2;
-      } else if (code >= 0xDC00 && code <= 0xDFFF) {
-        // Orphan low surrogate, shouldn't happen but handle it
-        continue;
-      } else if ((code >= 0x2600 && code <= 0x27BF) || // Miscellaneous Symbols
-                 (code >= 0x1F300 && code <= 0x1F6FF) || // Misc Symbols and Pictographs
-                 (code >= 0x1F900 && code <= 0x1F9FF) || // Supplemental Symbols
-                 (code >= 0x1F000 && code <= 0x1F02F)) { // Mahjong/Domino
-        width += 2;
-      } else if ((code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
-                 (code >= 0x2E80 && code <= 0x9FFF) || // CJK
-                 (code >= 0xAC00 && code <= 0xD7AF) || // Hangul Syllables
-                 (code >= 0xF900 && code <= 0xFAFF) || // CJK Compatibility
-                 (code >= 0xFE30 && code <= 0xFE4F) || // CJK Compatibility Forms
-                 (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth Forms
-                 (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth Forms
-                 (code >= 0x3000 && code <= 0x303F) || // CJK Symbols
-                 (code >= 0x2018 && code <= 0x201F)) { // Quotation marks
-        width += 2;
-      } else {
-        width += 1;
-      }
-    }
-    
-    return width;
+    return textTruncator.getDisplayWidth(text);
   }
 
   /**

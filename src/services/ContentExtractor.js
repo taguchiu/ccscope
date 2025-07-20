@@ -5,6 +5,8 @@
  * Uses Extract Method pattern to organize content extraction logic
  */
 
+const textTruncator = require('../utils/textTruncator');
+
 class ContentExtractor {
   constructor() {
     // Thinking content markers for detection
@@ -380,9 +382,7 @@ class ContentExtractor {
       .trim();
     
     // Truncate if necessary
-    if (sanitized.length > maxLength) {
-      sanitized = sanitized.substring(0, maxLength) + '...';
-    }
+    sanitized = textTruncator.smartTruncate(sanitized, maxLength);
     
     return sanitized;
   }

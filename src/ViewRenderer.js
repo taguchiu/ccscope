@@ -6,6 +6,7 @@
 const config = require('./config');
 const path = require('path');
 const { formatWithUnit, formatLargeNumber } = require('./utils/formatters');
+const textTruncator = require('./utils/textTruncator');
 
 class ViewRenderer {
   constructor(sessionManager, themeManager, stateManager) {
@@ -265,15 +266,46 @@ class ViewRenderer {
       'ID'.padEnd(16),
       'Project'.padEnd(config.layout.projectNameLength),
       'Conv.'.padStart(6),
-      'Duration'.padEnd(12),
+      'Duration'.padEnd(config.layout.durationLength),
       'Tools'.padStart(8),
-      'Tokens'.padStart(8),
+      'Tokens'.padStart(7),
       'Start Time'.padEnd(12),
-      'End Time'.padEnd(12)
+      'End Time'.padEnd(12),
+      'First Message'
     ];
     
     console.log(this.theme.formatMuted(headers.join(' ')));
     console.log(this.theme.formatSeparator(this.terminalWidth, '-'));
+  }
+
+  /**
+   * Get first message from session
+   */
+  getFirstMessage(session) {
+    if (!session.conversationPairs || session.conversationPairs.length === 0) {
+      return 'No conversations';
+    }
+    
+    const firstConversation = session.conversationPairs[0];
+    const userMessage = firstConversation.userContent || '';
+    
+    // Use the improved message extraction logic
+    if (this.containsThinkingContent(userMessage)) {
+      const cleanMessage = this.extractCleanUserMessage(userMessage);
+      const result = cleanMessage || textTruncator.smartTruncate(userMessage.replace(/\s+/g, ' '), 100);
+      // Apply consistent 60 char limit
+      return textTruncator.smartTruncate(result, 120);
+    }
+    
+    // Clean and truncate the message - apply strict 60 char limit
+    const cleaned = userMessage
+      .replace(/\n/g, ' ')
+      .replace(/\r/g, ' ')
+      .replace(/\t/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return textTruncator.smartTruncate(cleaned, 120);
   }
 
   /**
@@ -329,7 +361,7 @@ class ViewRenderer {
       } else {
         durationStr = `${seconds}s`;
       }
-      const duration = durationStr.padEnd(12);
+      const duration = durationStr.padEnd(config.layout.durationLength);
       
       // Format tools count
       const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
@@ -340,13 +372,22 @@ class ViewRenderer {
       
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const endTime = this.theme.formatDateTime(session.lastActivity).padEnd(12);
+      const firstMessage = this.getFirstMessage(session);
       
-      // Build plain content - Conv, Duration, Tools, Tokens, Start Time, End Time
-      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${endTime}`;
+      // Build plain content - Conv, Duration, Tools, Tokens, Start Time, End Time, First Message
+      const mainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${endTime}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(20, this.terminalWidth - usedWidth); // Minimum 20 chars for message
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const plainContent = `${mainContent} ${truncatedMessage}`;
       
       // Calculate padding to fill entire terminal width
-      const contentWidth = this.theme.getDisplayWidth(plainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const contentWidth = textTruncator.getDisplayWidth(plainContent);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -358,14 +399,14 @@ class ViewRenderer {
       // For non-selected rows, use colored formatting
       const no = `${index + 1}`.padEnd(3);
       const formattedId = this.theme.formatSessionId(session.sessionId);
-      const id = formattedId + ' '.repeat(Math.max(0, 16 - this.theme.getDisplayWidth(formattedId)));
+      const id = formattedId + ' '.repeat(Math.max(0, 16 - textTruncator.getDisplayWidth(formattedId)));
       const truncatedProject = this.truncateWithWidth(session.projectName, config.layout.projectNameLength - 1);
       const project = truncatedProject.padEnd(config.layout.projectNameLength);
       
       const conversations = session.totalConversations.toString().padStart(6);
       
       const durationText = this.theme.formatDuration(session.duration);
-      const duration = durationText + ' '.repeat(Math.max(0, 12 - this.theme.getDisplayWidth(durationText)));
+      const duration = durationText + ' '.repeat(Math.max(0, config.layout.durationLength - textTruncator.getDisplayWidth(durationText)));
       
       // Format tools count
       const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
@@ -377,7 +418,20 @@ class ViewRenderer {
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
-      const content = `${no} ${id} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
+      const firstMessage = this.getFirstMessage(session);
+      
+      // Build main content first
+      const mainContent = `${no} ${id} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(20, this.terminalWidth - usedWidth); // Minimum 20 chars for message
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const content = `${mainContent} ${truncatedMessage}`;
+      
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
@@ -391,7 +445,8 @@ class ViewRenderer {
       'No.'.padEnd(5),
       'ID'.padEnd(16),
       'Conv.'.padEnd(6),
-      'Tokens'.padEnd(6)
+      'Tokens'.padEnd(6),
+      'First Message'
     ];
     
     const headerLine = headers.join(' ');
@@ -435,12 +490,22 @@ class ViewRenderer {
       const totalTokens = session.tokenUsage?.totalTokens || 0;
       const tokens = this.theme.formatTokenCount(totalTokens).replace(/\s+$/, '').padEnd(6);
       
-      // Build plain content
-      const plainContent = `${no} ${paddedId} ${conversations} ${tokens}`;
+      const firstMessage = this.getFirstMessage(session);
+      
+      // Build main content first
+      const mainContent = `${no} ${paddedId} ${conversations} ${tokens}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(30, this.terminalWidth - usedWidth); // Minimum 30 chars for message in compact
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const plainContent = `${mainContent} ${truncatedMessage}`;
       
       // Calculate padding to fill entire terminal width
-      const contentWidth = this.theme.getDisplayWidth(plainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const contentWidth = textTruncator.getDisplayWidth(plainContent);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -452,7 +517,7 @@ class ViewRenderer {
       // For non-selected rows, use colored formatting
       const no = `${index + 1}`.padEnd(3);
       const formattedId = this.theme.formatSessionId(session.sessionId);
-      const id = formattedId + ' '.repeat(Math.max(0, 16 - this.theme.getDisplayWidth(formattedId)));
+      const id = formattedId + ' '.repeat(Math.max(0, 16 - textTruncator.getDisplayWidth(formattedId)));
       
       const conversations = session.totalConversations.toString().padEnd(5);
       
@@ -460,7 +525,20 @@ class ViewRenderer {
       const totalTokens = session.tokenUsage?.totalTokens || 0;
       const tokens = this.theme.formatTokenCount(totalTokens).replace(/\s+$/, '').padEnd(6);
       
-      const content = `${no} ${id} ${conversations} ${tokens}`;
+      const firstMessage = this.getFirstMessage(session);
+      
+      // Build main content first
+      const mainContent = `${no} ${id} ${conversations} ${tokens}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = textTruncator.getDisplayWidth(mainContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(30, this.terminalWidth - usedWidth); // Minimum 30 chars for message in compact
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const content = `${mainContent} ${truncatedMessage}`;
+      
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
@@ -509,16 +587,16 @@ class ViewRenderer {
           const conversationNumber = startIndex + i;
           const prefix = `   ${conversationNumber}. `;
           // Calculate ultra-conservative width for message content  
-          const prefixWidth = this.theme.getDisplayWidth(prefix);
-          const maxMessageLength = this.terminalWidth - prefixWidth - 25; // Large 25 char margin for safety
+          const prefixWidth = textTruncator.getDisplayWidth(prefix);
+          const maxMessageLength = Math.min(180, this.terminalWidth - prefixWidth - 30); // Cap at 180 chars (extended by 20)
           let originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
           
           // Check if this is a continuation session or contains thinking content
           if (originalMsg.includes('This session is being continued from a previous conversation')) {
-            originalMsg = '[Continued] ' + originalMsg.substring(0, 50) + '...';
+            originalMsg = '[Continued] ' + originalMsg.substring(0, 80) + '...'
           } else if (this.containsThinkingContent(originalMsg)) {
             const cleanMsg = this.extractCleanUserMessage(originalMsg);
-            originalMsg = cleanMsg || '[Contains tool execution details]';
+            originalMsg = cleanMsg || originalMsg.substring(0, 120).replace(/\s+/g, ' ').trim();
           }
           
           // Clean and truncate message using the same logic as conversation rows
@@ -748,7 +826,7 @@ class ViewRenderer {
       'No.'.padEnd(3) + ' ' +
       'Start Time'.padEnd(12) + ' ' +
       'End Time'.padEnd(12) + ' ' +
-      'Duration'.padEnd(8) + ' ' +
+      'Duration'.padEnd(config.layout.durationLength) + ' ' +
       'Tools'.padEnd(6) + ' ' +  // Tools is right-aligned (padStart(5) + space)
       'Tokens'.padEnd(8) + ' ' + // Tokens is right-aligned (padStart(7) + space) 
       'User Message';
@@ -817,7 +895,7 @@ class ViewRenderer {
     
     // Use ultra-conservative width to absolutely prevent wrapping
     // Reserve huge margin for ANSI codes, numbered lists, complex Japanese text, and calculation errors
-    const targetMessageWidth = this.terminalWidth - exactFixedWidth - 50;
+    const targetMessageWidth = this.terminalWidth - exactFixedWidth - 5;
     
     // Ensure minimum readable width but use most of available space
     const availableWidth = Math.max(30, targetMessageWidth);
@@ -871,10 +949,10 @@ class ViewRenderer {
       const baseContent = baseParts.join(' ');
       
       // Calculate available width for message in selected row
-      const baseWidth = this.theme.getDisplayWidth(baseContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const baseWidth = textTruncator.getDisplayWidth(baseContent);
+      const prefixWidth = textTruncator.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + baseWidth;
-      const messageMaxWidth = Math.max(10, this.terminalWidth - usedWidth - 40); // Ultra-large margin for safety
+      const messageMaxWidth = Math.max(10, this.terminalWidth - usedWidth - 2); // Ultra-large margin for safety
       
       // Re-truncate message for selected row to ensure it fits
       const selectedMessage = this.truncateWithWidth(userMessage, messageMaxWidth);
@@ -882,7 +960,7 @@ class ViewRenderer {
       const plainContent = baseContent + ' ' + selectedMessage; // Add space before message
       
       // Calculate padding to fill entire terminal width
-      const contentWidth = this.theme.getDisplayWidth(plainContent);
+      const contentWidth = textTruncator.getDisplayWidth(plainContent);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -896,10 +974,10 @@ class ViewRenderer {
       const content = `${no} ${startDateTime} ${endDateTime} ${response} ${toolCount} ${tokens} ${userMessage}`;
       
       // Double-check that total line width doesn't exceed terminal width
-      const totalLineWidth = this.theme.getDisplayWidth(prefix + content);
+      const totalLineWidth = textTruncator.getDisplayWidth(prefix + content);
       if (totalLineWidth > this.terminalWidth) {
         // Emergency truncation if line is still too long
-        const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 50;
+        const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 5;
         const emergencyMessage = this.truncateWithWidth(userMessage, emergencyMaxWidth);
         const safeContent = `${no} ${startDateTime} ${endDateTime} ${response} ${toolCount} ${tokens} ${emergencyMessage}`;
         console.log(prefix + safeContent);
@@ -911,154 +989,13 @@ class ViewRenderer {
 
   /**
    * Truncate string to fit within specified display width
+   * Uses unified TextTruncator for consistent behavior across all character types
    */
   truncateWithWidth(text, maxWidth) {
-    // Clean text of any remaining ANSI codes and control characters
-    const cleanText = text
-      .replace(/\x1b\[[0-9;]*m/g, '')         // Remove ANSI codes
-      .replace(/[\u0000-\u001F]/g, ' ')       // Replace remaining control characters
-      .replace(/[\u007F-\u009F]/g, ' ')       // Replace DEL and C1 control characters
-      .replace(/\s+/g, ' ')                   // Collapse multiple spaces again
-      .trim();
-    
-    let currentWidth = 0;
-    let truncateIndex = 0;
-    const ellipsis = '...';
-    const ellipsisWidth = 3;
-    
-    // Calculate total width first, handling surrogate pairs
-    let totalWidth = 0;
-    for (let i = 0; i < cleanText.length; i++) {
-      const code = cleanText.charCodeAt(i);
-      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < cleanText.length) {
-        const lowCode = cleanText.charCodeAt(i + 1);
-        if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
-          totalWidth += 2;
-          i++; // Skip low surrogate
-          continue;
-        }
-      }
-      totalWidth += this.getCharWidth(cleanText[i]);
-    }
-    
-    // Return original if it fits
-    if (totalWidth <= maxWidth) {
-      return cleanText;
-    }
-    
-    // Use ultra-conservative width calculation with large safety buffer
-    // Account for potential errors in character width calculation
-    const targetMaxWidth = maxWidth - ellipsisWidth - 10; // Extra 10 char safety buffer
-    
-    for (let i = 0; i < cleanText.length; i++) {
-      const code = cleanText.charCodeAt(i);
-      let charWidth = 1;
-      
-      // Handle surrogate pairs properly
-      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < cleanText.length) {
-        const lowCode = cleanText.charCodeAt(i + 1);
-        if (lowCode >= 0xDC00 && lowCode <= 0xDFFF) {
-          charWidth = 2;
-          if (currentWidth + charWidth > targetMaxWidth) {
-            break;
-          }
-          currentWidth += charWidth;
-          truncateIndex = i + 2; // Include both surrogate chars
-          i++; // Skip low surrogate
-          continue;
-        }
-      }
-      
-      charWidth = this.getCharWidth(cleanText[i]);
-      
-      // Ultra-conservative character width handling
-      // Assume any non-ASCII character might be wider than calculated
-      if (cleanText.charCodeAt(i) > 127) {
-        charWidth = Math.max(charWidth, 2); // Assume at least 2-width for non-ASCII
-      }
-      
-      if (currentWidth + charWidth > targetMaxWidth) {
-        break;
-      }
-      currentWidth += charWidth;
-      truncateIndex = i + 1;
-    }
-    
-    const truncated = cleanText.substring(0, truncateIndex) + ellipsis;
-    
-    // Return truncated with ellipsis
-    return truncated;
+    // Use exact width to prevent wrapping
+    return textTruncator.smartTruncate(text, maxWidth);
   }
 
-  /**
-   * Get character width (1 for half-width, 2 for full-width)
-   */
-  getCharWidth(char) {
-    const code = char.charCodeAt(0);
-    
-    // Check for emoji sequences (surrogate pairs) - always width 2
-    if (code >= 0xD800 && code <= 0xDBFF) {
-      return 2;
-    }
-    
-    // Specific problematic characters that appear in the display
-    const specificWideChars = {
-      0x23FA: 2, // ⏺ Record button
-      0x23BF: 2, // ⎿ Horizontal scan line
-      0x1F527: 2, // 🔧 Wrench
-      0x1F4CA: 2, // 📊 Bar chart
-      0x1F4C5: 2, // 📅 Calendar
-      0x1F4C1: 2, // 📁 Folder
-      0x1F4C4: 2, // 📄 Document
-      0x1F4DD: 2, // 📝 Memo
-      0x2B06: 2, // ⬆ Up arrow
-      0x2B07: 2, // ⬇ Down arrow
-      0x25B6: 2, // ▶ Play button
-      0x25C0: 2, // ◀ Reverse button
-      0x2705: 2, // ✅ Check mark
-      0x274C: 2, // ❌ Cross mark
-      0x26A0: 2, // ⚠ Warning
-      0x2139: 2, // ℹ Information
-    };
-    
-    if (specificWideChars[code]) {
-      return specificWideChars[code];
-    }
-    
-    // Extended emoji and symbol ranges - be more conservative (assume width 2)
-    if ((code >= 0x2600 && code <= 0x27BF) || // Miscellaneous Symbols
-        (code >= 0x1F300 && code <= 0x1F6FF) || // Miscellaneous Symbols and Pictographs
-        (code >= 0x1F900 && code <= 0x1F9FF) || // Supplemental Symbols and Pictographs
-        (code >= 0x1F000 && code <= 0x1F02F) || // Mahjong/Domino Tiles
-        (code >= 0x2300 && code <= 0x23FF) || // Miscellaneous Technical
-        (code >= 0x2000 && code <= 0x206F) || // General Punctuation
-        (code >= 0x25A0 && code <= 0x25FF) || // Geometric Shapes
-        (code >= 0x2190 && code <= 0x21FF) || // Arrows
-        (code >= 0x1F780 && code <= 0x1F7FF) || // Geometric Shapes Extended
-        (code >= 0x1F1E6 && code <= 0x1F1FF) || // Regional Indicator Symbols
-        (code >= 0x1F700 && code <= 0x1F77F) || // Alchemical Symbols
-        (code >= 0x1F800 && code <= 0x1F8FF)) { // Supplemental Arrows-C
-      return 2;
-    }
-    
-    // Comprehensive full-width character detection
-    if ((code >= 0x1100 && code <= 0x115F) || // Hangul Jamo
-        (code >= 0x2E80 && code <= 0x9FFF) || // CJK (includes Hiragana, Katakana, Kanji)
-        (code >= 0xAC00 && code <= 0xD7AF) || // Hangul Syllables
-        (code >= 0xF900 && code <= 0xFAFF) || // CJK Compatibility Ideographs
-        (code >= 0xFE30 && code <= 0xFE4F) || // CJK Compatibility Forms
-        (code >= 0xFF00 && code <= 0xFF60) || // Fullwidth Forms
-        (code >= 0xFFE0 && code <= 0xFFE6) || // Fullwidth Forms Currency
-        (code >= 0x3000 && code <= 0x303F) || // CJK Symbols and Punctuation
-        (code >= 0x3040 && code <= 0x309F) || // Hiragana
-        (code >= 0x30A0 && code <= 0x30FF) || // Katakana
-        (code >= 0x2018 && code <= 0x201F) || // Quotation marks
-        (code >= 0x2010 && code <= 0x2017)) { // Dashes and punctuation
-      return 2;
-    }
-    
-    return 1;
-  }
 
   /**
    * Get maximum visible conversations
@@ -1096,14 +1033,14 @@ class ViewRenderer {
       userPrefix = '📦 ';  // Box emoji to indicate compact continuation
     } else if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
       userPrefix = '🔗 ';  // Chain link emoji to indicate continuation
-      userMessage = '[Continued session] ' + (userMessage.length > 100 ? userMessage.substring(0, 100) + '...' : userMessage);
+      userMessage = '[Continued session] ' + textTruncator.smartTruncate(userMessage, 180);
     } else if (this.containsThinkingContent(conversation.userMessage)) {
       // Extract just the user message part
       const cleanMessage = this.extractCleanUserMessage(conversation.userMessage);
-      userMessage = cleanMessage || '[Contains tool execution details]';
+      userMessage = cleanMessage || textTruncator.smartTruncate(conversation.userMessage.replace(/\s+/g, ' '), 180);
     }
     
-    const userPrefixWidth = this.theme.getDisplayWidth(userPrefix);
+    const userPrefixWidth = textTruncator.getDisplayWidth(userPrefix);
     const maxUserWidth = this.terminalWidth - userPrefixWidth;
     
     if (highlightQuery && this.textMatchesQuery(userMessage, highlightQuery, highlightOptions)) {
@@ -1118,7 +1055,7 @@ class ViewRenderer {
     
     // Assistant response (truncate to fit one line considering display width)
     const assistantPrefix = '🤖 ';
-    const assistantPrefixWidth = this.theme.getDisplayWidth(assistantPrefix);
+    const assistantPrefixWidth = textTruncator.getDisplayWidth(assistantPrefix);
     const maxAssistantWidth = this.terminalWidth - assistantPrefixWidth;
     const assistantMessage = conversation.assistantResponse.replace(/\n/g, ' ').trim();
     
@@ -1144,7 +1081,7 @@ class ViewRenderer {
         .join(', ');
         
       const toolsPrefix = '🔧 Tools: ';
-      const toolsPrefixWidth = this.theme.getDisplayWidth(toolsPrefix);
+      const toolsPrefixWidth = textTruncator.getDisplayWidth(toolsPrefix);
       const maxToolsWidth = this.terminalWidth - toolsPrefixWidth;
       const truncatedToolsFormatted = this.truncateWithWidth(toolsFormatted, maxToolsWidth);
       console.log(`${toolsPrefix}${truncatedToolsFormatted}`);
@@ -1158,7 +1095,7 @@ class ViewRenderer {
       for (const thinking of conversation.thinkingContent) {
         if (thinking.text && this.textMatchesQuery(thinking.text, highlightQuery, highlightOptions)) {
           const thinkingPrefix = '💭 ';
-          const thinkingPrefixWidth = this.theme.getDisplayWidth(thinkingPrefix);
+          const thinkingPrefixWidth = textTruncator.getDisplayWidth(thinkingPrefix);
           const maxThinkingWidth = this.terminalWidth - thinkingPrefixWidth;
           const thinkingText = thinking.text.replace(/\n/g, ' ').trim();
           const highlighted = this.highlightText(thinkingText, highlightQuery, highlightOptions);
@@ -1268,52 +1205,122 @@ class ViewRenderer {
   extractCleanUserMessage(text) {
     if (!text) return '';
     
+    // Split into sections by common delimiters
+    const sections = text.split(/(?:\n\n|\r\n\r\n|👤\s*USER|🤖\s*ASSISTANT)/);
     
-    const lines = text.split('\n');
-    const userMessageLines = [];
-    
-    for (const line of lines) {
-      // Stop when we hit assistant response markers or thinking content
-      if (line.includes('🔧 TOOLS EXECUTION FLOW:') ||
-          line.includes('🧠 THINKING PROCESS:') ||
-          line.includes('🤖 ASSISTANT') ||
-          line.includes('⏺ Thinking') ||
-          line.includes('⏺ Edit') ||
-          line.includes('⏺ Read') ||
-          line.includes('⏺ Write') ||
-          line.includes('⏺ Bash') ||
-          line.includes('⏺ Task') ||
-          line.includes('⏺ TodoWrite') ||
-          line.includes('⏺ Grep') ||
-          line.includes('⏺ Glob') ||
-          line.includes('⏺ MultiEdit') ||
-          line.match(/^\s*\[Thinking \d+\]/) ||
-          line.match(/^\s*\[\d+\]\s+\w+/) ||
-          line.match(/^\s*\d+│/) ||
-          line.includes('file:') ||
-          line.includes('File:') ||
-          line.includes('Command:') ||
-          line.includes('pattern:') ||
-          line.includes('path:') ||
-          line.includes('⎿')) {
-        break;
+    for (const section of sections) {
+      const cleanSection = section.trim();
+      if (!cleanSection) continue;
+      
+      // Skip sections that are clearly tool execution details
+      if (this.isToolExecutionSection(cleanSection)) {
+        continue;
       }
       
-      // Skip lines that look like assistant responses
-      if (line.trim().startsWith('Looking at') ||
-          line.trim().startsWith('I need to') ||
-          line.trim().startsWith('Let me') ||
-          line.trim().startsWith('I\'ll') ||
-          line.trim().startsWith('I will') ||
-          line.trim().startsWith('First,') ||
-          line.trim().startsWith('Based on')) {
-        break;
+      // Skip sections that are thinking content
+      if (this.isThinkingSection(cleanSection)) {
+        continue;
       }
       
-      userMessageLines.push(line);
+      // Extract meaningful user message from this section
+      const userMessage = this.extractMeaningfulMessage(cleanSection);
+      if (userMessage && userMessage.length > 10) { // Must be substantial
+        // Always apply a reasonable length limit to prevent layout issues
+        return textTruncator.smartTruncate(userMessage, 120);
+      }
     }
     
-    return userMessageLines.join(' ').replace(/\s+/g, ' ').trim();
+    // Fallback: try to extract any meaningful text from the entire content
+    const fallbackMessage = this.extractMeaningfulMessage(text) || this.extractFirstMeaningfulLine(text) || '';
+    return textTruncator.smartTruncate(fallbackMessage, 120);
+  }
+  
+  isToolExecutionSection(text) {
+    const toolMarkers = [
+      '🔧 TOOLS EXECUTION FLOW:',
+      '🧠 THINKING PROCESS:',
+      '⏺ Thinking', '⏺ Edit', '⏺ Read', '⏺ Write', '⏺ Bash', 
+      '⏺ Task', '⏺ TodoWrite', '⏺ Grep', '⏺ Glob', '⏺ MultiEdit',
+      'File:', 'Command:', 'pattern:', 'path:', '⎿'
+    ];
+    
+    return toolMarkers.some(marker => text.includes(marker)) ||
+           /^\s*\[Thinking \d+\]/.test(text) ||
+           /^\s*\[\d+\]\s+\w+/.test(text) ||
+           /^\s*\d+│/.test(text);
+  }
+  
+  isThinkingSection(text) {
+    return text.includes('[Thinking') || 
+           text.includes('THINKING PROCESS') ||
+           text.includes('TOOLS EXECUTION FLOW');
+  }
+  
+  extractMeaningfulMessage(text) {
+    const lines = text.split('\n');
+    const meaningfulLines = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // Skip empty lines
+      if (!trimmed) continue;
+      
+      // Skip obvious tool execution markers
+      if (this.isToolExecutionLine(trimmed)) continue;
+      
+      // Skip assistant response patterns
+      if (this.isAssistantResponseLine(trimmed)) continue;
+      
+      // Keep meaningful content
+      if (trimmed.length > 3 && !this.isMetadataLine(trimmed)) {
+        meaningfulLines.push(trimmed);
+      }
+    }
+    
+    return meaningfulLines.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  
+  isToolExecutionLine(line) {
+    return /^\s*\[(?:\d+|\w+)\]/.test(line) ||
+           line.includes('⏺') ||
+           line.includes('⎿') ||
+           /^(File|Command|pattern|path):\s/.test(line) ||
+           /^\d+│/.test(line);
+  }
+  
+  isAssistantResponseLine(line) {
+    const assistantPatterns = [
+      /^(Looking at|I need to|Let me|I'll|I will|First,|Based on|Here's|Now)/,
+      /^(The|This|That|It|We|You)/,
+      /^(To|In order to|For|With|By)/
+    ];
+    
+    return assistantPatterns.some(pattern => pattern.test(line));
+  }
+  
+  isMetadataLine(line) {
+    return /^\s*\d+\s*$/.test(line) ||
+           /^-+$/.test(line) ||
+           /^=+$/.test(line) ||
+           /^\s*[\[\](){}]+\s*$/.test(line);
+  }
+  
+  extractFirstMeaningfulLine(text) {
+    const lines = text.split('\n');
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      if (trimmed.length > 10 && 
+          !this.isToolExecutionLine(trimmed) && 
+          !this.isMetadataLine(trimmed) &&
+          !/^[🔧🧠⏺👤🤖]/.test(trimmed)) {
+        return trimmed;
+      }
+    }
+    
+    return '';
   }
 
   /**
@@ -1352,16 +1359,19 @@ class ViewRenderer {
    */
   renderConversationDetailControls() {
     const controls = [
-      this.theme.formatMuted('↑/↓ or k/j') + ' to select conversation',
-      this.theme.formatMuted('Enter') + ' to view detail',
-      this.theme.formatMuted('←/→ or h/l') + ' switch session',
+      this.theme.formatMuted('↑/↓ or k/j') + ' select',
+      this.theme.formatMuted('Enter') + ' detail',
+      this.theme.formatMuted('←/→ or h/l') + ' switch',
       this.theme.formatMuted('r') + ' resume',
       this.theme.formatMuted('s') + ' sort',
       this.theme.formatMuted('Esc') + ' back',
       this.theme.formatMuted('q') + ' exit'
     ];
     
-    console.log(controls.join(' · '));
+    // Apply truncation to fit terminal width
+    const controlsText = controls.join(' · ');
+    const truncatedControls = this.truncateWithWidth(controlsText, this.terminalWidth - 5);
+    console.log(truncatedControls);
   }
 
   /**
@@ -1544,7 +1554,7 @@ class ViewRenderer {
     }
     
     // Calculate available space for title
-    const indicatorLength = this.theme.getDisplayWidth(indicator);
+    const indicatorLength = textTruncator.getDisplayWidth(indicator);
     const availableWidth = this.terminalWidth - indicatorLength - 2; // 2 spaces padding
     
     // Don't truncate the title - let it show completely
@@ -1555,7 +1565,7 @@ class ViewRenderer {
     const indicatorFormatted = this.theme.formatMuted(indicator);
     
     // Calculate actual lengths after formatting
-    const actualTitleLength = this.theme.getDisplayWidth(displayTitle);
+    const actualTitleLength = textTruncator.getDisplayWidth(displayTitle);
     const totalNeeded = actualTitleLength + indicatorLength + 2; // 2 spaces padding
     
     if (totalNeeded <= this.terminalWidth) {
@@ -1663,7 +1673,7 @@ class ViewRenderer {
     // Simple title with underline
     lines.push('');
     lines.push(`${color}${title}\x1b[0m`);
-    lines.push(this.theme.formatDim('─'.repeat(Math.min(40, this.theme.getDisplayWidth(title)))));
+    lines.push(this.theme.formatDim('─'.repeat(Math.min(40, textTruncator.getDisplayWidth(title)))));
     
     // Content without box borders
     content.forEach(item => {
@@ -1711,7 +1721,7 @@ class ViewRenderer {
       
       for (let i = 0; i < words.length; i++) {
         const word = words[i];
-        const wordWidth = this.theme.getDisplayWidth(word);
+        const wordWidth = textTruncator.getDisplayWidth(word);
         const spaceWidth = i > 0 ? 1 : 0;
         
         if (currentWidth + spaceWidth + wordWidth <= maxWidth) {
@@ -1737,7 +1747,7 @@ class ViewRenderer {
               for (let j = 0; j < remainingWord.length; j++) {
                 const char = remainingWord[j];
                 const charCode = char.charCodeAt(0);
-                const charWidth = this.getCharWidth(charCode);
+                const charWidth = textTruncator.getCharWidth(String.fromCharCode(charCode));
                 
                 if (lineWidth + charWidth > maxWidth) break;
                 lineWidth += charWidth;
@@ -1764,32 +1774,6 @@ class ViewRenderer {
     return lines;
   }
 
-  /**
-   * Get character width (1 for half-width, 2 for full-width)
-   */
-  getCharWidth(charCode) {
-    // Full-width characters
-    if ((charCode >= 0x1100 && charCode <= 0x115F) || // Hangul Jamo
-        (charCode >= 0x2E80 && charCode <= 0x9FFF) || // CJK
-        (charCode >= 0xAC00 && charCode <= 0xD7AF) || // Hangul Syllables
-        (charCode >= 0xF900 && charCode <= 0xFAFF) || // CJK Compatibility
-        (charCode >= 0xFE30 && charCode <= 0xFE4F) || // CJK Compatibility Forms
-        (charCode >= 0xFF00 && charCode <= 0xFF60) || // Fullwidth Forms
-        (charCode >= 0xFFE0 && charCode <= 0xFFE6) || // Fullwidth Forms
-        (charCode >= 0x3000 && charCode <= 0x303F) || // CJK Symbols
-        (charCode >= 0x2018 && charCode <= 0x201F)) { // Quotation marks
-      return 2;
-    }
-    
-    // Emoji and symbols (simplified check)
-    if ((charCode >= 0x2600 && charCode <= 0x27BF) || // Miscellaneous Symbols
-        (charCode >= 0x1F300 && charCode <= 0x1F6FF) || // Misc Symbols and Pictographs
-        (charCode >= 0x1F900 && charCode <= 0x1F9FF)) { // Supplemental Symbols
-      return 2;
-    }
-    
-    return 1;
-  }
 
   /**
    * Create a special thinking content box with enhanced visualization
@@ -2222,7 +2206,7 @@ class ViewRenderer {
       case 'Write':
         return input.file_path ? path.basename(input.file_path) : '';
       case 'Bash':
-        return input.command ? input.command.substring(0, 30) + (input.command.length > 30 ? '...' : '') : '';
+        return input.command ? textTruncator.smartTruncate(input.command, 30) : '';
       case 'Task':
         return input.description || '';
       case 'Grep':
@@ -2968,7 +2952,7 @@ class ViewRenderer {
       
       // Timestamp
       const timestamp = this.formatTimestamp(node.timestamp);
-      const paddingNeeded = Math.max(0, this.terminalWidth - this.theme.getDisplayWidth(line) - timestamp.length - 2);
+      const paddingNeeded = Math.max(0, this.terminalWidth - textTruncator.getDisplayWidth(line) - timestamp.length - 2);
       line += ' '.repeat(paddingNeeded) + this.theme.formatMuted(timestamp);
       
       // Apply selection highlighting
@@ -3485,7 +3469,7 @@ class ViewRenderer {
       
       // Truncate if too long (considering ANSI codes)
       const maxWidth = this.terminalWidth - 4;
-      const displayWidth = this.theme.getDisplayWidth(this.theme.stripAnsiCodes(contextLine));
+      const displayWidth = textTruncator.getDisplayWidth(this.theme.stripAnsiCodes(contextLine));
       
       if (displayWidth > maxWidth) {
         // Need more sophisticated truncation that preserves highlights
@@ -3702,7 +3686,7 @@ class ViewRenderer {
   truncateText(text, maxWidth) {
     const strippedText = this.theme.stripAnsiCodes(text);
     
-    if (this.theme.getDisplayWidth(strippedText) <= maxWidth) {
+    if (textTruncator.getDisplayWidth(strippedText) <= maxWidth) {
       return text;
     }
     
@@ -3715,7 +3699,7 @@ class ViewRenderer {
       const mid = Math.floor((left + right + 1) / 2);
       const substr = strippedText.substring(0, mid);
       
-      if (this.theme.getDisplayWidth(substr) <= maxWidth) {
+      if (textTruncator.getDisplayWidth(substr) <= maxWidth) {
         result = substr;
         left = mid;
       } else {
@@ -4310,13 +4294,22 @@ class ViewRenderer {
     const totalTokens = dailyStats.reduce((sum, day) => sum + day.totalTokens, 0);
     
     // Summary section - formatted like main header
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(65, '='));
     console.log(`📊 ${dailyStatsResult.totalSessions} Sessions | ⏱️ ${this.theme.formatDuration(totalDuration)} Duration | 💬 ${totalConversations} Convos | 🔧 ${formatWithUnit(totalTools)} Tools | 🎯 ${formatWithUnit(totalTokens)} Tokens`);
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(65, '='));
     console.log();
     
-    // Header
-    const header = 'Date       Sessions  Conv.   Duration    Avg Dur.  Tools   Tokens';
+    // Header with proper spacing
+    const header = [
+      'Date'.padEnd(10),
+      'Sessions'.padStart(8),
+      'Conv.'.padStart(6),
+      'Duration'.padStart(10),
+      'Avg Dur.'.padStart(8),
+      'Tools'.padStart(6),
+      'Tokens'.padStart(8)
+    ].join('  ');
+    
     console.log(this.theme.formatAccent(header));
     console.log(this.theme.formatSeparator(header.length));
     
@@ -4330,7 +4323,7 @@ class ViewRenderer {
         String(day.sessionCount).padStart(8),
         String(day.conversationCount).padStart(6),
         this.theme.formatDuration(day.totalDuration).padStart(10),
-        this.theme.formatResponseTime(avgDuration).trim().padStart(8),
+        this.theme.formatDuration(avgDuration * 1000).padStart(8),
         formatWithUnit(day.toolUsageCount).padStart(6),
         formatWithUnit(day.totalTokens).padStart(8)
       ].join('  ');
@@ -4367,7 +4360,7 @@ class ViewRenderer {
     
     // Summary section
     console.log('Summary');
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(65, '='));
     console.log(`📁 Total Projects: ${totalProjects}`);
     console.log(`💼 Total Sessions: ${totalSessions}`);
     console.log(`💬 Total Conversations: ${totalConversations}`);
@@ -4377,12 +4370,21 @@ class ViewRenderer {
     
     // Project breakdown
     console.log('Project Breakdown');
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(95, '='));
     
-    // Header
-    const header = 'Project                              Sessions  Conv.   Duration    Avg Dur.  Tools   Tokens';
+    // Header with proper spacing
+    const header = [
+      'Project'.padEnd(35),
+      'Sessions'.padStart(8),
+      'Conv.'.padStart(6),
+      'Duration'.padStart(10),
+      'Avg Dur.'.padStart(8),
+      'Tools'.padStart(6),
+      'Tokens'.padStart(10)
+    ].join('  ');
+    
     console.log(this.theme.formatAccent(header));
-    console.log(this.theme.formatSeparator(this.terminalWidth, '='));
+    console.log(this.theme.formatSeparator(95, '='));
     
     // Data rows
     projectStats.forEach(project => {
@@ -4398,9 +4400,9 @@ class ViewRenderer {
         String(project.sessionCount).padStart(8),
         String(project.conversationCount).padStart(6),
         this.theme.formatDuration(project.totalDuration).padStart(10),
-        this.theme.formatResponseTime(avgDuration).trim().padStart(8),
+        this.theme.formatDuration(avgDuration * 1000).padStart(8),
         formatWithUnit(project.toolUsageCount).padStart(6),
-        formatLargeNumber(project.totalTokens).padStart(10)
+        formatWithUnit(project.totalTokens).padStart(10)
       ].join('  ');
       
       console.log(row);
