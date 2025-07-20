@@ -265,15 +265,46 @@ class ViewRenderer {
       'ID'.padEnd(16),
       'Project'.padEnd(config.layout.projectNameLength),
       'Conv.'.padStart(6),
-      'Duration'.padEnd(12),
+      'Duration'.padEnd(config.layout.durationLength),
       'Tools'.padStart(8),
-      'Tokens'.padStart(8),
+      'Tokens'.padStart(7),
       'Start Time'.padEnd(12),
-      'End Time'.padEnd(12)
+      'End Time'.padEnd(12),
+      'First Message'
     ];
     
     console.log(this.theme.formatMuted(headers.join(' ')));
     console.log(this.theme.formatSeparator(this.terminalWidth, '-'));
+  }
+
+  /**
+   * Get first message from session
+   */
+  getFirstMessage(session) {
+    if (!session.conversationPairs || session.conversationPairs.length === 0) {
+      return 'No conversations';
+    }
+    
+    const firstConversation = session.conversationPairs[0];
+    const userMessage = firstConversation.userContent || '';
+    
+    // Use the improved message extraction logic
+    if (this.containsThinkingContent(userMessage)) {
+      const cleanMessage = this.extractCleanUserMessage(userMessage);
+      const result = cleanMessage || userMessage.substring(0, 50).replace(/\s+/g, ' ').trim();
+      // Apply consistent 60 char limit
+      return result.length > 60 ? result.substring(0, 60) + '...' : result;
+    }
+    
+    // Clean and truncate the message - apply strict 60 char limit
+    const cleaned = userMessage
+      .replace(/\n/g, ' ')
+      .replace(/\r/g, ' ')
+      .replace(/\t/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return cleaned.length > 60 ? cleaned.substring(0, 60) + '...' : cleaned;
   }
 
   /**
@@ -329,7 +360,7 @@ class ViewRenderer {
       } else {
         durationStr = `${seconds}s`;
       }
-      const duration = durationStr.padEnd(12);
+      const duration = durationStr.padEnd(config.layout.durationLength);
       
       // Format tools count
       const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
@@ -340,13 +371,22 @@ class ViewRenderer {
       
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const endTime = this.theme.formatDateTime(session.lastActivity).padEnd(12);
+      const firstMessage = this.getFirstMessage(session);
       
-      // Build plain content - Conv, Duration, Tools, Tokens, Start Time, End Time
-      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${endTime}`;
+      // Build plain content - Conv, Duration, Tools, Tokens, Start Time, End Time, First Message
+      const mainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${endTime}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
+      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(20, this.terminalWidth - usedWidth); // Minimum 20 chars for message
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const plainContent = `${mainContent} ${truncatedMessage}`;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -365,7 +405,7 @@ class ViewRenderer {
       const conversations = session.totalConversations.toString().padStart(6);
       
       const durationText = this.theme.formatDuration(session.duration);
-      const duration = durationText + ' '.repeat(Math.max(0, 12 - this.theme.getDisplayWidth(durationText)));
+      const duration = durationText + ' '.repeat(Math.max(0, config.layout.durationLength - this.theme.getDisplayWidth(durationText)));
       
       // Format tools count
       const toolsCount = formatWithUnit(session.toolUsageCount || 0).padStart(8);
@@ -377,7 +417,20 @@ class ViewRenderer {
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
       const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
-      const content = `${no} ${id} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
+      const firstMessage = this.getFirstMessage(session);
+      
+      // Build main content first
+      const mainContent = `${no} ${id} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
+      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(20, this.terminalWidth - usedWidth); // Minimum 20 chars for message
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const content = `${mainContent} ${truncatedMessage}`;
+      
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
@@ -391,7 +444,8 @@ class ViewRenderer {
       'No.'.padEnd(5),
       'ID'.padEnd(16),
       'Conv.'.padEnd(6),
-      'Tokens'.padEnd(6)
+      'Tokens'.padEnd(6),
+      'First Message'
     ];
     
     const headerLine = headers.join(' ');
@@ -435,12 +489,22 @@ class ViewRenderer {
       const totalTokens = session.tokenUsage?.totalTokens || 0;
       const tokens = this.theme.formatTokenCount(totalTokens).replace(/\s+$/, '').padEnd(6);
       
-      // Build plain content
-      const plainContent = `${no} ${paddedId} ${conversations} ${tokens}`;
+      const firstMessage = this.getFirstMessage(session);
+      
+      // Build main content first
+      const mainContent = `${no} ${paddedId} ${conversations} ${tokens}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
+      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(30, this.terminalWidth - usedWidth); // Minimum 30 chars for message in compact
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const plainContent = `${mainContent} ${truncatedMessage}`;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
-      const prefixWidth = this.theme.getDisplayWidth(prefix);
       const totalWidth = prefixWidth + contentWidth;
       const paddingWidth = Math.max(0, this.terminalWidth - totalWidth);
       const padding = ' '.repeat(paddingWidth);
@@ -460,7 +524,20 @@ class ViewRenderer {
       const totalTokens = session.tokenUsage?.totalTokens || 0;
       const tokens = this.theme.formatTokenCount(totalTokens).replace(/\s+$/, '').padEnd(6);
       
-      const content = `${no} ${id} ${conversations} ${tokens}`;
+      const firstMessage = this.getFirstMessage(session);
+      
+      // Build main content first
+      const mainContent = `${no} ${id} ${conversations} ${tokens}`;
+      
+      // Calculate remaining space for first message
+      const mainContentWidth = this.theme.getDisplayWidth(mainContent);
+      const prefixWidth = this.theme.getDisplayWidth(prefix);
+      const usedWidth = prefixWidth + mainContentWidth + 1; // +1 for space
+      const remainingWidth = Math.max(30, this.terminalWidth - usedWidth); // Minimum 30 chars for message in compact
+      
+      const truncatedMessage = this.truncateWithWidth(firstMessage, remainingWidth);
+      const content = `${mainContent} ${truncatedMessage}`;
+      
       const coloredContent = this.theme.formatSelection(content, isSelected);
       console.log(prefix + coloredContent);
     }
@@ -518,7 +595,7 @@ class ViewRenderer {
             originalMsg = '[Continued] ' + originalMsg.substring(0, 50) + '...';
           } else if (this.containsThinkingContent(originalMsg)) {
             const cleanMsg = this.extractCleanUserMessage(originalMsg);
-            originalMsg = cleanMsg || '[Contains tool execution details]';
+            originalMsg = cleanMsg || originalMsg.substring(0, 100).replace(/\s+/g, ' ').trim();
           }
           
           // Clean and truncate message using the same logic as conversation rows
@@ -748,7 +825,7 @@ class ViewRenderer {
       'No.'.padEnd(3) + ' ' +
       'Start Time'.padEnd(12) + ' ' +
       'End Time'.padEnd(12) + ' ' +
-      'Duration'.padEnd(8) + ' ' +
+      'Duration'.padEnd(config.layout.durationLength) + ' ' +
       'Tools'.padEnd(6) + ' ' +  // Tools is right-aligned (padStart(5) + space)
       'Tokens'.padEnd(8) + ' ' + // Tokens is right-aligned (padStart(7) + space) 
       'User Message';
@@ -817,7 +894,7 @@ class ViewRenderer {
     
     // Use ultra-conservative width to absolutely prevent wrapping
     // Reserve huge margin for ANSI codes, numbered lists, complex Japanese text, and calculation errors
-    const targetMessageWidth = this.terminalWidth - exactFixedWidth - 50;
+    const targetMessageWidth = this.terminalWidth - exactFixedWidth - 5;
     
     // Ensure minimum readable width but use most of available space
     const availableWidth = Math.max(30, targetMessageWidth);
@@ -874,7 +951,7 @@ class ViewRenderer {
       const baseWidth = this.theme.getDisplayWidth(baseContent);
       const prefixWidth = this.theme.getDisplayWidth(prefix);
       const usedWidth = prefixWidth + baseWidth;
-      const messageMaxWidth = Math.max(10, this.terminalWidth - usedWidth - 40); // Ultra-large margin for safety
+      const messageMaxWidth = Math.max(10, this.terminalWidth - usedWidth - 2); // Ultra-large margin for safety
       
       // Re-truncate message for selected row to ensure it fits
       const selectedMessage = this.truncateWithWidth(userMessage, messageMaxWidth);
@@ -899,7 +976,7 @@ class ViewRenderer {
       const totalLineWidth = this.theme.getDisplayWidth(prefix + content);
       if (totalLineWidth > this.terminalWidth) {
         // Emergency truncation if line is still too long
-        const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 50;
+        const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 5;
         const emergencyMessage = this.truncateWithWidth(userMessage, emergencyMaxWidth);
         const safeContent = `${no} ${startDateTime} ${endDateTime} ${response} ${toolCount} ${tokens} ${emergencyMessage}`;
         console.log(prefix + safeContent);
@@ -1100,7 +1177,7 @@ class ViewRenderer {
     } else if (this.containsThinkingContent(conversation.userMessage)) {
       // Extract just the user message part
       const cleanMessage = this.extractCleanUserMessage(conversation.userMessage);
-      userMessage = cleanMessage || '[Contains tool execution details]';
+      userMessage = cleanMessage || conversation.userMessage.substring(0, 100).replace(/\s+/g, ' ').trim();
     }
     
     const userPrefixWidth = this.theme.getDisplayWidth(userPrefix);
@@ -1268,52 +1345,122 @@ class ViewRenderer {
   extractCleanUserMessage(text) {
     if (!text) return '';
     
+    // Split into sections by common delimiters
+    const sections = text.split(/(?:\n\n|\r\n\r\n|👤\s*USER|🤖\s*ASSISTANT)/);
     
-    const lines = text.split('\n');
-    const userMessageLines = [];
-    
-    for (const line of lines) {
-      // Stop when we hit assistant response markers or thinking content
-      if (line.includes('🔧 TOOLS EXECUTION FLOW:') ||
-          line.includes('🧠 THINKING PROCESS:') ||
-          line.includes('🤖 ASSISTANT') ||
-          line.includes('⏺ Thinking') ||
-          line.includes('⏺ Edit') ||
-          line.includes('⏺ Read') ||
-          line.includes('⏺ Write') ||
-          line.includes('⏺ Bash') ||
-          line.includes('⏺ Task') ||
-          line.includes('⏺ TodoWrite') ||
-          line.includes('⏺ Grep') ||
-          line.includes('⏺ Glob') ||
-          line.includes('⏺ MultiEdit') ||
-          line.match(/^\s*\[Thinking \d+\]/) ||
-          line.match(/^\s*\[\d+\]\s+\w+/) ||
-          line.match(/^\s*\d+│/) ||
-          line.includes('file:') ||
-          line.includes('File:') ||
-          line.includes('Command:') ||
-          line.includes('pattern:') ||
-          line.includes('path:') ||
-          line.includes('⎿')) {
-        break;
+    for (const section of sections) {
+      const cleanSection = section.trim();
+      if (!cleanSection) continue;
+      
+      // Skip sections that are clearly tool execution details
+      if (this.isToolExecutionSection(cleanSection)) {
+        continue;
       }
       
-      // Skip lines that look like assistant responses
-      if (line.trim().startsWith('Looking at') ||
-          line.trim().startsWith('I need to') ||
-          line.trim().startsWith('Let me') ||
-          line.trim().startsWith('I\'ll') ||
-          line.trim().startsWith('I will') ||
-          line.trim().startsWith('First,') ||
-          line.trim().startsWith('Based on')) {
-        break;
+      // Skip sections that are thinking content
+      if (this.isThinkingSection(cleanSection)) {
+        continue;
       }
       
-      userMessageLines.push(line);
+      // Extract meaningful user message from this section
+      const userMessage = this.extractMeaningfulMessage(cleanSection);
+      if (userMessage && userMessage.length > 10) { // Must be substantial
+        // Always apply a reasonable length limit to prevent layout issues
+        return userMessage.length > 60 ? userMessage.substring(0, 60) + '...' : userMessage;
+      }
     }
     
-    return userMessageLines.join(' ').replace(/\s+/g, ' ').trim();
+    // Fallback: try to extract any meaningful text from the entire content
+    const fallbackMessage = this.extractMeaningfulMessage(text) || this.extractFirstMeaningfulLine(text) || '';
+    return fallbackMessage.length > 60 ? fallbackMessage.substring(0, 60) + '...' : fallbackMessage;
+  }
+  
+  isToolExecutionSection(text) {
+    const toolMarkers = [
+      '🔧 TOOLS EXECUTION FLOW:',
+      '🧠 THINKING PROCESS:',
+      '⏺ Thinking', '⏺ Edit', '⏺ Read', '⏺ Write', '⏺ Bash', 
+      '⏺ Task', '⏺ TodoWrite', '⏺ Grep', '⏺ Glob', '⏺ MultiEdit',
+      'File:', 'Command:', 'pattern:', 'path:', '⎿'
+    ];
+    
+    return toolMarkers.some(marker => text.includes(marker)) ||
+           /^\s*\[Thinking \d+\]/.test(text) ||
+           /^\s*\[\d+\]\s+\w+/.test(text) ||
+           /^\s*\d+│/.test(text);
+  }
+  
+  isThinkingSection(text) {
+    return text.includes('[Thinking') || 
+           text.includes('THINKING PROCESS') ||
+           text.includes('TOOLS EXECUTION FLOW');
+  }
+  
+  extractMeaningfulMessage(text) {
+    const lines = text.split('\n');
+    const meaningfulLines = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // Skip empty lines
+      if (!trimmed) continue;
+      
+      // Skip obvious tool execution markers
+      if (this.isToolExecutionLine(trimmed)) continue;
+      
+      // Skip assistant response patterns
+      if (this.isAssistantResponseLine(trimmed)) continue;
+      
+      // Keep meaningful content
+      if (trimmed.length > 3 && !this.isMetadataLine(trimmed)) {
+        meaningfulLines.push(trimmed);
+      }
+    }
+    
+    return meaningfulLines.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  
+  isToolExecutionLine(line) {
+    return /^\s*\[(?:\d+|\w+)\]/.test(line) ||
+           line.includes('⏺') ||
+           line.includes('⎿') ||
+           /^(File|Command|pattern|path):\s/.test(line) ||
+           /^\d+│/.test(line);
+  }
+  
+  isAssistantResponseLine(line) {
+    const assistantPatterns = [
+      /^(Looking at|I need to|Let me|I'll|I will|First,|Based on|Here's|Now)/,
+      /^(The|This|That|It|We|You)/,
+      /^(To|In order to|For|With|By)/
+    ];
+    
+    return assistantPatterns.some(pattern => pattern.test(line));
+  }
+  
+  isMetadataLine(line) {
+    return /^\s*\d+\s*$/.test(line) ||
+           /^-+$/.test(line) ||
+           /^=+$/.test(line) ||
+           /^\s*[\[\](){}]+\s*$/.test(line);
+  }
+  
+  extractFirstMeaningfulLine(text) {
+    const lines = text.split('\n');
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      if (trimmed.length > 10 && 
+          !this.isToolExecutionLine(trimmed) && 
+          !this.isMetadataLine(trimmed) &&
+          !/^[🔧🧠⏺👤🤖]/.test(trimmed)) {
+        return trimmed;
+      }
+    }
+    
+    return '';
   }
 
   /**

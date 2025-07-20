@@ -640,30 +640,122 @@ class SessionManager {
    * Extract actual user message from text containing thinking content
    */
   extractActualUserMessage(text) {
-    const lines = text.split('\n');
-    const userMessageLines = [];
-    let foundThinkingMarker = false;
+    if (!text) return '';
     
-    for (const line of lines) {
-      // Check if this line is a thinking content marker
-      if (line.includes('🔧 TOOLS EXECUTION FLOW:') ||
-          line.includes('🧠 THINKING PROCESS:') ||
-          line.match(/^\s*\[Thinking \d+\]/) ||
-          line.match(/^\s*\[\d+\]\s+\w+/) ||
-          line.startsWith('File:') ||
-          line.startsWith('Command:') ||
-          line.startsWith('pattern:') ||
-          line.startsWith('path:') ||
-          (foundThinkingMarker && line.trim().startsWith('['))) {
-        foundThinkingMarker = true;
-        break;
+    // Split into sections by common delimiters
+    const sections = text.split(/(?:\n\n|\r\n\r\n|👤\s*USER|🤖\s*ASSISTANT)/);
+    
+    for (const section of sections) {
+      const cleanSection = section.trim();
+      if (!cleanSection) continue;
+      
+      // Skip sections that are clearly tool execution details
+      if (this.isToolExecutionSection(cleanSection)) {
+        continue;
       }
       
-      userMessageLines.push(line);
+      // Skip sections that are thinking content
+      if (this.isThinkingSection(cleanSection)) {
+        continue;
+      }
+      
+      // Extract meaningful user message from this section
+      const userMessage = this.extractMeaningfulContent(cleanSection);
+      if (userMessage && userMessage.length > 10) { // Must be substantial
+        return userMessage;
+      }
     }
     
-    const userMessage = userMessageLines.join('\n').trim();
-    return userMessage || '[See full detail for complete context]';
+    // Fallback: try to extract any meaningful text from the entire content
+    return this.extractMeaningfulContent(text) || this.extractFirstMeaningfulContent(text) || '';
+  }
+  
+  isToolExecutionSection(text) {
+    const toolMarkers = [
+      '🔧 TOOLS EXECUTION FLOW:',
+      '🧠 THINKING PROCESS:',
+      '⏺ Thinking', '⏺ Edit', '⏺ Read', '⏺ Write', '⏺ Bash', 
+      '⏺ Task', '⏺ TodoWrite', '⏺ Grep', '⏺ Glob', '⏺ MultiEdit',
+      'File:', 'Command:', 'pattern:', 'path:', '⎿'
+    ];
+    
+    return toolMarkers.some(marker => text.includes(marker)) ||
+           /^\s*\[Thinking \d+\]/.test(text) ||
+           /^\s*\[\d+\]\s+\w+/.test(text) ||
+           /^\s*\d+│/.test(text);
+  }
+  
+  isThinkingSection(text) {
+    return text.includes('[Thinking') || 
+           text.includes('THINKING PROCESS') ||
+           text.includes('TOOLS EXECUTION FLOW');
+  }
+  
+  extractMeaningfulContent(text) {
+    const lines = text.split('\n');
+    const meaningfulLines = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // Skip empty lines
+      if (!trimmed) continue;
+      
+      // Skip obvious tool execution markers
+      if (this.isToolLine(trimmed)) continue;
+      
+      // Skip assistant response patterns
+      if (this.isAssistantLine(trimmed)) continue;
+      
+      // Keep meaningful content
+      if (trimmed.length > 3 && !this.isMetadataLine(trimmed)) {
+        meaningfulLines.push(trimmed);
+      }
+    }
+    
+    return meaningfulLines.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  
+  isToolLine(line) {
+    return /^\s*\[(?:\d+|\w+)\]/.test(line) ||
+           line.includes('⏺') ||
+           line.includes('⎿') ||
+           /^(File|Command|pattern|path):\s/.test(line) ||
+           /^\d+│/.test(line);
+  }
+  
+  isAssistantLine(line) {
+    const assistantPatterns = [
+      /^(Looking at|I need to|Let me|I'll|I will|First,|Based on|Here's|Now)/,
+      /^(The|This|That|It|We|You)/,
+      /^(To|In order to|For|With|By)/
+    ];
+    
+    return assistantPatterns.some(pattern => pattern.test(line));
+  }
+  
+  isMetadataLine(line) {
+    return /^\s*\d+\s*$/.test(line) ||
+           /^-+$/.test(line) ||
+           /^=+$/.test(line) ||
+           /^\s*[\[\](){}]+\s*$/.test(line);
+  }
+  
+  extractFirstMeaningfulContent(text) {
+    const lines = text.split('\n');
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      if (trimmed.length > 10 && 
+          !this.isToolLine(trimmed) && 
+          !this.isMetadataLine(trimmed) &&
+          !/^[🔧🧠⏺👤🤖]/.test(trimmed)) {
+        return trimmed;
+      }
+    }
+    
+    return '';
   }
 
   /**
@@ -1262,7 +1354,7 @@ class SessionManager {
         const cleanMessage = this.extractActualUserMessage(text);
         return cleanMessage.length > 100 ? 
           cleanMessage.substring(0, 100) + '...' : 
-          cleanMessage || '[Contains tool execution - see full detail]';
+          cleanMessage || text.substring(0, 100).replace(/\s+/g, ' ').trim();
       }
       
       // Normal context extraction
