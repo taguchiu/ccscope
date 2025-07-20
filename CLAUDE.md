@@ -4,211 +4,168 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CCScope (Claude Code Scope) is an interactive terminal-based browser for Claude Code conversation transcripts. It's a **pure Node.js application** with no external dependencies - built entirely using Node.js standard library modules. The application provides a rich TUI (Terminal User Interface) for analyzing, exploring, and resuming Claude Code sessions.
+CCScope (Claude Code Scope) is an interactive terminal-based browser for Claude Code conversation transcripts. It's a **pure Node.js application** with minimal dependencies (only Jest for testing) - built using Node.js standard library modules. The application provides a rich TUI (Terminal User Interface) for analyzing, exploring, and resuming Claude Code sessions.
 
-## Commands
+## Essential Commands
 
-### Running the Application
+### Primary Tools
 ```bash
-# Start interactive browser
-npm start
-# or
-ccscope
+npm start                           # Launch main interactive browser
+node bin/ccscope                    # Direct execution
 
-# Run with debug mode
-npm run dev
-# or
-ccscope --debug
-
-# Command-line utilities
-ccscope daily            # Daily conversation statistics
-ccscope project          # Project-grouped statistics
-ccscope search "query"   # Search across all conversations
-ccscope search "error OR warning"  # OR search
-ccscope search --regex "pattern"   # Regex search
-
-# Show help
-ccscope --help
+npm test                           # Run Jest test suite (489 tests)
+npm run test:watch                 # Run tests in watch mode
+npm run test:coverage              # Run tests with coverage report
 ```
 
 ### Development Commands
 ```bash
-# No npm install needed - pure Node.js project!
+npm install                        # Install dependencies (Jest only)
+npm run dev                        # Run with debug mode
+ccscope --debug                    # Debug mode if globally installed
 
-# Run the application directly
-node bin/ccscope
-
-# Make binary executable (if needed)
-chmod +x bin/ccscope
+# Command-line utilities
+ccscope daily                      # Daily conversation statistics
+ccscope project                    # Project-grouped statistics
+ccscope search "query"             # Search across all conversations
+ccscope search "error OR warning"  # OR search
+ccscope search --regex "pattern"   # Regex search
 ```
 
-## Architecture
+## Core Architecture
 
-The application follows a modular MVC-like architecture with clear separation of concerns. **No build process or external dependencies required**.
+CCScope follows a modular MVC-like architecture with clear separation of concerns through service extraction.
 
-### Core Components and Data Flow
+### Main Components
 
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│SessionManager│ ──> │StateManager │ ──> │ViewRenderer │ ──> │InputHandler │
-└─────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
-      ↑ (Data)         (State)             (UI)                 (Input)     │
-      └───────────────────────────────────────────────────────────────────────┘
-```
-
+#### Core Application Layer
 1. **CCScope.js** - Main application orchestrator
-   - Initializes all components in correct order
-   - Handles application lifecycle (startup, shutdown, error handling)
-   - Coordinates between components
+   - Initializes components in dependency order
+   - Handles application lifecycle and error management
+   - Coordinates between all layers
 
-2. **SessionManager.js** - Data layer
+2. **SessionManager.js** - Data layer orchestrator
+   - Delegates to service classes for specific responsibilities
+   - Manages caching with CacheManager
+   - Coordinates file discovery, parsing, and conversation building
+
+#### Service Layer (src/services/)
+3. **ConversationBuilder.js** - Conversation processing engine
+   - Builds conversation pairs from JSONL entries
+   - **Compact Continuation Merging**: Automatically merges [Compact] continuation sessions into parent conversations
+   - Handles sub-agent command detection and processing
+   - Implements timestamp distribution for realistic timeline display
+   - Post-processes conversations to merge compact continuations
+
+4. **ContentExtractor.js** - Content parsing and extraction
+   - Extracts user/assistant content from JSONL entries
+   - Processes tool usage data and thinking content
+   - Handles token usage extraction
+
+5. **FileDiscoveryService.js** - File system operations
    - Discovers transcript files from `~/.claude/projects/` directory
-   - Parses JSONL transcript files into structured session objects
+   - Implements optimized recursive directory scanning
+   - Handles file filtering and validation
+
+6. **ProjectExtractor.js** - Project metadata extraction
    - Extracts project paths from `cwd` field in JSONL files
-   - Extracts full session IDs from filenames (UUID or hex format)
-   - Calculates metrics: response times, tool usage counts
-   - Provides search functionality with OR operators and regex support
-   - Caches parsed data for performance
+   - Determines project names from directory structures
+   - Handles path normalization
 
-3. **StateManager.js** - Application state and business logic
-   - Manages current view state (session_list, conversation_detail, full_detail, search_results, help)
-   - Tracks selection indices, scroll positions, and navigation history
-   - Handles filtering (by project) and sorting (multiple criteria)
-   - Manages search state and search-aware navigation
-   - Implements virtual scrolling logic for large datasets
-   - Maintains cache of filtered/sorted sessions
-   - Manages tool expansion state (expandedTools Map, allToolIds Set)
+7. **SessionStatisticsCalculator.js** - Metrics computation
+   - Calculates response times, tool usage counts
+   - Generates session summaries and statistics
+   - Computes conversation duration and productivity metrics
 
-4. **ViewRenderer.js** - Presentation layer
-   - Renders all UI views based on current state
-   - Implements virtual scrolling for performance
-   - Handles responsive layouts (wide/compact based on terminal width)
-   - Manages fixed headers with proper scroll regions
-   - Highlights search matches in conversation content
-   - Formats session/conversation data with color coding
-   - Shows [Continued] for resumed sessions
-   - Implements collapsible tool outputs (>20 lines)
+#### Presentation and Interaction Layer
+8. **StateManager.js** - Application state and business logic
+   - Manages view state (session_list, conversation_detail, full_detail, search_results)
+   - Implements virtual scrolling and navigation
+   - Handles search state and filtering
+   - Manages tool expansion state (expandedTools Map)
 
-5. **InputHandler.js** - User interaction layer
-   - Captures raw keyboard input using readline
-   - Maps keys to actions based on current view context
-   - Manages input modes (normal, search, filter, selection)
-   - Handles search-aware navigation (navigates search results when coming from search)
-   - Implements session resume functionality (`r` key)
-   - Debounces rapid inputs for performance
-   - Filters mouse events using MouseEventFilter to prevent artifacts
+9. **ViewRenderer.js** - Presentation layer
+   - Renders all UI views with responsive layouts
+   - **Enhanced Display**: Shows Start Time → End Time format for conversations
+   - Implements collapsible tool outputs (>20 lines, toggle with Ctrl+R)
+   - Handles search highlighting and result formatting
+   - Shows compact continuation markers in timeline
 
-6. **ThemeManager.js** - Visual styling
-   - Provides color themes (default, dark, light, minimal)
-   - Handles ANSI color formatting
-   - Manages text width calculations for CJK characters
-   - Provides consistent formatting methods for UI elements
+10. **InputHandler.js** - User interaction layer
+    - Captures keyboard input and maps to actions
+    - Implements session resume functionality (`r` key)
+    - Handles search-aware navigation
+    - Filters mouse events to prevent terminal artifacts
 
-7. **MouseEventFilter.js** - Mouse event filtering
-   - Centralized logic for detecting and filtering mouse events
-   - Prevents mouse event artifacts from appearing in terminal output
-   - Handles different mouse event formats (SGR, raw, etc.)
+#### Support Components
+11. **ThemeManager.js** - Visual styling and formatting
+12. **MouseEventFilter.js** - Mouse event filtering for clean terminal output
+13. **CacheManager.js** - Persistent caching for performance
+14. **FastParser.js** - Optimized JSONL parser for large files
 
-### Key Features
+### Data Flow Architecture
 
-**Session Resume** (`r` key):
-- Extracts full session ID from transcript files (not the short display ID)
-- Reads `cwd` field from JSONL to determine project directory
-- Changes to project directory before executing `claude -r <session-id>`
-- Available in all views (session list, conversation detail, full detail)
+```
+File Discovery → JSONL Parsing → Conversation Building → Compact Merging → Caching
+       ↓              ↓               ↓                    ↓             ↓
+FileDiscoveryService → FastParser → ConversationBuilder → (Auto-merge) → CacheManager
+                                          ↓
+State Management ← View Rendering ← Content Processing
+       ↓                ↓                ↓
+StateManager → ViewRenderer ← ContentExtractor
+       ↓
+Input Handling
+       ↓
+InputHandler
+```
 
-**Search Implementation**:
-- Full-text search across all conversations
-- OR conditions: `"error OR warning"` or `"error or warning"`
-- Regex search: `--regex "import.*from"`
-- Search results maintain context for navigation
-- Left/right arrows navigate search results when viewing from search
-- Highlighting preserves original search terms in detail views
+### Key Implementation Features
 
-**Tool Output Collapsing** (`Ctrl+R`):
-- Long tool outputs (>20 lines) are collapsed by default
-- Shows first 20 lines with "... +XX lines (ctrl+r to expand)"
-- Ctrl+R toggles all tool outputs in current conversation
-- State managed through expandedTools Map and allToolIds Set
+**Compact Continuation Support**:
+- **Automatic Merging**: [Compact] continuation sessions are automatically merged into parent conversations
+- **Timeline Integration**: Shows compact continuation markers with timestamps in conversation timeline
+- **UI Cleanup**: [Compact] prefix removed from session list and details, but preserved in conversation flow
+- **Timestamp Distribution**: Realistic timeline progression across merged conversations
 
 **Performance Optimizations**:
-- Virtual scrolling limits rendered content to visible area
-- Caching at multiple levels (parsed sessions, filtered results, layouts)
-- Debounced input handling prevents excessive re-renders
-- Lazy loading of conversation details
+- **Persistent Caching**: CacheManager with version-based invalidation
+- **Virtual Scrolling**: Limits rendered content to visible area
+- **Optimized Parsing**: FastParser for efficient JSONL processing
+- **Simple Loading**: Clean "Loading..." display without progress details
 
-### View Hierarchy and Navigation
+**Session Resume Integration**:
+- Extracts full session ID from transcript filenames (UUID or hex format)
+- Reads `cwd` field from JSONL to determine correct project directory
+- Changes to project directory before executing `claude -r <session-id>`
+- Available in all views via `r` key
 
-```
-Session List (default)
-    ↓ Enter
-Conversation Detail (for selected session)
-    ↓ Enter
-Full Detail (conversation content)
-    ← Esc (returns to previous view)
-
-Search Results (from any view via '/')
-    ↓ Enter
-Full Detail (with search highlighting)
-    ← Esc (returns to search results)
-```
-
-### Data Structures
-
-**Session Object**:
-```javascript
-{
-  sessionId: string,           // Short display ID
-  fullSessionId: string,       // Full UUID/hex for claude -r
-  projectName: string,
-  projectPath: string,         // Extracted from cwd field
-  filePath: string,
-  conversations: Conversation[],
-  totalDuration: number,
-  startTime: Date,
-  lastActivity: Date,
-  metrics: {
-    avgResponseTime: number,
-    toolUsageCount: number
-  }
-}
-```
-
-**Conversation Object**:
-```javascript
-{
-  index: number,
-  timestamp: Date,
-  userMessage: string,
-  assistantMessage: string,
-  responseTime: number,
-  tools: ToolUsage[]
-}
-```
+**Enhanced User Experience**:
+- **Dual Timestamps**: Shows both start and end times for each conversation
+- **Tool Output Collapsing**: Long outputs (>20 lines) collapsed by default, Ctrl+R to toggle
+- **Search-Aware Navigation**: Left/right arrows navigate search results when viewing from search
+- **Responsive Layout**: Adapts to terminal size with wide/compact layouts
 
 ## Important Implementation Details
 
-- **No external dependencies**: Pure Node.js implementation, no npm install needed
-- **Session ID extraction**: Full UUIDs extracted from filenames, not the short display IDs
-- **Project path detection**: Reads `cwd` field from JSONL files for accurate directory
-- **Header format**: Displays as "[sessionId] projectName" (e.g., "[52ccc342] ccscope")
-- **Virtual scrolling window**: `contentHeight = terminalHeight - headerLines - footerLines - bufferLines`
-- **Search-aware navigation**: When from search, left/right keys navigate search hits
-- **Response time indicators**: 🔴 >30s (slow), 🟡 10-30s (medium), 🟢 <10s (fast)
-- **Tool usage format**: "Read×3, Edit×2, Bash×1" shows count per tool type
-- **Continuation sessions**: Shows [Continued] prefix for resumed sessions
-- **Keyboard navigation**: PgUp/PgDn and Ctrl+B/F for page scrolling (mouse scroll disabled)
+- **Pure Node.js**: Only external dependency is Jest for testing
+- **No Build Process**: Direct execution of JavaScript files
+- **Session ID Handling**: Full UUIDs extracted from filenames for accurate session resume
+- **Project Path Detection**: Uses `cwd` field from JSONL for accurate directory context
+- **Search Implementation**: Supports OR conditions and regex with result highlighting
+- **Virtual Scrolling**: `contentHeight = terminalHeight - headerLines - footerLines - bufferLines`
+- **Tool Usage Tracking**: Excludes Task tools from counts but shows in display
+- **Response Time Indicators**: 🔴 >30s (slow), 🟡 10-30s (medium), 🟢 <10s (fast)
+
+## Testing
+
+Comprehensive Jest test suite with 489 tests across 10 test suites covering all major components. Tests include unit tests, integration tests, and edge case coverage with mock dependencies for file system and terminal I/O.
 
 ## Transcript Format
 
-The application expects Claude Code transcripts in JSONL format with entries containing:
+Expects Claude Code transcripts in JSONL format with:
 - `type`: "user" or "assistant"
 - `timestamp`: ISO timestamp
-- `message.content`: Message content (can be string or array of objects)
-- `cwd`: Current working directory (used for project path extraction)
-- Tool usage data embedded in assistant messages
-- Thinking content in assistant messages with `type: "thinking"`
-
-## Testing and Linting
-
-Currently no test framework or linting is configured. The test script exits with an error. The application is tested manually through interactive use.
+- `message.content`: Message content (string or array of objects)
+- `cwd`: Current working directory for project context
+- `isCompactSummary`: Boolean flag for compact continuation detection
+- Tool usage and thinking content embedded in assistant messages

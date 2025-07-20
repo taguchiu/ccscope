@@ -46,8 +46,9 @@ class CCScopeApplication {
       const totalStartTime = Date.now();
       const timings = {};
       
-      // Show loading screen immediately
-      this.showLoadingScreen();
+      // Clear screen and show loading immediately
+      console.clear();
+      process.stdout.write('Loading...');
       
       // Track loading start time
       const loadingStartTime = Date.now();
@@ -89,11 +90,16 @@ class CCScopeApplication {
   }
 
   /**
-   * Show loading screen
+   * Show loading screen with optional progress message
+   * @param {string} message - Optional progress message
    */
-  showLoadingScreen() {
+  showLoadingScreen(message = null) {
     console.clear();
-    console.log('Loading...');
+    if (message) {
+      process.stdout.write(`Loading... ${message}`);
+    } else {
+      process.stdout.write('Loading...');
+    }
   }
 
   // Spinner methods removed - using simple static loading message instead
@@ -107,8 +113,6 @@ class CCScopeApplication {
     try {
       // Initialize if not already done
       if (!this.isInitialized) {
-        // Show loading screen before initialization
-        this.showLoadingScreen();
         await this.initialize();
       }
       
@@ -234,8 +238,9 @@ class CCScopeApplication {
    */
   async showDailyStatistics() {
     try {
-      // Show loading screen
-      this.showLoadingScreen();
+      // Clear screen and show loading immediately
+      console.clear();
+      process.stdout.write('Loading...');
       
       // Initialize session manager
       await this.sessionManager.discoverSessions();
@@ -259,8 +264,9 @@ class CCScopeApplication {
    */
   async showProjectStatistics() {
     try {
-      // Show loading screen
-      this.showLoadingScreen();
+      // Clear screen and show loading immediately
+      console.clear();
+      process.stdout.write('Loading...');
       
       // Initialize session manager
       await this.sessionManager.discoverSessions();
@@ -287,8 +293,9 @@ class CCScopeApplication {
    */
   async showSearchResults(query, options = {}) {
     try {
-      // Show loading screen
-      this.showLoadingScreen();
+      // Clear screen and show loading immediately
+      console.clear();
+      process.stdout.write('Loading...');
       
       // Initialize session manager
       await this.sessionManager.discoverSessions();

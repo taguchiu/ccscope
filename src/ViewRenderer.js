@@ -268,8 +268,8 @@ class ViewRenderer {
       'Duration'.padEnd(12),
       'Tools'.padStart(8),
       'Tokens'.padStart(8),
-      'Started'.padEnd(12),
-      'Last Updated'.padEnd(12)
+      'Start Time'.padEnd(12),
+      'End Time'.padEnd(12)
     ];
     
     console.log(this.theme.formatMuted(headers.join(' ')));
@@ -339,10 +339,10 @@ class ViewRenderer {
       const tokens = this.theme.formatTokenCount(totalTokens);
       
       const startTime = this.theme.formatDateTime(session.startTime).padEnd(12);
-      const lastUpdated = this.theme.formatDateTime(session.lastActivity).padEnd(12);
+      const endTime = this.theme.formatDateTime(session.lastActivity).padEnd(12);
       
-      // Build plain content - Conv, Duration, Tools, Tokens, Started, Last Updated
-      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${lastUpdated}`;
+      // Build plain content - Conv, Duration, Tools, Tokens, Start Time, End Time
+      const plainContent = `${no} ${paddedId} ${project} ${conversations} ${duration} ${toolsCount} ${tokens} ${startTime} ${endTime}`;
       
       // Calculate padding to fill entire terminal width
       const contentWidth = this.theme.getDisplayWidth(plainContent);
@@ -746,7 +746,8 @@ class ViewRenderer {
     const headers = 
       '  ' + // 2 spaces for prefix alignment
       'No.'.padEnd(3) + ' ' +
-      'DateTime'.padEnd(12) + ' ' +
+      'Start Time'.padEnd(12) + ' ' +
+      'End Time'.padEnd(12) + ' ' +
       'Duration'.padEnd(8) + ' ' +
       'Tools'.padEnd(6) + ' ' +  // Tools is right-aligned (padStart(5) + space)
       'Tokens'.padEnd(8) + ' ' + // Tokens is right-aligned (padStart(7) + space) 
@@ -782,7 +783,11 @@ class ViewRenderer {
     
     // Format columns
     const no = `${index + 1}`.padEnd(3);
-    const dateTime = this.theme.formatDateTime(conversation.timestamp).padEnd(12); // MM/DD HH:MM format
+    // Show both start time and end time
+    const startTime = conversation.userTime || new Date(conversation.timestamp);
+    const endTime = conversation.assistantTime || new Date(conversation.timestamp);
+    const startDateTime = this.theme.formatDateTime(startTime).padEnd(12); // MM/DD HH:MM format
+    const endDateTime = this.theme.formatDateTime(endTime).padEnd(12); // MM/DD HH:MM format
     const response = this.theme.formatResponseTime(conversation.responseTime); // Already padded in ThemeManager
     const toolCount = this.theme.formatToolCount(conversation.toolsUsed.length);
     
@@ -793,18 +798,19 @@ class ViewRenderer {
     
     // User message preview - calculate remaining width more accurately
     // Calculate fixed columns width
-    // prefix(2) + no(3) + space + datetime(12) + space + response(8) + space + tool(6) + space
+    // prefix(2) + no(3) + space + start_time(12) + space + end_time(12) + space + response(8) + space + tool(6) + space
     // Response and tool columns are already properly padded in ThemeManager
     const ansiMargin = 15; // Color codes don't display but take up string length
-    const fixedColumnsWidth = 2 + 3 + 1 + 12 + 1 + 8 + 1 + 6 + 1 + ansiMargin;
+    const fixedColumnsWidth = 2 + 3 + 1 + 12 + 1 + 12 + 1 + 8 + 1 + 6 + 1 + ansiMargin;
     
     // Calculate exact fixed column widths based on actual conversation detail layout
-    // Headers: "No." (3) + "DateTime" (12) + "Duration" (8) + "Tools" (6) + "Tokens" (8) + spaces
-    // Actual row: "  1   07/13 21:41  3m44s      19t  1.2k    [message content]"
+    // Headers: "No." (3) + "Start Time" (12) + "End Time" (12) + "Duration" (8) + "Tools" (6) + "Tokens" (8) + spaces
+    // Actual row: "  1   07/13 21:41  07/13 21:45  3m44s      19t  1.2k    [message content]"
     const exactFixedWidth = 
       2 +     // prefix: "  " or "▶ "
       3 + 1 + // no: "1  " (padEnd 3) + space  
-      12 + 1 + // datetime: "07/13 21:41 " (padEnd 12) + space
+      12 + 1 + // start time: "07/13 21:41 " (padEnd 12) + space
+      12 + 1 + // end time: "07/13 21:45 " (padEnd 12) + space
       8 + 1 +  // duration: "3m44s   " (8 chars by formatResponseTime) + space
       6 + 1 +  // tools: "  19t " (6 chars by formatToolCount) + space
       8 + 1;   // tokens: "1.2k    " (8 chars) + space
@@ -839,7 +845,7 @@ class ViewRenderer {
     
     // Build raw content without colors for width calculation
     const tokensRaw = tokens.replace(/\x1b\[[0-9;]*m/g, '');
-    const rawContent = `${no} ${dateTime} ${response.replace(/\x1b\[[0-9;]*m/g, '')} ${toolCount.replace(/\x1b\[[0-9;]*m/g, '').padEnd(6)} ${tokensRaw} ${userMessage}`;
+    const rawContent = `${no} ${startDateTime} ${endDateTime} ${response.replace(/\x1b\[[0-9;]*m/g, '')} ${toolCount.replace(/\x1b\[[0-9;]*m/g, '').padEnd(6)} ${tokensRaw} ${userMessage}`;
     
     // Apply selection highlighting
     if (isSelected) {
@@ -856,7 +862,8 @@ class ViewRenderer {
       // Build plain content for full-width selection, ensuring it fits within terminal width
       const baseParts = [
         no, 
-        dateTime.replace(/\x1b\[[0-9;]*m/g, ''), // Remove any ANSI codes from dateTime
+        startDateTime.replace(/\x1b\[[0-9;]*m/g, ''), // Remove any ANSI codes from startDateTime
+        endDateTime.replace(/\x1b\[[0-9;]*m/g, ''), // Remove any ANSI codes from endDateTime
         responseRaw.padEnd(8), 
         toolCountRaw.padStart(5) + ' ', // Match formatToolCount's padding: padStart(5) + space
         tokenStr.padStart(7) + ' ' // Match formatTokenCount's padding: padStart(7) + space
@@ -886,7 +893,7 @@ class ViewRenderer {
       console.log(prefix + this.theme.formatSelection(fullLine, isSelected));
     } else {
       // For non-selected rows, use colored values but ensure message fits
-      const content = `${no} ${dateTime} ${response} ${toolCount} ${tokens} ${userMessage}`;
+      const content = `${no} ${startDateTime} ${endDateTime} ${response} ${toolCount} ${tokens} ${userMessage}`;
       
       // Double-check that total line width doesn't exceed terminal width
       const totalLineWidth = this.theme.getDisplayWidth(prefix + content);
@@ -894,7 +901,7 @@ class ViewRenderer {
         // Emergency truncation if line is still too long
         const emergencyMaxWidth = this.terminalWidth - exactFixedWidth - 50;
         const emergencyMessage = this.truncateWithWidth(userMessage, emergencyMaxWidth);
-        const safeContent = `${no} ${dateTime} ${response} ${toolCount} ${tokens} ${emergencyMessage}`;
+        const safeContent = `${no} ${startDateTime} ${endDateTime} ${response} ${toolCount} ${tokens} ${emergencyMessage}`;
         console.log(prefix + safeContent);
       } else {
         console.log(prefix + content);
@@ -1085,7 +1092,9 @@ class ViewRenderer {
     let userPrefix = '👤 ';
     
     // Check if this is a continuation session or contains thinking content
-    if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
+    if (conversation.hasCompactContinuation) {
+      userPrefix = '📦 ';  // Box emoji to indicate compact continuation
+    } else if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
       userPrefix = '🔗 ';  // Chain link emoji to indicate continuation
       userMessage = '[Continued session] ' + (userMessage.length > 100 ? userMessage.substring(0, 100) + '...' : userMessage);
     } else if (this.containsThinkingContent(conversation.userMessage)) {
@@ -1585,7 +1594,10 @@ class ViewRenderer {
     // Simple metadata header
     lines.push('');
     lines.push(this.theme.formatDim('━━━ Conversation Details ━━━'));
-    lines.push(`📅 ${this.theme.formatDateTime(conversation.timestamp)}`);
+    // Show both start and end times for consistency with conversation list
+    const startTime = conversation.userTime || new Date(conversation.timestamp);
+    const endTime = conversation.assistantTime || new Date(conversation.timestamp);
+    lines.push(`📅 ${this.theme.formatDateTime(startTime)} → ${this.theme.formatDateTime(endTime)}`);
     lines.push(`⏱️  Response Time: ${this.theme.formatResponseTime(conversation.responseTime)}`);
     
     // Token usage information
@@ -1604,10 +1616,10 @@ class ViewRenderer {
       lines.push(tokenStr);
     }
     
-    
     // User message section
     lines.push('');
-    lines.push(this.theme.formatAccent('👤 USER'));
+    let userHeader = '👤 USER';
+    lines.push(this.theme.formatAccent(userHeader));
     lines.push('');
     let displayMessage = this.processUserMessage(conversation.userMessage);
     const userMessage = highlightQuery ? this.highlightText(displayMessage, highlightQuery, highlightOptions) : displayMessage;
@@ -1871,16 +1883,22 @@ class ViewRenderer {
       let toolIndex = 1;
       
       assistantRawContent.forEach((item, index) => {
-        if (item.type === 'thinking' && item.thinking) {
+        if (item.type === 'compact_continuation') {
+          // Add compact continuation marker
+          lines.push('');
+          lines.push(this.theme.formatMuted('━━━ ' + item.content + ' ━━━'));
+          lines.push('');
+          
+        } else if (item.type === 'thinking' && item.thinking) {
           // Add thinking section - Claude Code style
           lines.push('');
           
           // Format thinking header with timestamp
           let thinkingHeader = '⏺ Thinking';
-          if (conversation.timestamp) {
-            // Calculate approximate thinking timestamp based on position in array
-            const baseTime = new Date(conversation.timestamp);
-            const thinkingTime = this.formatDateTimeWithSeconds(baseTime);
+          if (item.timestamp || conversation.timestamp) {
+            // Use item's timestamp if available, otherwise use conversation timestamp
+            const timestampToUse = item.timestamp || conversation.timestamp;
+            const thinkingTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
             thinkingHeader += ` ${this.theme.formatDim(`[${thinkingTime}]`)}`;
           }
           lines.push(this.theme.formatWarning(thinkingHeader));
@@ -1915,8 +1933,9 @@ class ViewRenderer {
             }
             
             // Add timestamp if available
-            if (conversation.timestamp) {
-              const toolTime = this.formatDateTimeWithSeconds(conversation.timestamp);
+            if (item.timestamp || conversation.timestamp) {
+              const timestampToUse = item.timestamp || conversation.timestamp;
+              const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
               toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
             }
             
@@ -1944,23 +1963,52 @@ class ViewRenderer {
               
               conversation.subAgentCommands.forEach((subAgentPair, index) => {
                 lines.push('');
-                lines.push(`  ${this.theme.formatHeader(`── Sub-Agent #${index + 1} ──`)}`);
                 
-                // Get the sub-agent command
+                // Create enhanced sub-agent header with timestamp
+                const timestamp = subAgentPair.command.timestamp ? 
+                  this.formatDateTimeWithSeconds(subAgentPair.command.timestamp) : 
+                  'Unknown time';
+                lines.push(`  ${this.theme.formatHeader(`── Sub-Agent #${index + 1} ──`)}`);
+                lines.push(`  ${this.theme.formatMuted(`Command: [${timestamp}]`)}`);
+                
+                // Get the sub-agent command with improved formatting
                 const subCommandContent = this.sessionManager.extractUserContent(subAgentPair.command);
-                // Split command into lines for proper indentation
-                const commandLines = subCommandContent.split('\n');
-                lines.push(`  ${this.theme.formatMuted('Command:')} ${commandLines[0]}`);
-                // Add remaining lines with proper indentation
-                for (let i = 1; i < commandLines.length; i++) {
-                  lines.push(`    ${commandLines[i]}`);
-                }
+                const commandLines = this.wrapTextWithWidth(subCommandContent, this.terminalWidth - 6);
+                commandLines.forEach(line => {
+                  lines.push(`    ${this.theme.formatAccent(line)}`);
+                });
                 lines.push('');
                 
-                // Display sub-agent execution content directly from response
-                if (subAgentPair.response) {
-                  // Sub-agent response is embedded in the response field
-                  this.renderNestedSubAgentFromResponse(lines, subAgentPair.response, 2); // 2 spaces indent for proper alignment
+                // Display sub-agent execution content from all responses
+                if (subAgentPair.responses && subAgentPair.responses.length > 0) {
+                  // Display all sub-agent responses in chronological order
+                  subAgentPair.responses.forEach((response, responseIndex) => {
+                    const responseTimestamp = response.timestamp ? 
+                      this.formatDateTimeWithSeconds(response.timestamp) : 
+                      'Unknown time';
+                    
+                    // Add response header with sequence number
+                    if (subAgentPair.responses.length > 1) {
+                      lines.push(`  ${this.theme.formatMuted(`💬 Response #${responseIndex + 1}: [${responseTimestamp}]`)}`);
+                    } else {
+                      lines.push(`  ${this.theme.formatMuted(`💬 Response: [${responseTimestamp}]`)}`);
+                    }
+                    
+                    // Render this response
+                    this.renderNestedSubAgentFromResponse(lines, response, 2);
+                    
+                    // Add separator between multiple responses
+                    if (responseIndex < subAgentPair.responses.length - 1) {
+                      lines.push(`  ${this.theme.formatDim('───')}`);
+                    }
+                  });
+                } else if (subAgentPair.response) {
+                  // Fallback to single response for backward compatibility
+                  const responseTimestamp = subAgentPair.response.timestamp ? 
+                    this.formatDateTimeWithSeconds(subAgentPair.response.timestamp) : 
+                    'Unknown time';
+                  lines.push(`  ${this.theme.formatMuted(`💬 Response: [${responseTimestamp}]`)}`);
+                  this.renderNestedSubAgentFromResponse(lines, subAgentPair.response, 2);
                 } else {
                   lines.push(`  ${this.theme.formatDim('⏳ Sub-agent execution in progress...')}`);
                 }
@@ -1984,8 +2032,9 @@ class ViewRenderer {
           }
           
           // Add timestamp if available
-          if (conversation.timestamp) {
-            const toolTime = this.formatDateTimeWithSeconds(conversation.timestamp);
+          if (item.timestamp || conversation.timestamp) {
+            const timestampToUse = item.timestamp || conversation.timestamp;
+            const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
           
@@ -3029,46 +3078,12 @@ class ViewRenderer {
     console.log('');
     
     if (response) {
-      // Debug: Show full response structure
-      console.log('');
-      console.log('  ' + this.theme.formatDim('=== FULL RESPONSE DEBUG ==='));
-      console.log('  ' + this.theme.formatDim('Response keys:'), Object.keys(response));
-      console.log('  ' + this.theme.formatDim('Response type:'), response.type);
-      console.log('  ' + this.theme.formatDim('Has message:'), !!response.message);
-      
-      if (response.message) {
-        console.log('  ' + this.theme.formatDim('Message keys:'), Object.keys(response.message));
-        console.log('  ' + this.theme.formatDim('Message content type:'), typeof response.message.content);
-        console.log('  ' + this.theme.formatDim('Message content is array:'), Array.isArray(response.message.content));
-        
-        if (response.message.content) {
-          if (Array.isArray(response.message.content)) {
-            console.log('  ' + this.theme.formatDim('Content array length:'), response.message.content.length);
-            response.message.content.forEach((item, index) => {
-              console.log('  ' + this.theme.formatDim(`Content[${index}] type:`), typeof item);
-              console.log('  ' + this.theme.formatDim(`Content[${index}] item type:`), item?.type);
-              console.log('  ' + this.theme.formatDim(`Content[${index}] keys:`), Object.keys(item || {}));
-            });
-          } else {
-            console.log('  ' + this.theme.formatDim('Content (string):'), response.message.content.substring(0, 100) + '...');
-          }
-        }
-      }
-      
-      console.log('  ' + this.theme.formatDim('=== END DEBUG ==='));
-      console.log('');
-      
-      // Check if we have access to the full sub-agent session data
+      // Try to display the most complete sub-agent data available
       if (response.sessionId) {
-        console.log('  ' + this.theme.formatDim('Sub-agent session ID:'), response.sessionId);
-        console.log('  ' + this.theme.formatDim('Searching for full sub-agent data...'));
-        
-        // Try to find the full sub-agent session
+        // Try to find the full sub-agent session for detailed display
         const fullSubAgentData = this.findFullSubAgentData(response.sessionId);
         if (fullSubAgentData) {
-          console.log('  ' + this.theme.formatDim('Found full sub-agent data!'));
-          
-          // Display the sub-agent session like a normal conversation
+          // Display the sub-agent session with full detail
           const subAgentLines = this.buildFullDetailContent(
             {sessionId: response.sessionId}, 
             fullSubAgentData, 
@@ -3081,8 +3096,7 @@ class ViewRenderer {
             }
           });
         } else {
-          console.log('  ' + this.theme.formatDim('Full sub-agent data not found. Showing summary only.'));
-          // Show the text content we have
+          // Show available response content
           const lines = this.buildSubAgentDetailContent(response, conversation);
           lines.forEach(line => {
             if (line.trim()) {
@@ -3091,7 +3105,7 @@ class ViewRenderer {
           });
         }
       } else {
-        // No session ID available, show what we have
+        // Show available response content
         const lines = this.buildSubAgentDetailContent(response, conversation);
         lines.forEach(line => {
           if (line.trim()) {
@@ -3892,6 +3906,14 @@ class ViewRenderer {
     const indent = ' '.repeat(baseIndent);
     
     try {
+      // DEBUG: Compact debug information to verify data structure
+      if (response.message && Array.isArray(response.message.content)) {
+        const contentTypes = response.message.content.map(item => item?.type || 'unknown');
+        lines.push(`${indent}${this.theme.formatDim(`🔍 Content items: [${contentTypes.join(', ')}]`)}`);
+      } else {
+        lines.push(`${indent}${this.theme.formatDim('🔍 No content array found')}`);
+      }
+      
       // Check if response has message content
       if (!response.message || !response.message.content) {
         lines.push(`${indent}${this.theme.formatDim('No response content available')}`);
@@ -3913,18 +3935,38 @@ class ViewRenderer {
       // Render each content item
       content.forEach((item, index) => {
         if (item.type === 'thinking') {
-          // Show thinking content
+          // Show thinking content (correct field name: thinking, not content)
           lines.push(`  ${this.theme.formatThinking('🧠 Thinking:')}`);
-          const thinkingLines = item.content.split('\n');
-          thinkingLines.forEach(line => {
-            if (line.trim()) {
-              lines.push(`    ${this.theme.formatDim(line)}`);
+          const thinkingContent = item.thinking || item.content || '';
+          const thinkingLines = thinkingContent.split('\n');
+          
+          // Apply collapsible behavior for long thinking content
+          const thinkingId = `thinking-${Date.now()}-${index}`;
+          const isExpanded = this.state.isToolExpanded(thinkingId);
+          
+          // Register thinking ID for Ctrl+R
+          this.state.registerToolId(thinkingId);
+          
+          if (thinkingLines.length <= 20 || isExpanded) {
+            thinkingLines.forEach(line => {
+              if (line.trim()) {
+                lines.push(`    ${this.theme.formatDim(line)}`);
+              }
+            });
+          } else {
+            // Show first 20 lines and collapsed indicator
+            for (let i = 0; i < 20; i++) {
+              if (thinkingLines[i] && thinkingLines[i].trim()) {
+                lines.push(`    ${this.theme.formatDim(thinkingLines[i])}`);
+              }
             }
-          });
+            const remainingLines = thinkingLines.length - 20;
+            lines.push(`    ${this.theme.formatDim(`… +${remainingLines} lines (ctrl+r to expand)`)}`);
+          }
           lines.push('');
           
         } else if (item.type === 'tool_use') {
-          // Show tool usage
+          // Show tool usage with enhanced formatting
           lines.push('');
           let toolHeader = `⏺ ${item.name}`;
           if (item.input) {
@@ -3933,22 +3975,67 @@ class ViewRenderer {
               toolHeader += `(${keyParams})`;
             }
           }
+          
+          // Add timestamp if available (tool execution time)
+          const toolTime = new Date().toLocaleTimeString();
+          toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          
           lines.push(`  ${this.theme.formatSuccess(toolHeader)}`);
           
-          // Show tool input parameters using existing pattern
+          // Show tool input parameters with collapsible behavior for large inputs
           if (item.input) {
             const params = Object.entries(item.input)
               .filter(([key, value]) => value !== undefined && value !== null && key !== 'edits');
             
+            const toolId = `tool-input-${item.id || Date.now()}-${index}`;
+            const isExpanded = this.state.isToolExpanded(toolId);
+            
+            // Register tool input ID for Ctrl+R
+            this.state.registerToolId(toolId);
+            
             params.forEach(([key, value]) => {
               let displayValue = typeof value === 'string' ? value : JSON.stringify(value);
-              // Truncate very long values
-              if (displayValue.length > 100) {
-                displayValue = displayValue.substring(0, 97) + '...';
+              
+              // Apply collapsible behavior for very long values
+              if (displayValue.length > 200 && !isExpanded) {
+                displayValue = displayValue.substring(0, 197) + '... (ctrl+r to expand)';
               }
+              
               lines.push(`    ${this.theme.formatMuted(key + ':')} ${displayValue}`);
             });
           }
+          
+        } else if (item.type === 'tool_result') {
+          // Show tool result with enhanced collapsible behavior
+          const resultIcon = item.is_error ? '❌' : '✅';
+          const resultLabel = item.is_error ? 'Error' : 'Result';
+          lines.push(`  ${resultIcon} ${this.theme.formatAccent(resultLabel)}:`);
+          
+          if (item.content) {
+            const resultLines = item.content.split('\n');
+            const toolResultId = `tool-result-${item.tool_use_id || Date.now()}-${index}`;
+            const isExpanded = this.state.isToolExpanded(toolResultId);
+            
+            // Register tool result ID for Ctrl+R
+            this.state.registerToolId(toolResultId);
+            
+            if (resultLines.length <= 20 || isExpanded) {
+              // Show all lines if short or expanded
+              resultLines.forEach(line => {
+                lines.push(`    ${item.is_error ? this.theme.formatError(line) : this.theme.formatDim(line)}`);
+              });
+            } else {
+              // Show first 20 lines and collapsed indicator
+              for (let i = 0; i < 20; i++) {
+                if (resultLines[i] !== undefined) {
+                  lines.push(`    ${item.is_error ? this.theme.formatError(resultLines[i]) : this.theme.formatDim(resultLines[i])}`);
+                }
+              }
+              const remainingLines = resultLines.length - 20;
+              lines.push(`    ${this.theme.formatDim(`… +${remainingLines} lines (ctrl+r to expand)`)}`);
+            }
+          }
+          lines.push('');
           
         } else if (item.type === 'text') {
           // Show text response

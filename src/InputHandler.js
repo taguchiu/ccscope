@@ -250,6 +250,9 @@ class InputHandler {
       case 'help':
         this.handleHelpInput(keyName, key);
         break;
+      case 'subagent_detail':
+        this.handleSubAgentDetailInput(keyName, key);
+        break;
       default:
         this.handleSessionListInput(keyName, key);
     }
@@ -1042,6 +1045,39 @@ class InputHandler {
       }
     } else {
       this.showNotification('No session ID available');
+    }
+  }
+
+  /**
+   * Handle sub-agent detail input
+   */
+  handleSubAgentDetailInput(keyName, key) {
+    // Escape key to go back
+    if (this.isKey(keyName, this.keyBindings.navigation.back)) {
+      this.state.goBack();
+      this.render();
+    }
+    // Ctrl+R to toggle tool expansion
+    else if (key && key.ctrl && keyName === 'r') {
+      this.state.toggleAllToolExpansion();
+      this.render();
+    }
+    // Resume session with 'r' key
+    else if (keyName === 'r') {
+      const viewData = this.state.getViewData();
+      if (viewData.selectedSubAgentData && viewData.selectedSubAgentData.response && viewData.selectedSubAgentData.response.sessionId) {
+        // For sub-agents, we could potentially resume the parent session
+        // For now, just show a notification that this is a sub-agent
+        this.showNotification('This is a sub-agent execution. Use Esc to return to parent session.');
+      }
+    }
+    // Basic navigation
+    else if (this.isKey(keyName, this.keyBindings.navigation.up)) {
+      // Could add scrolling here in the future
+      this.showNotification('Scrolling not yet implemented for sub-agent details');
+    } else if (this.isKey(keyName, this.keyBindings.navigation.down)) {
+      // Could add scrolling here in the future
+      this.showNotification('Scrolling not yet implemented for sub-agent details');
     }
   }
 }

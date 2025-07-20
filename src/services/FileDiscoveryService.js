@@ -132,9 +132,8 @@ class FileDiscoveryService {
    * @returns {boolean} True if deep recursion should be skipped
    */
   shouldSkipDeepRecursion(depth, transcriptFiles, subdirectories) {
-    // If we found transcript files at depth 0-1, and no subdirectories suggest 
-    // deeper structure, skip deep recursion for performance
-    return depth <= 1 && transcriptFiles.length > 0 && subdirectories.length === 0;
+    // Never skip deep recursion - we need to find all files
+    return false;
   }
 
   /**
