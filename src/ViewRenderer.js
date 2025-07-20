@@ -294,7 +294,7 @@ class ViewRenderer {
       const cleanMessage = this.extractCleanUserMessage(userMessage);
       const result = cleanMessage || textTruncator.smartTruncate(userMessage.replace(/\s+/g, ' '), 100);
       // Apply consistent 60 char limit
-      return textTruncator.smartTruncate(result, 120);
+      return textTruncator.smartTruncate(result, 135);
     }
     
     // Clean and truncate the message - apply strict 60 char limit
@@ -305,7 +305,7 @@ class ViewRenderer {
       .replace(/\s+/g, ' ')
       .trim();
     
-    return textTruncator.smartTruncate(cleaned, 120);
+    return textTruncator.smartTruncate(cleaned, 135);
   }
 
   /**
@@ -588,7 +588,7 @@ class ViewRenderer {
           const prefix = `   ${conversationNumber}. `;
           // Calculate ultra-conservative width for message content  
           const prefixWidth = textTruncator.getDisplayWidth(prefix);
-          const maxMessageLength = Math.min(180, this.terminalWidth - prefixWidth - 30); // Cap at 180 chars (extended by 20)
+          const maxMessageLength = Math.min(230, this.terminalWidth - prefixWidth - 2); // Cap at 230 chars (extended by 70)
           let originalMsg = (conv.userContent || conv.userMessage || '').replace(/\n/g, ' ').trim();
           
           // Check if this is a continuation session or contains thinking content
@@ -898,7 +898,7 @@ class ViewRenderer {
     const targetMessageWidth = this.terminalWidth - exactFixedWidth - 5;
     
     // Ensure minimum readable width but use most of available space
-    const availableWidth = Math.max(30, targetMessageWidth);
+    const availableWidth = Math.max(30, targetMessageWidth + 30);
     
     // Extract only the clean user message (without assistant responses or thinking content)
     const cleanUserOnly = this.extractCleanUserMessage(conversation.userMessage);
