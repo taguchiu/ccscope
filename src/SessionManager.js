@@ -94,7 +94,6 @@ class SessionManager {
           validFiles.has(session.filePath) && 
           this.cacheManager.isCacheValid(session.filePath, cachedData.metadata)
         );
-        
         if (filesToParse.length > 0) {
           // Updating changed files
         }
@@ -945,7 +944,7 @@ class SessionManager {
   filterSessions(filters) {
     this.activeFilters = { ...this.activeFilters, ...filters };
     
-    let filteredSessions = this.sessions;
+    let filteredSessions = this.sessions || [];
     
     // Filter by project
     if (this.activeFilters.project) {
@@ -1466,8 +1465,7 @@ class SessionManager {
       const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
       
       // Update loading progress
-      const progress = Math.min(i + batch.length, totalFiles);
-      process.stdout.write(`\rLoading... (${progress}/${totalFiles} files)`);
+      process.stdout.write('\rLoading...');
       
       const parsePromises = batch.map(file => {
         // Check memory cache first

@@ -30,13 +30,14 @@ ccscope (Claude Code Scope) is a powerful terminal-based application that allows
 
 ### Session List View
 ```
-🔍 Claude Code Scope
-========================================================================================================
-📊 35 Sessions | 💬 1503 Convos | ⏱️ 4d 9h 23m
+📊 90 Sessions | ⏱️ 10d 15h 50m Duration | 💬 1757 Convos | 🔧 37.2k Tools | 🎯 14.2m Tokens
+🔽 Filters: None | 📊 Sort: Last Activity ↓
 
-▶ 1  52ccc342  ccscope               48 convos   1h 51m   07/10 23:52  07/12 19:58
-  2  14208db7  sms-proto              7 convos  24m 24s   07/12 19:23  07/12 19:55
-  3  7726f0    mobile-documents      40 convos    1h 6m   07/12 15:25  07/12 19:22
+No.   ID               Project                                 Conv. Duration        Tools   Tokens Start Time   End Time
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+▶ 1   52ee85b2         ccscope                                    22 4h 4m             649  251.4k  07/19 20:57  07/20 19:07
+  2   585c655b         sms_proto                                   1 13m 49s            60   17.7k  07/20 18:49  07/20 19:03
+  3   5b09d466         sms_proto                                  12 5h 30m            878  956.8k  07/20 12:10  07/20 18:47
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────  
 ↑/↓ or k/j to select · Enter to view details · r resume · / full-text search · f filter · s sort · h help · q exit
@@ -44,15 +45,13 @@ ccscope (Claude Code Scope) is a powerful terminal-based application that allows
 
 ### Conversation Detail View
 ```
-🔍 Claude Code Scope
-========================================================================================================
-💬 48 Convos | ⏱️ 1h 51m
-Selected: [52ccc342] -Users-taguchiu-Documents-workspace-ccscope
-📁 File: /Users/taguchiu/.claude/projects/...
+💬 22 Convos | ⏱️ 4h 4m
+Selected: [52ee85b2] ccscope
+📁 File: /Users/taguchiu/.claude/projects/-Users-taguchiu-Documents-workspace-ccscope/52ee85b2c94a1ee604f8e1e58328ad7db75e7330.jsonl
 
-▶ 1  07/10 14:30  12.3s  3t  Help me refactor ViewRenderer...
-  2  07/10 14:35   8.7s  1t  Add full-width character support
-  3  07/10 14:42  15.2s  5t  Implement virtual scrolling
+▶ 1  📅 07/19 20:57 → 07/19 21:06  🕐 8m 39s  🔧 30   Help me refactor the ViewRenderer component...
+  2  📅 07/19 21:06 → 07/19 21:15  🕐 8m 51s  🔧 25   Add support for full-width character display...
+  3  📅 07/19 21:15 → 07/19 21:25  🕐 9m 48s  🔧 35   Implement virtual scrolling for large datasets...
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────  
 ↑/↓ or k/j to select conversation · Enter to view detail · ←/→ or h/l switch session · r resume · s sort · Esc back · q exit
@@ -60,22 +59,24 @@ Selected: [52ccc342] -Users-taguchiu-Documents-workspace-ccscope
 
 ### Full Detail View
 ```
-[52ccc342] -Users-taguchiu-Documents-workspace-ccscope     [18-66/66] 100%
-Conversation #15 of 48
+[52ee85b2] ccscope     [18-66/66] 100%
+Conversation #15 of 22
 ========================================================================================================
 
-👤 USER:
+👤 USER [07/19 20:57]:
 Help me refactor the ViewRenderer component...
 
-🤖 ASSISTANT:
+🤖 ASSISTANT [07/19 21:06]:
 I'll help you refactor the ViewRenderer component...
 
-⏺ Read(file: /src/ViewRenderer.js)
+⏺ Read(file: /src/ViewRenderer.js) [20:58]
   ⎿ File content...
      ... +45 lines (ctrl+r to expand)
 
-⏺ Edit(file: /src/ViewRenderer.js)
+⏺ Edit(file: /src/ViewRenderer.js) [21:02]
   ⎿ Applied changes successfully
+
+[Compact Continuation at 2024-07-19 21:25:30]
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────  
 ↑/↓ or k/j 5-line scroll · Space/b page down/up · g/G top/bottom · ←/→ or h/l prev/next conversation · r resume · Esc back · q exit
@@ -122,7 +123,7 @@ npm link
 npm install -g git+https://github.com/taguchiu/ccscope.git
 
 # Install specific version
-npm install -g ccscope@1.2.1
+npm install -g ccscope@1.2.2
 
 # Install locally for development
 npm install ccscope
@@ -216,12 +217,23 @@ ccscope/
 ├── bin/                # Executable scripts
 │   └── ccscope         # Main CLI entry point
 ├── src/                # Source code
+│   ├── services/       # Service classes
+│   │   ├── ContentExtractor.js
+│   │   ├── ConversationBuilder.js
+│   │   ├── FileDiscoveryService.js
+│   │   ├── ProjectExtractor.js
+│   │   └── SessionStatisticsCalculator.js
+│   ├── utils/          # Utility functions
+│   │   └── formatters.js
 │   ├── config.js       # Configuration
+│   ├── CacheManager.js # Cache management
+│   ├── FastParser.js   # Optimized JSONL parser
 │   ├── SessionManager.js
 │   ├── StateManager.js
 │   ├── ViewRenderer.js
 │   ├── InputHandler.js
 │   ├── ThemeManager.js
+│   ├── MouseEventFilter.js
 │   └── CCScope.js
 ├── __tests__/          # Test files
 │   ├── helpers/        # Test utilities
@@ -229,7 +241,6 @@ ccscope/
 ├── .github/            # GitHub Actions workflows
 │   └── workflows/      # CI/CD pipelines
 ├── CLAUDE.md           # Claude Code integration guide
-├── examples/           # Example files
 ├── package.json
 ├── jest.config.js      # Jest configuration
 ├── README.md
@@ -248,6 +259,13 @@ ccscope follows a modular architecture:
 - **InputHandler**: Processes keyboard input and key bindings
 - **ThemeManager**: Manages color themes and text formatting
 - **MouseEventFilter**: Prevents mouse event artifacts in terminal output
+- **CacheManager**: Manages persistent caching for improved performance
+- **FastParser**: Optimized JSONL parser for large transcript files
+- **ConversationBuilder**: Builds conversation pairs and merges compact continuations
+- **ContentExtractor**: Extracts and processes message content
+- **FileDiscoveryService**: Discovers transcript files efficiently
+- **ProjectExtractor**: Extracts project information from transcripts
+- **SessionStatisticsCalculator**: Calculates session metrics and statistics
 
 ## Testing
 

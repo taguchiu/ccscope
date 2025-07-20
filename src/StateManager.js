@@ -1100,6 +1100,10 @@ class StateManager {
     this.sortOrder = 'lastActivity';
     this.sortDirection = 'desc';
     this.contextRange = config.contextFlow.defaultRange;
+    
+    // Clear cache
+    this.filteredSessionsCache = null;
+    this.cacheInvalidated = true;
     this.trackStateChange();
   }
 

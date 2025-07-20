@@ -39,9 +39,6 @@ class ConversationBuilder {
         if (currentState.userMessage || currentState.isExtendingPreviousConversation) {
           // Validate that assistant response belongs to the same session as user message
           if (currentState.userMessage && currentState.userMessage.sessionId !== entry.sessionId) {
-            console.log(`⚠️  [WARNING] Session ID mismatch: User message from ${currentState.userMessage.sessionId}, Assistant response from ${entry.sessionId}`);
-            console.log(`   User message: "${this.contentExtractor.extractUserContent(currentState.userMessage).substring(0, 50)}..."`);
-            console.log(`   Orphaned user message will be skipped.`);
             // Reset state to avoid orphaned user message
             Object.assign(currentState, this.createInitialState());
           }
@@ -130,7 +127,6 @@ class ConversationBuilder {
     // Check if this is a compact continuation instruction
     if (this.isCompactContinuation(entry)) {
       const content = this.contentExtractor.extractUserContent(entry);
-      console.log(`🔄 [DEBUG] Found [Compact] continuation: "${content.substring(0, 50)}..."`);
       
       // Always create a new conversation for compact continuations
       // They will be merged in post-processing
@@ -270,29 +266,18 @@ class ConversationBuilder {
    * @param {Object[]} pairs - Array of conversation pairs
    */
   startNewConversation(entry, currentState, pairs) {
-    const userContent = this.contentExtractor.extractUserContent(entry);
-    if (userContent.includes('TODOを更新しながら')) {
-      console.log(`🚀 [DEBUG] Starting new conversation for TODO: "${userContent}"`);
-      console.log(`   Current state hasCompactContinuation: ${currentState.hasCompactContinuation}`);
-    }
     
     // Complete previous conversation if exists
     if (currentState.userMessage && currentState.assistantResponses.length > 0) {
       const lastAssistant = currentState.assistantResponses[currentState.assistantResponses.length - 1];
       this.createConversationPair(pairs, currentState, lastAssistant);
       
-      if (userContent.includes('TODOを更新しながら')) {
-        console.log(`   ✅ Created previous conversation pair with hasCompactContinuation=${currentState.hasCompactContinuation}`);
-      }
     }
     
     // Reset state for new conversation
     Object.assign(currentState, this.createInitialState());
     currentState.userMessage = entry;
     
-    if (userContent.includes('TODOを更新しながら')) {
-      console.log(`   🔄 Reset state, new hasCompactContinuation: ${currentState.hasCompactContinuation}`);
-    }
   }
 
   /**
@@ -489,11 +474,6 @@ class ConversationBuilder {
     
     const content = this.contentExtractor.extractUserContent(entry);
     
-    // Debug logging for TODO messages
-    if (content.includes('TODOを更新しながら')) {
-      console.log(`🔍 [DEBUG] Checking TODO message: "${content}"`);
-      console.log(`   isCompactSummary: ${entry.isCompactSummary}`);
-    }
     
     // Check for compact continuation patterns (English and Japanese)
     const continuationPatterns = [
@@ -519,7 +499,6 @@ class ConversationBuilder {
       const pattern = continuationPatterns[i];
       const matches = pattern.test(content);
       if (matches && content.includes('TODOを更新しながら')) {
-        console.log(`   🎯 [DEBUG] Pattern ${i} (${pattern}) MATCHED!`);
         matchesPattern = true;
         break;
       } else if (matches) {
@@ -530,24 +509,13 @@ class ConversationBuilder {
     
     // Also check for the exact English pattern commonly used
     const exactPattern = content.includes("Please continue the conversation from where we left it off without asking the user any further questions. Continue with the last task that you were asked to work on.");
-    if (exactPattern && content.includes('TODOを更新しながら')) {
-      console.log(`   🎯 [DEBUG] Exact English pattern MATCHED!`);
-    }
     
     // Check for simple Japanese continuation commands only
     const trimmedContent = content.trim();
     const simpleJapanesePatterns = ['つづけて', '続けて', '継続', '続行'];
     const isSimpleJapanese = simpleJapanesePatterns.includes(trimmedContent);
-    if (isSimpleJapanese && content.includes('TODOを更新しながら')) {
-      console.log(`   🎯 [DEBUG] Simple Japanese pattern MATCHED!`);
-    }
     
-    const result = matchesPattern || exactPattern || isSimpleJapanese;
-    if (content.includes('TODOを更新しながら')) {
-      console.log(`   📊 [DEBUG] Final result: ${result}`);
-    }
-    
-    return result;
+    return matchesPattern || exactPattern || isSimpleJapanese;
   }
 
   /**
@@ -756,7 +724,6 @@ class ConversationBuilder {
         }
         
         if (targetPair) {
-          console.log(`🔄 [Compact] Merging continuation into conversation "${targetPair.userMessage.substring(0, 50)}..."`);
           
           // Record compact continuation timing
           if (!targetPair.compactContinuations) {
@@ -831,10 +798,6 @@ class ConversationBuilder {
       }
     }
     
-    console.log(`\n📊 [Compact] Merge summary:`);
-    console.log(`   Original conversations: ${pairs.length}`);
-    console.log(`   Final conversations: ${mergedPairs.length}`);
-    console.log(`   Compact continuations merged: ${pairs.length - mergedPairs.length}\n`);
     
     return mergedPairs;
   }
