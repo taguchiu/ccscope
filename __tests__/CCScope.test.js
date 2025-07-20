@@ -158,7 +158,7 @@ describe('CCScopeApplication', () => {
       app.showLoadingScreen();
       
       expect(mockConsoleClear).toHaveBeenCalled();
-      expect(mockConsoleLog).toHaveBeenCalledWith('Loading...');
+      expect(mockStdoutWrite).toHaveBeenCalledWith('Loading...');
     });
   });
 
