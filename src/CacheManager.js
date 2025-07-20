@@ -19,7 +19,7 @@ class CacheManager {
     this.memoryCache = new Map();
     
     // Cache version for invalidation when format changes
-    this.CACHE_VERSION = '1.0.0';
+    this.CACHE_VERSION = '1.0.1'; // Bumped to fix timestamp handling
     
     // Initialize cache directory
     this.initializeCacheDirectory();
@@ -118,13 +118,45 @@ class CacheManager {
       const content = fs.readFileSync(this.cacheFile, 'utf8');
       const cache = JSON.parse(content);
       
+      // Validate cache structure
+      if (!cache.sessions || !Array.isArray(cache.sessions)) {
+        console.debug('Invalid cache structure, missing sessions array');
+        this.clearCache();
+        return null;
+      }
+      
       // Convert arrays back to Date objects
       for (const session of cache.sessions) {
         session.startTime = new Date(session.startTime);
         session.lastActivity = new Date(session.lastActivity);
         
         for (const conversation of session.conversationPairs) {
-          conversation.timestamp = new Date(conversation.timestamp);
+          // Handle both new and legacy timestamp fields
+          if (conversation.timestamp) {
+            conversation.timestamp = new Date(conversation.timestamp);
+          }
+          if (conversation.userTime) {
+            conversation.userTime = new Date(conversation.userTime);
+          }
+          if (conversation.assistantTime) {
+            conversation.assistantTime = new Date(conversation.assistantTime);
+          }
+          // Convert thinking content timestamps
+          if (conversation.thinkingContent && Array.isArray(conversation.thinkingContent)) {
+            for (const thinking of conversation.thinkingContent) {
+              if (thinking.timestamp) {
+                thinking.timestamp = new Date(thinking.timestamp);
+              }
+            }
+          }
+          // Convert raw assistant content timestamps
+          if (conversation.rawAssistantContent && Array.isArray(conversation.rawAssistantContent)) {
+            for (const item of conversation.rawAssistantContent) {
+              if (item.timestamp) {
+                item.timestamp = new Date(item.timestamp);
+              }
+            }
+          }
         }
       }
       

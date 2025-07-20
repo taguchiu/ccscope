@@ -825,12 +825,6 @@ class ViewRenderer {
     // Extract only the clean user message (without assistant responses or thinking content)
     const cleanUserOnly = this.extractCleanUserMessage(conversation.userMessage);
     
-    // Check if this conversation has a compact continuation
-    let compactPrefix = '';
-    if (conversation.hasCompactContinuation) {
-      compactPrefix = '[Compact] ';
-    }
-    
     // Clean message while preserving readable content
     const originalMessage = cleanUserOnly
       .replace(/\n/g, ' ')                    // Replace newlines with spaces
@@ -844,12 +838,10 @@ class ViewRenderer {
       .replace(/\s+/g, ' ')                   // Collapse multiple spaces
       .trim();                                // Remove leading/trailing spaces
     
-    // Adjust available width for compact prefix
-    const adjustedWidth = availableWidth - this.theme.getDisplayWidth(compactPrefix);
-    let truncatedMessage = this.truncateWithWidth(originalMessage, adjustedWidth);
+    let truncatedMessage = this.truncateWithWidth(originalMessage, availableWidth);
     
-    // Use the truncated message for all display with compact prefix
-    const userMessage = compactPrefix + truncatedMessage;
+    // Use the truncated message for all display
+    const userMessage = truncatedMessage;
     
     // Build raw content without colors for width calculation
     const tokensRaw = tokens.replace(/\x1b\[[0-9;]*m/g, '');
@@ -1102,7 +1094,6 @@ class ViewRenderer {
     // Check if this is a continuation session or contains thinking content
     if (conversation.hasCompactContinuation) {
       userPrefix = '📦 ';  // Box emoji to indicate compact continuation
-      userMessage = '[Compact] ' + userMessage;
     } else if (conversation.userMessage && conversation.userMessage.includes('This session is being continued from a previous conversation')) {
       userPrefix = '🔗 ';  // Chain link emoji to indicate continuation
       userMessage = '[Continued session] ' + (userMessage.length > 100 ? userMessage.substring(0, 100) + '...' : userMessage);
@@ -1625,18 +1616,9 @@ class ViewRenderer {
       lines.push(tokenStr);
     }
     
-    // Show [Compact] continuation information if present
-    if (conversation.hasCompactContinuation && conversation.compactContinuationEntries) {
-      lines.push(this.theme.formatDim(`🔄 [Compact] This conversation was extended ${conversation.compactContinuationEntries.length} time(s)`));
-    }
-    
-    
     // User message section
     lines.push('');
     let userHeader = '👤 USER';
-    if (conversation.hasCompactContinuation) {
-      userHeader += ' [Compact]';
-    }
     lines.push(this.theme.formatAccent(userHeader));
     lines.push('');
     let displayMessage = this.processUserMessage(conversation.userMessage);
