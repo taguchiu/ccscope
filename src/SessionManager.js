@@ -1464,8 +1464,7 @@ class SessionManager {
     for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
       const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
       
-      // Update loading progress
-      process.stdout.write('\rLoading...');
+      // Keep loading display (no additional output needed)
       
       const parsePromises = batch.map(file => {
         // Check memory cache first
@@ -1497,8 +1496,8 @@ class SessionManager {
       });
     }
     
-    // Clear the progress line
-    process.stdout.write('\r' + ' '.repeat(50) + '\r');
+    // Clear the loading line
+    process.stdout.write('\r' + ' '.repeat(10) + '\r');
     
     return sessions;
   }
