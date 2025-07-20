@@ -33,6 +33,7 @@ jobs:
       run: npm pack
       
     - name: Create Release
+      id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,14 +46,20 @@ jobs:
         draft: false
         prerelease: false
         
+    - name: Get package info
+      id: package
+      run: |
+        echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        echo "name=$(node -p "require('./package.json').name")" >> $GITHUB_OUTPUT
+        
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./ccscope-*.tgz
-        asset_name: ccscope-${{ github.ref_name }}.tgz
+        asset_path: ./${{ steps.package.outputs.name }}-${{ steps.package.outputs.version }}.tgz
+        asset_name: ${{ steps.package.outputs.name }}-v${{ steps.package.outputs.version }}.tgz
         asset_content_type: application/gzip
         
     - name: Publish to npm
