@@ -1226,13 +1226,13 @@ class ViewRenderer {
       const userMessage = this.extractMeaningfulMessage(cleanSection);
       if (userMessage && userMessage.length > 10) { // Must be substantial
         // Always apply a reasonable length limit to prevent layout issues
-        return textTruncator.smartTruncate(userMessage, 120);
+        return textTruncator.smartTruncate(userMessage, 150);
       }
     }
     
     // Fallback: try to extract any meaningful text from the entire content
     const fallbackMessage = this.extractMeaningfulMessage(text) || this.extractFirstMeaningfulLine(text) || '';
-    return textTruncator.smartTruncate(fallbackMessage, 120);
+    return textTruncator.smartTruncate(fallbackMessage, 150);
   }
   
   isToolExecutionSection(text) {
