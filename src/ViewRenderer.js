@@ -7,12 +7,16 @@ const config = require('./config');
 const path = require('path');
 const { formatWithUnit, formatLargeNumber } = require('./utils/formatters');
 const textTruncator = require('./utils/textTruncator');
+const MarkdownFormatter = require('./utils/markdownFormatter');
 
 class ViewRenderer {
   constructor(sessionManager, themeManager, stateManager) {
     this.sessionManager = sessionManager;
     this.theme = themeManager;
     this.state = stateManager;
+    
+    // Initialize markdown formatter
+    this.markdownFormatter = new MarkdownFormatter(themeManager);
     
     // Terminal dimensions
     this.terminalWidth = process.stdout.columns || config.terminal.defaultWidth;
@@ -1971,27 +1975,16 @@ class ViewRenderer {
                       this.formatDateTimeWithSeconds(response.timestamp) : 
                       'Unknown time';
                     
-                    // Add response header with sequence number
-                    if (subAgentPair.responses.length > 1) {
-                      lines.push(`  ${this.theme.formatMuted(`💬 Response #${responseIndex + 1}: [${responseTimestamp}]`)}`);
-                    } else {
-                      lines.push(`  ${this.theme.formatMuted(`💬 Response: [${responseTimestamp}]`)}`);
+                    // Add separator with timestamp for multiple responses
+                    if (responseIndex > 0) {
+                      lines.push(`  ${this.theme.formatDim('───')}`);
                     }
                     
                     // Render this response
                     this.renderNestedSubAgentFromResponse(lines, response, 2);
-                    
-                    // Add separator between multiple responses
-                    if (responseIndex < subAgentPair.responses.length - 1) {
-                      lines.push(`  ${this.theme.formatDim('───')}`);
-                    }
                   });
                 } else if (subAgentPair.response) {
                   // Fallback to single response for backward compatibility
-                  const responseTimestamp = subAgentPair.response.timestamp ? 
-                    this.formatDateTimeWithSeconds(subAgentPair.response.timestamp) : 
-                    'Unknown time';
-                  lines.push(`  ${this.theme.formatMuted(`💬 Response: [${responseTimestamp}]`)}`);
                   this.renderNestedSubAgentFromResponse(lines, subAgentPair.response, 2);
                 } else {
                   lines.push(`  ${this.theme.formatDim('⏳ Sub-agent execution in progress...')}`);
@@ -3598,32 +3591,8 @@ class ViewRenderer {
   processMarkdownContent(text) {
     if (!text) return text;
     
-    let processedText = text;
-    
-    // Handle markdown-style headers - simpler approach
-    processedText = processedText.replace(/^(#+)\s+(.+)$/gm, (match, hashes, content) => {
-      const level = hashes.length;
-      if (level === 1) return this.theme.formatAccent(`\n${content}\n${'─'.repeat(content.length)}`);
-      if (level === 2) return this.theme.formatAccent(`▸ ${content}`);
-      return `${'  '.repeat(level - 2)}• ${content}`;
-    });
-    
-    // Handle inline code
-    processedText = processedText.replace(/`([^`]+)`/g, (match, content) => {
-      return this.theme.formatInfo(content);
-    });
-    
-    // Handle lists
-    processedText = processedText.replace(/^(\s*)([-*+])\s+(.+)$/gm, (match, indent, bullet, content) => {
-      return `${indent}• ${content}`;
-    });
-    
-    // Handle file paths
-    processedText = processedText.replace(/\b(\/[^\s]+\.(js|ts|tsx|jsx|py|go|rs|cpp|c|h|java|rb|php))\b/g, (match) => {
-      return this.theme.formatInfo(match);
-    });
-    
-    return processedText;
+    // Use the new markdown formatter
+    return this.markdownFormatter.format(text);
   }
 
   /**
@@ -3890,14 +3859,6 @@ class ViewRenderer {
     const indent = ' '.repeat(baseIndent);
     
     try {
-      // DEBUG: Compact debug information to verify data structure
-      if (response.message && Array.isArray(response.message.content)) {
-        const contentTypes = response.message.content.map(item => item?.type || 'unknown');
-        lines.push(`${indent}${this.theme.formatDim(`🔍 Content items: [${contentTypes.join(', ')}]`)}`);
-      } else {
-        lines.push(`${indent}${this.theme.formatDim('🔍 No content array found')}`);
-      }
-      
       // Check if response has message content
       if (!response.message || !response.message.content) {
         lines.push(`${indent}${this.theme.formatDim('No response content available')}`);
@@ -3908,12 +3869,6 @@ class ViewRenderer {
       if (!Array.isArray(content)) {
         lines.push(`${indent}${this.theme.formatDim('Invalid response content format')}`);
         return;
-      }
-      
-      // Add timestamp if available
-      if (response.timestamp) {
-        const time = this.formatDateTimeWithSeconds(response.timestamp);
-        lines.push(`  ${this.theme.formatDim(`[${time}]`)}`);
       }
       
       // Render each content item
@@ -3961,8 +3916,11 @@ class ViewRenderer {
           }
           
           // Add timestamp if available (tool execution time)
-          const toolTime = new Date().toLocaleTimeString();
-          toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          // Use actual timestamp from item or response
+          if (item.timestamp || response.timestamp) {
+            const toolTime = this.formatDateTimeWithSeconds(item.timestamp || response.timestamp);
+            toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          }
           
           lines.push(`  ${this.theme.formatSuccess(toolHeader)}`);
           
@@ -4022,14 +3980,16 @@ class ViewRenderer {
           lines.push('');
           
         } else if (item.type === 'text') {
-          // Show text response
-          lines.push(`  ${this.theme.formatInfo('💬 Response:')}`);
+          // Show text response directly without label
           const textLines = item.text.split('\n');
           textLines.forEach(line => {
             if (line.trim()) {
-              lines.push(`    ${line}`);
+              // Apply markdown formatting to sub-agent text
+              const formattedLine = this.markdownFormatter.format(line);
+              lines.push(`  ${formattedLine}`);
             }
           });
+          lines.push(''); // Add spacing after text
         }
       });
       
@@ -4114,8 +4074,7 @@ class ViewRenderer {
           lines.push('');
           
         } else if (item.type === 'text') {
-          // Show text response
-          lines.push(`${indent}${this.theme.formatInfo('💬 Response:')}`);
+          // Show text response directly
           const textLines = item.content.split('\n');
           textLines.forEach(line => {
             if (line.trim()) {
