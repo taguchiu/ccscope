@@ -1,6 +1,6 @@
 {
   "name": "ccscope",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Claude Code Scope - Interactive terminal browser for Claude Code conversation transcripts",
   "main": "src/CCScope.js",
   "bin": {
