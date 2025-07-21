@@ -7,12 +7,16 @@ const config = require('./config');
 const path = require('path');
 const { formatWithUnit, formatLargeNumber } = require('./utils/formatters');
 const textTruncator = require('./utils/textTruncator');
+const MarkdownFormatter = require('./utils/markdownFormatter');
 
 class ViewRenderer {
   constructor(sessionManager, themeManager, stateManager) {
     this.sessionManager = sessionManager;
     this.theme = themeManager;
     this.state = stateManager;
+    
+    // Initialize markdown formatter
+    this.markdownFormatter = new MarkdownFormatter(themeManager);
     
     // Terminal dimensions
     this.terminalWidth = process.stdout.columns || config.terminal.defaultWidth;
@@ -3598,32 +3602,8 @@ class ViewRenderer {
   processMarkdownContent(text) {
     if (!text) return text;
     
-    let processedText = text;
-    
-    // Handle markdown-style headers - simpler approach
-    processedText = processedText.replace(/^(#+)\s+(.+)$/gm, (match, hashes, content) => {
-      const level = hashes.length;
-      if (level === 1) return this.theme.formatAccent(`\n${content}\n${'─'.repeat(content.length)}`);
-      if (level === 2) return this.theme.formatAccent(`▸ ${content}`);
-      return `${'  '.repeat(level - 2)}• ${content}`;
-    });
-    
-    // Handle inline code
-    processedText = processedText.replace(/`([^`]+)`/g, (match, content) => {
-      return this.theme.formatInfo(content);
-    });
-    
-    // Handle lists
-    processedText = processedText.replace(/^(\s*)([-*+])\s+(.+)$/gm, (match, indent, bullet, content) => {
-      return `${indent}• ${content}`;
-    });
-    
-    // Handle file paths
-    processedText = processedText.replace(/\b(\/[^\s]+\.(js|ts|tsx|jsx|py|go|rs|cpp|c|h|java|rb|php))\b/g, (match) => {
-      return this.theme.formatInfo(match);
-    });
-    
-    return processedText;
+    // Use the new markdown formatter
+    return this.markdownFormatter.format(text);
   }
 
   /**
