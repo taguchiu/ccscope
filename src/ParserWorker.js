@@ -67,35 +67,9 @@ function extractFullSessionId(filePath) {
   return null;
 }
 
-// Quick pre-scan to check if file has valid content
-function quickPreScan(filePath) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n').slice(0, 10); // Check first 10 lines
-    
-    let hasUser = false;
-    let hasAssistant = false;
-    
-    for (const line of lines) {
-      if (line.includes('"type":"user"')) hasUser = true;
-      if (line.includes('"type":"assistant"')) hasAssistant = true;
-      if (hasUser && hasAssistant) return true;
-    }
-    
-    return false;
-  } catch (error) {
-    return false;
-  }
-}
-
 // Parse a single file
 async function parseFile(filePath) {
   try {
-    // Quick pre-scan
-    if (!quickPreScan(filePath)) {
-      return null;
-    }
-    
     const { entries, firstEntry } = await fastParser.parseFile(filePath);
     
     if (entries.length === 0) return null;

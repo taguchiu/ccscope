@@ -1490,18 +1490,8 @@ class SessionManager {
   async parseSessionsWithProgress(transcriptFiles, isIncremental = false, progressCallback) {
     if (transcriptFiles.length === 0) return [];
     
-    // Pre-filter files by size (skip very small files)
-    const validFiles = transcriptFiles.filter(file => {
-      try {
-        const stats = fs.statSync(file);
-        return stats.size > 100; // Skip files smaller than 100 bytes
-      } catch (error) {
-        return false; // Skip files that can't be accessed
-      }
-    });
-    
     const sessions = [];
-    const totalFiles = validFiles.length;
+    const totalFiles = transcriptFiles.length;
     
     // Use more workers for I/O-bound tasks
     const cpuCount = os.cpus().length;
@@ -1519,11 +1509,11 @@ class SessionManager {
     
     // Process files using worker pool
     const processNextFile = (worker) => {
-      if (fileIndex >= validFiles.length) {
+      if (fileIndex >= transcriptFiles.length) {
         return Promise.resolve();
       }
       
-      const currentFile = validFiles[fileIndex++];
+      const currentFile = transcriptFiles[fileIndex++];
       
       return new Promise((resolve) => {
         worker.once('message', (result) => {
