@@ -46,14 +46,22 @@ class CacheOptimizer {
       userTime: conversation.userTime,
       assistantTime: conversation.assistantTime,
       responseTime: conversation.responseTime,
-      userContent: this.truncateContent(conversation.userContent, 500),
-      assistantContent: this.truncateContent(conversation.assistantContent, 500),
+      userContent: conversation.userContent, // Keep full content for detail view
+      assistantContent: conversation.assistantContent, // Keep full content for detail view
       thinkingCharCount: conversation.thinkingCharCount,
       toolCount: conversation.toolCount,
       toolsUsed: conversation.toolsUsed,
       tokenUsage: conversation.tokenUsage,
-      // Remove large data like rawAssistantContent, full tool results, etc
-      // These can be re-parsed from the original file if needed
+      // Keep essential data for display
+      thinkingContent: conversation.thinkingContent,
+      toolUses: this.optimizeToolUses(conversation.toolUses),
+      allToolUses: this.optimizeToolUses(conversation.allToolUses),
+      rawAssistantContent: conversation.rawAssistantContent,
+      // Legacy fields - only store if different from main fields
+      userMessage: conversation.userMessage !== conversation.userContent ? conversation.userMessage : undefined,
+      assistantResponse: conversation.assistantResponse !== conversation.assistantContent ? conversation.assistantResponse : undefined,
+      assistantResponsePreview: conversation.assistantResponsePreview,
+      timestamp: conversation.timestamp !== conversation.userTime ? conversation.timestamp : undefined
     };
   }
   
@@ -66,6 +74,26 @@ class CacheOptimizer {
   }
   
   /**
+   * Optimize tool uses to reduce size
+   * Remove very large tool results but keep structure
+   */
+  static optimizeToolUses(toolUses) {
+    if (!toolUses || !Array.isArray(toolUses)) return toolUses;
+    
+    return toolUses.map(tool => ({
+      ...tool,
+      // Truncate very large tool results
+      result: tool.result && tool.result.length > 5000 
+        ? tool.result.substring(0, 5000) + '... [truncated]'
+        : tool.result,
+      // Truncate large inputs
+      input: tool.input && JSON.stringify(tool.input).length > 1000
+        ? { ...tool.input, _truncated: true }
+        : tool.input
+    }));
+  }
+  
+  /**
    * Restore session from optimized cache
    * Fills in missing data with defaults
    */
@@ -74,16 +102,16 @@ class CacheOptimizer {
       ...cached,
       conversationPairs: cached.conversationPairs.map(conv => ({
         ...conv,
-        // Restore missing fields with defaults
-        thinkingContent: [],
-        toolUses: [],
-        allToolUses: [],
-        toolResults: [],
-        rawAssistantContent: [],
-        userMessage: conv.userContent,
-        assistantResponse: conv.assistantContent,
-        assistantResponsePreview: conv.assistantContent.substring(0, 200),
-        timestamp: conv.userTime
+        // Only add missing fields, don't override existing ones
+        thinkingContent: conv.thinkingContent || [],
+        toolUses: conv.toolUses || [],
+        allToolUses: conv.allToolUses || [],
+        toolResults: conv.toolResults || [],
+        rawAssistantContent: conv.rawAssistantContent || [],
+        userMessage: conv.userMessage || conv.userContent,
+        assistantResponse: conv.assistantResponse || conv.assistantContent,
+        assistantResponsePreview: conv.assistantResponsePreview || conv.assistantContent.substring(0, 200),
+        timestamp: conv.timestamp || conv.userTime
       }))
     };
   }
