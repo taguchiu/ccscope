@@ -1493,9 +1493,8 @@ class SessionManager {
     const sessions = [];
     const totalFiles = transcriptFiles.length;
     
-    // Use more workers for I/O-bound tasks
-    const cpuCount = os.cpus().length;
-    const WORKER_COUNT = Math.min(cpuCount * 2, 16); // Use 2x CPU cores, cap at 16
+    // Optimal worker count based on benchmarks
+    const WORKER_COUNT = 2; // Benchmarks show 2 workers is optimal for I/O-bound tasks
     const workerPath = path.join(__dirname, 'ParserWorker.js');
     
     // Create worker pool
