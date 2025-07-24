@@ -5,6 +5,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const { Worker } = require('worker_threads');
+const os = require('os');
 const config = require('./config');
 const FastParser = require('./FastParser');
 const textTruncator = require('./utils/textTruncator');
@@ -1491,37 +1493,53 @@ class SessionManager {
     const sessions = [];
     const totalFiles = transcriptFiles.length;
     
-    // Limit concurrent parsing to prevent memory issues
-    const BATCH_SIZE = 5;
+    // Use CPU count for optimal parallelism
+    const cpuCount = os.cpus().length;
+    const WORKER_COUNT = Math.min(cpuCount, 8); // Cap at 8 workers
+    const workerPath = path.join(__dirname, 'ParserWorker.js');
+    
+    // Create worker pool
+    const workers = [];
+    for (let i = 0; i < WORKER_COUNT; i++) {
+      workers.push(new Worker(workerPath));
+    }
+    
+    let fileIndex = 0;
     let processedFiles = 0;
     
-    for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
-      const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
-      
-      // Update progress
-      if (progressCallback) {
-        progressCallback(`Parsing files... (${processedFiles}/${totalFiles})`);
+    // Process files using worker pool
+    const processNextFile = (worker) => {
+      if (fileIndex >= transcriptFiles.length) {
+        return Promise.resolve();
       }
       
-      const parsePromises = batch.map(file => {
-        // Parse file
-        return this.parseTranscriptFile(file)
-          .catch(error => {
-            // Silently skip files with errors
-            return null;
-          });
+      const currentFile = transcriptFiles[fileIndex++];
+      
+      return new Promise((resolve) => {
+        worker.once('message', (result) => {
+          processedFiles++;
+          
+          if (progressCallback) {
+            progressCallback(`Parsing files... (${processedFiles}/${totalFiles})`);
+          }
+          
+          if (result.success && result.result) {
+            sessions.push(result.result);
+          }
+          
+          // Process next file with this worker
+          processNextFile(worker).then(resolve);
+        });
+        
+        worker.postMessage(currentFile);
       });
-      
-      // Wait for this batch to complete
-      const results = await Promise.all(parsePromises);
-      
-      // Filter out null results (failed parses)
-      results.forEach(session => {
-        if (session) sessions.push(session);
-      });
-      
-      processedFiles += batch.length;
-    }
+    };
+    
+    // Start processing with all workers
+    await Promise.all(workers.map(worker => processNextFile(worker)));
+    
+    // Terminate all workers
+    await Promise.all(workers.map(worker => worker.terminate()));
     
     return sessions;
   }

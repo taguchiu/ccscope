@@ -86,8 +86,8 @@ class FastParser {
     const stats = fs.statSync(filePath);
     const fileSizeMB = stats.size / (1024 * 1024);
     
-    // Use streaming for files larger than 10MB
-    if (fileSizeMB > 10) {
+    // Use streaming for files larger than 5MB (reduced threshold)
+    if (fileSizeMB > 5) {
       return this.parseFileStream(filePath);
     }
     
