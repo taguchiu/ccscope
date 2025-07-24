@@ -53,7 +53,21 @@ class FastParser {
             return;
           }
           
+          // Quick type check before full parse
+          if (!line.includes('"type"')) return;
+          
           const entry = JSON.parse(line);
+          
+          // Skip entries without type
+          if (!entry.type) return;
+          
+          // Optimize memory for large entries
+          if (entry.type === 'tool_result' && entry.content) {
+            if (typeof entry.content === 'string' && entry.content.length > 10000) {
+              entry.content = entry.content.substring(0, 10000) + '... [truncated]';
+            }
+          }
+          
           entries.push(entry);
           
           if (!firstEntry) {
@@ -117,7 +131,21 @@ class FastParser {
           continue;
         }
         
+        // Quick type check before full parse
+        if (!trimmed.includes('"type"')) continue;
+        
         const entry = JSON.parse(trimmed);
+        
+        // Skip entries without type
+        if (!entry.type) continue;
+        
+        // Optimize memory for large entries
+        if (entry.type === 'tool_result' && entry.content) {
+          if (typeof entry.content === 'string' && entry.content.length > 10000) {
+            entry.content = entry.content.substring(0, 10000) + '... [truncated]';
+          }
+        }
+        
         entries.push(entry);
         
         if (!firstEntry) {
