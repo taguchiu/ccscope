@@ -45,6 +45,9 @@ module.exports = {
   // Setup files
   setupFilesAfterEnv: ['<rootDir>/__tests__/setup.js'],
   
+  // Mock modules
+  modulePathIgnorePatterns: ['<rootDir>/__mocks__'],
+  
   // Transform files (no babel needed for pure Node.js)
   
   // Module name mapper for mocking
