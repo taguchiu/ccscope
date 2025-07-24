@@ -46,3 +46,5 @@ afterEach(() => {
 
 // Increase test timeout for slower operations
 jest.setTimeout(10000);
+
+// Mock worker_threads module

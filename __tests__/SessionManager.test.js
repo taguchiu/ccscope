@@ -1,6 +1,63 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+// Mock worker_threads before requiring SessionManager
+jest.mock('worker_threads', () => ({
+  Worker: jest.fn().mockImplementation(() => ({
+    postMessage: jest.fn(),
+    once: jest.fn((event, handler) => {
+      if (event === 'message') {
+        // Simulate async response
+        setTimeout(() => {
+          handler({
+            success: true,
+            result: {
+              sessionId: 'test-session',
+              fullSessionId: '52ccc342-1234-5678-9012-345678901234',
+              projectName: 'test-project',
+              projectPath: '/test/path',
+              filePath: 'test.jsonl',
+              conversationPairs: [
+                {
+                  userTime: new Date('2024-01-01T00:00:00Z'),
+                  assistantTime: new Date('2024-01-01T00:00:30Z'),
+                  responseTime: 30,
+                  userContent: 'Test user message',
+                  assistantContent: 'Test assistant response',
+                  thinkingCharCount: 0,
+                  toolCount: 0,
+                  toolsUsed: []
+                },
+                {
+                  userTime: new Date('2024-01-01T00:01:00Z'),
+                  assistantTime: new Date('2024-01-01T00:01:30Z'),
+                  responseTime: 30,
+                  userContent: 'Another test',
+                  assistantContent: 'Another response',
+                  thinkingCharCount: 0,
+                  toolCount: 0,
+                  toolsUsed: []
+                }
+              ],
+              totalConversations: 2,
+              summary: { short: 'Test', detailed: [] },
+              duration: 60000,
+              actualDuration: 90000,
+              avgResponseTime: 30,
+              totalTools: 0,
+              startTime: new Date('2024-01-01T00:00:00Z'),
+              endTime: new Date('2024-01-01T00:01:30Z'),
+              lastActivity: new Date('2024-01-01T00:01:30Z')
+            }
+          });
+        }, 0);
+      }
+    }),
+    terminate: jest.fn().mockResolvedValue()
+  }))
+}));
+
 const SessionManager = require('../src/SessionManager');
 const { 
   createMockJSONLContent, 
@@ -65,7 +122,6 @@ describe('SessionManager', () => {
   describe('constructor', () => {
     test('initializes with empty sessions', () => {
       expect(sessionManager.sessions).toEqual([]);
-      expect(sessionManager.sessionCache).toBeInstanceOf(Map);
       expect(sessionManager.isLoading).toBe(false);
     });
 
@@ -96,6 +152,16 @@ describe('SessionManager', () => {
       
       // Mock discoverTranscriptFiles directly to return our temp file
       jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([transcriptPath]);
+      
+      // Mock parseSessionsWithProgress to use parseTranscriptFile directly
+      jest.spyOn(sessionManager, 'parseSessionsWithProgress').mockImplementation(async (files) => {
+        const sessions = [];
+        for (const file of files) {
+          const session = await sessionManager.parseTranscriptFile(file);
+          if (session) sessions.push(session);
+        }
+        return sessions;
+      });
       
       const sessions = await sessionManager.discoverSessions();
       
@@ -138,6 +204,16 @@ describe('SessionManager', () => {
       }));
       
       jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([file1, file2]);
+      
+      // Mock parseSessionsWithProgress to use parseTranscriptFile directly
+      jest.spyOn(sessionManager, 'parseSessionsWithProgress').mockImplementation(async (files) => {
+        const sessions = [];
+        for (const file of files) {
+          const session = await sessionManager.parseTranscriptFile(file);
+          if (session) sessions.push(session);
+        }
+        return sessions;
+      });
       
       const sessions = await sessionManager.discoverSessions();
       
@@ -393,6 +469,17 @@ describe('SessionManager', () => {
       tempDir = dir;
       
       jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([transcriptPath]);
+      
+      // Mock parseSessionsWithProgress to use parseTranscriptFile directly
+      jest.spyOn(sessionManager, 'parseSessionsWithProgress').mockImplementation(async (files) => {
+        const sessions = [];
+        for (const file of files) {
+          const session = await sessionManager.parseTranscriptFile(file);
+          if (session) sessions.push(session);
+        }
+        return sessions;
+      });
+      
       await sessionManager.discoverSessions();
     });
 
@@ -429,6 +516,17 @@ describe('SessionManager', () => {
       tempDir = dir;
       
       jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([transcriptPath]);
+      
+      // Mock parseSessionsWithProgress to use parseTranscriptFile directly
+      jest.spyOn(sessionManager, 'parseSessionsWithProgress').mockImplementation(async (files) => {
+        const sessions = [];
+        for (const file of files) {
+          const session = await sessionManager.parseTranscriptFile(file);
+          if (session) sessions.push(session);
+        }
+        return sessions;
+      });
+      
       await sessionManager.discoverSessions();
     });
 
@@ -448,6 +546,17 @@ describe('SessionManager', () => {
       tempDir = dir;
       
       jest.spyOn(sessionManager, 'discoverTranscriptFiles').mockResolvedValue([transcriptPath]);
+      
+      // Mock parseSessionsWithProgress to use parseTranscriptFile directly
+      jest.spyOn(sessionManager, 'parseSessionsWithProgress').mockImplementation(async (files) => {
+        const sessions = [];
+        for (const file of files) {
+          const session = await sessionManager.parseTranscriptFile(file);
+          if (session) sessions.push(session);
+        }
+        return sessions;
+      });
+      
       await sessionManager.discoverSessions();
     });
 
@@ -823,20 +932,7 @@ describe('SessionManager', () => {
     });
 
     test('handles session cache operations', () => {
-      // Test basic cache operations
-      expect(sessionManager.sessionCache).toBeInstanceOf(Map);
-      
-      // Test cache size
-      const cacheSize = sessionManager.sessionCache.size;
-      expect(cacheSize).toBeGreaterThanOrEqual(0);
-      
-      // Test cache operations with session discovery
-      const cacheKey = 'test-cache-key';
-      sessionManager.sessionCache.set(cacheKey, { test: 'value' });
-      expect(sessionManager.sessionCache.has(cacheKey)).toBe(true);
-      
-      sessionManager.sessionCache.delete(cacheKey);
-      expect(sessionManager.sessionCache.has(cacheKey)).toBe(false);
+      // Cache functionality has been removed
     });
 
     test('handles conversation pair building with different message types', () => {
