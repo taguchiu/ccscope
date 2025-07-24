@@ -1,12 +1,11 @@
 /**
  * SessionManager
- * Handles session data management, parsing, and caching
+ * Handles session data management and parsing
  */
 
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const CacheManager = require('./CacheManager');
 const FastParser = require('./FastParser');
 const textTruncator = require('./utils/textTruncator');
 const FileDiscoveryService = require('./services/FileDiscoveryService');
@@ -18,7 +17,6 @@ const SessionStatisticsCalculator = require('./services/SessionStatisticsCalcula
 class SessionManager {
   constructor() {
     this.sessions = [];
-    this.sessionCache = new Map();
     this.isLoading = false;
     
     // Performance tracking
@@ -33,9 +31,6 @@ class SessionManager {
       dateRange: null
     };
     
-    // Initialize cache manager
-    this.cacheManager = new CacheManager();
-    
     // Initialize fast parser
     this.fastParser = new FastParser();
     
@@ -48,37 +43,20 @@ class SessionManager {
   }
 
   /**
-   * Discover and analyze all sessions (optimized with caching)
+   * Discover and analyze all sessions
    */
   async discoverSessions(progressCallback) {
     if (this.isLoading) return this.sessions;
     
     this.isLoading = true;
     const startTime = Date.now();
-    const timings = {};
     
     try {
-      // Update progress
-      if (progressCallback) progressCallback('Checking cache...');
-      
-      // Try to load from cache first
-      const cacheLoadStart = Date.now();
-      const cachedData = this.cacheManager.loadCache();
-      timings.cacheLoad = Date.now() - cacheLoadStart;
-      
-      if (cachedData) {
-        console.log(`  Cache loaded: ${cachedData.sessions.length} sessions`);
-      } else {
-        console.log('  No cache found');
-      }
-      
       // Update progress
       if (progressCallback) progressCallback('Scanning for transcripts...');
       
       // Discover transcript files
-      const fileDiscoveryStart = Date.now();
       const transcriptFiles = await this.discoverTranscriptFiles();
-      timings.fileDiscovery = Date.now() - fileDiscoveryStart;
       
       // Early return if no files found
       if (transcriptFiles.length === 0) {
@@ -86,82 +64,19 @@ class SessionManager {
         return this.sessions;
       }
       
-      let sessions = [];
-      let filesToParse = [];
-      const fileHashes = {};
+      // Update progress
+      if (progressCallback) progressCallback(`Parsing ${transcriptFiles.length} transcript files...`);
       
-      if (cachedData) {
-        // Update progress
-        if (progressCallback) progressCallback(`Found ${transcriptFiles.length} files, checking cache...`);
-        
-        // Check which files need updating
-        const cacheCheckStart = Date.now();
-        for (const filePath of transcriptFiles) {
-          const hash = this.cacheManager.getFileHash(filePath);
-          fileHashes[filePath] = { hash };
-          
-          if (this.cacheManager.needsUpdate(filePath, cachedData.metadata)) {
-            filesToParse.push(filePath);
-          }
-        }
-        timings.cacheCheck = Date.now() - cacheCheckStart;
-        
-        // Get cached sessions that are still valid
-        const validFiles = new Set(transcriptFiles);
-        sessions = cachedData.sessions.filter(session => 
-          validFiles.has(session.filePath) && 
-          this.cacheManager.isCacheValid(session.filePath, cachedData.metadata)
-        );
-        if (filesToParse.length > 0) {
-          // Update progress
-          if (progressCallback) progressCallback(`Using cache for ${sessions.length} sessions, parsing ${filesToParse.length} new/updated files...`);
-        }
-      } else {
-        filesToParse = transcriptFiles;
-        for (const filePath of transcriptFiles) {
-          const hash = this.cacheManager.getFileHash(filePath);
-          fileHashes[filePath] = { hash };
-        }
-        // Update progress
-        if (progressCallback) progressCallback(`Parsing ${filesToParse.length} transcript files...`);
-      }
-      
-      // Parse new or updated files with parallel processing
-      if (filesToParse.length > 0) {
-        const parseStart = Date.now();
-        const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0, progressCallback);
-        sessions = [...sessions, ...newSessions];
-        timings.sessionParsing = Date.now() - parseStart;
-      }
+      // Parse all files with parallel processing
+      const sessions = await this.parseSessionsWithProgress(transcriptFiles, false, progressCallback);
       
       // Sort sessions by last activity
       if (progressCallback) progressCallback(`Sorting ${sessions.length} sessions...`);
-      const sortStart = Date.now();
       sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
       this.sessions = sessions;
-      timings.sorting = Date.now() - sortStart;
-      
-      // Save to cache
-      if (sessions.length > 0) {
-        if (progressCallback) progressCallback('Saving cache...');
-        const cacheSaveStart = Date.now();
-        this.cacheManager.saveCache(sessions, fileHashes);
-        timings.cacheSave = Date.now() - cacheSaveStart;
-        if (progressCallback) progressCallback(`Cache saved in ${timings.cacheSave}ms`);
-      }
       
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
-      
-      // Log timing breakdown
-      console.log('\n📊 Loading Performance Breakdown:');
-      console.log(`  Cache Load: ${timings.cacheLoad || 0}ms`);
-      console.log(`  File Discovery: ${timings.fileDiscovery || 0}ms`);
-      console.log(`  Cache Check: ${timings.cacheCheck || 0}ms`);
-      console.log(`  Session Parsing: ${timings.sessionParsing || 0}ms`);
-      console.log(`  Sorting: ${timings.sorting || 0}ms`);
-      console.log(`  Cache Save: ${timings.cacheSave || 0}ms`);
-      console.log(`  Total: ${this.scanDuration}ms\n`);
       
       return this.sessions;
       
@@ -1105,12 +1020,6 @@ class SessionManager {
     return this.sessions.find(session => session.sessionId === sessionId);
   }
 
-  /**
-   * Clear cache
-   */
-  clearCache() {
-    this.sessionCache.clear();
-  }
 
 
   /**
@@ -1595,20 +1504,8 @@ class SessionManager {
       }
       
       const parsePromises = batch.map(file => {
-        // Check memory cache first
-        const cached = this.cacheManager.getFromMemoryCache(file);
-        if (cached) {
-          return Promise.resolve(cached);
-        }
-        
-        // Parse and store in memory cache
+        // Parse file
         return this.parseTranscriptFile(file)
-          .then(session => {
-            if (session) {
-              this.cacheManager.storeInMemoryCache(file, session);
-            }
-            return session;
-          })
           .catch(error => {
             // Silently skip files with errors
             return null;
@@ -1667,9 +1564,6 @@ class SessionManager {
         summary,
         ...metrics
       };
-      
-      // Cache the parsed session for fast future access
-      await this.cacheSession(filePath, session);
       
       return session;
       
@@ -1740,22 +1634,6 @@ class SessionManager {
     return Math.abs(hash).toString(16).padStart(8, '0');
   }
 
-  /**
-   * Cache a parsed session for fast future access
-   * @param {string} filePath - Path to the transcript file
-   * @param {Object} session - Parsed session object
-   */
-  async cacheSession(filePath, session) {
-    try {
-      const stats = await fs.promises.stat(filePath);
-      this.sessionCache.set(filePath, {
-        session,
-        mtime: stats.mtime.getTime()
-      });
-    } catch (error) {
-      // Ignore caching errors
-    }
-  }
 
 }
 
