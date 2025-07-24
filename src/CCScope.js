@@ -54,9 +54,13 @@ class CCScopeApplication {
       const loadingStartTime = Date.now();
       timings.loadingScreen = loadingStartTime - totalStartTime;
       
-      // Initialize session manager
+      // Initialize session manager with progress callback
       const sessionStartTime = Date.now();
-      await this.sessionManager.discoverSessions();
+      await this.sessionManager.discoverSessions((status) => {
+        // Clear line and update status
+        process.stdout.write('\r' + ' '.repeat(80) + '\r');
+        process.stdout.write(`Loading... ${status}`);
+      });
       timings.sessionDiscovery = Date.now() - sessionStartTime;
       
       timings.totalLoadingDelay = Date.now() - loadingStartTime;
@@ -242,8 +246,12 @@ class CCScopeApplication {
       console.clear();
       process.stdout.write('Loading...');
       
-      // Initialize session manager
-      await this.sessionManager.discoverSessions();
+      // Initialize session manager with progress callback
+      await this.sessionManager.discoverSessions((status) => {
+        // Clear line and update status
+        process.stdout.write('\r' + ' '.repeat(80) + '\r');
+        process.stdout.write(`Loading... ${status}`);
+      });
       
       // Clear loading screen
       console.clear();
@@ -268,8 +276,12 @@ class CCScopeApplication {
       console.clear();
       process.stdout.write('Loading...');
       
-      // Initialize session manager
-      await this.sessionManager.discoverSessions();
+      // Initialize session manager with progress callback
+      await this.sessionManager.discoverSessions((status) => {
+        // Clear line and update status
+        process.stdout.write('\r' + ' '.repeat(80) + '\r');
+        process.stdout.write(`Loading... ${status}`);
+      });
       
       // Clear loading screen
       console.clear();
@@ -297,8 +309,12 @@ class CCScopeApplication {
       console.clear();
       process.stdout.write('Loading...');
       
-      // Initialize session manager
-      await this.sessionManager.discoverSessions();
+      // Initialize session manager with progress callback
+      await this.sessionManager.discoverSessions((status) => {
+        // Clear line and update status
+        process.stdout.write('\r' + ' '.repeat(80) + '\r');
+        process.stdout.write(`Loading... ${status}`);
+      });
       
       // Clear loading screen
       console.clear();

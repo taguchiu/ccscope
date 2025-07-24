@@ -50,7 +50,7 @@ class SessionManager {
   /**
    * Discover and analyze all sessions (optimized with caching)
    */
-  async discoverSessions() {
+  async discoverSessions(progressCallback) {
     if (this.isLoading) return this.sessions;
     
     this.isLoading = true;
@@ -58,8 +58,14 @@ class SessionManager {
     const timings = {};
     
     try {
+      // Update progress
+      if (progressCallback) progressCallback('Checking cache...');
+      
       // Try to load from cache first
       const cachedData = this.cacheManager.loadCache();
+      
+      // Update progress
+      if (progressCallback) progressCallback('Scanning for transcripts...');
       
       // Discover transcript files
       const fileDiscoveryStart = Date.now();
@@ -77,7 +83,8 @@ class SessionManager {
       const fileHashes = {};
       
       if (cachedData) {
-        // Using cached data
+        // Update progress
+        if (progressCallback) progressCallback(`Found ${transcriptFiles.length} files, checking cache...`);
         
         // Check which files need updating
         for (const filePath of transcriptFiles) {
@@ -96,7 +103,8 @@ class SessionManager {
           this.cacheManager.isCacheValid(session.filePath, cachedData.metadata)
         );
         if (filesToParse.length > 0) {
-          // Updating changed files
+          // Update progress
+          if (progressCallback) progressCallback(`Using cache for ${sessions.length} sessions, parsing ${filesToParse.length} new/updated files...`);
         }
       } else {
         filesToParse = transcriptFiles;
@@ -104,18 +112,20 @@ class SessionManager {
           const hash = this.cacheManager.getFileHash(filePath);
           fileHashes[filePath] = { hash };
         }
-        // Analyzing files
+        // Update progress
+        if (progressCallback) progressCallback(`Parsing ${filesToParse.length} transcript files...`);
       }
       
       // Parse new or updated files with parallel processing
       if (filesToParse.length > 0) {
         const parseStart = Date.now();
-        const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0);
+        const newSessions = await this.parseSessionsWithProgress(filesToParse, sessions.length > 0, progressCallback);
         sessions = [...sessions, ...newSessions];
         timings.sessionParsing = Date.now() - parseStart;
       }
       
       // Sort sessions by last activity
+      if (progressCallback) progressCallback(`Sorting ${sessions.length} sessions...`);
       const sortStart = Date.now();
       sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
       this.sessions = sessions;
@@ -123,6 +133,7 @@ class SessionManager {
       
       // Save to cache
       if (sessions.length > 0) {
+        if (progressCallback) progressCallback('Saving cache...');
         this.cacheManager.saveCache(sessions, fileHashes);
       }
       
@@ -1539,9 +1550,10 @@ class SessionManager {
    * Parse multiple transcript files with progress updates and parallel processing
    * @param {string[]} transcriptFiles - Array of file paths to parse
    * @param {boolean} isIncremental - Whether this is an incremental update
+   * @param {Function} progressCallback - Progress update callback
    * @returns {Promise<Object[]>} Array of parsed session objects
    */
-  async parseSessionsWithProgress(transcriptFiles, isIncremental = false) {
+  async parseSessionsWithProgress(transcriptFiles, isIncremental = false, progressCallback) {
     if (transcriptFiles.length === 0) return [];
     
     const sessions = [];
@@ -1549,11 +1561,15 @@ class SessionManager {
     
     // Limit concurrent parsing to prevent memory issues
     const BATCH_SIZE = 5;
+    let processedFiles = 0;
     
     for (let i = 0; i < transcriptFiles.length; i += BATCH_SIZE) {
       const batch = transcriptFiles.slice(i, i + BATCH_SIZE);
       
-      // Keep loading display (no additional output needed)
+      // Update progress
+      if (progressCallback) {
+        progressCallback(`Parsing files... (${processedFiles}/${totalFiles})`);
+      }
       
       const parsePromises = batch.map(file => {
         // Check memory cache first
@@ -1583,10 +1599,9 @@ class SessionManager {
       results.forEach(session => {
         if (session) sessions.push(session);
       });
+      
+      processedFiles += batch.length;
     }
-    
-    // Clear the loading line
-    process.stdout.write('\r' + ' '.repeat(10) + '\r');
     
     return sessions;
   }
