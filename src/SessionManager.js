@@ -62,7 +62,15 @@ class SessionManager {
       if (progressCallback) progressCallback('Checking cache...');
       
       // Try to load from cache first
+      const cacheLoadStart = Date.now();
       const cachedData = this.cacheManager.loadCache();
+      timings.cacheLoad = Date.now() - cacheLoadStart;
+      
+      if (cachedData) {
+        console.log(`  Cache loaded: ${cachedData.sessions.length} sessions`);
+      } else {
+        console.log('  No cache found');
+      }
       
       // Update progress
       if (progressCallback) progressCallback('Scanning for transcripts...');
@@ -87,6 +95,7 @@ class SessionManager {
         if (progressCallback) progressCallback(`Found ${transcriptFiles.length} files, checking cache...`);
         
         // Check which files need updating
+        const cacheCheckStart = Date.now();
         for (const filePath of transcriptFiles) {
           const hash = this.cacheManager.getFileHash(filePath);
           fileHashes[filePath] = { hash };
@@ -95,6 +104,7 @@ class SessionManager {
             filesToParse.push(filePath);
           }
         }
+        timings.cacheCheck = Date.now() - cacheCheckStart;
         
         // Get cached sessions that are still valid
         const validFiles = new Set(transcriptFiles);
@@ -134,11 +144,24 @@ class SessionManager {
       // Save to cache
       if (sessions.length > 0) {
         if (progressCallback) progressCallback('Saving cache...');
+        const cacheSaveStart = Date.now();
         this.cacheManager.saveCache(sessions, fileHashes);
+        timings.cacheSave = Date.now() - cacheSaveStart;
+        if (progressCallback) progressCallback(`Cache saved in ${timings.cacheSave}ms`);
       }
       
       this.scanDuration = Date.now() - startTime;
       this.lastScanTime = new Date();
+      
+      // Log timing breakdown
+      console.log('\n📊 Loading Performance Breakdown:');
+      console.log(`  Cache Load: ${timings.cacheLoad || 0}ms`);
+      console.log(`  File Discovery: ${timings.fileDiscovery || 0}ms`);
+      console.log(`  Cache Check: ${timings.cacheCheck || 0}ms`);
+      console.log(`  Session Parsing: ${timings.sessionParsing || 0}ms`);
+      console.log(`  Sorting: ${timings.sorting || 0}ms`);
+      console.log(`  Cache Save: ${timings.cacheSave || 0}ms`);
+      console.log(`  Total: ${this.scanDuration}ms\n`);
       
       return this.sessions;
       
