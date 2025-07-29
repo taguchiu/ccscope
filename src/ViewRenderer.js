@@ -709,6 +709,25 @@ class ViewRenderer {
   }
 
   /**
+   * Render search results footer
+   */
+  renderSearchResultsFooter(totalResults, selectedIndex) {
+    const controls = [];
+    
+    if (totalResults > 0) {
+      controls.push(this.theme.formatMuted('↑/↓ or k/j') + ' to navigate');
+      controls.push(this.theme.formatMuted('Enter') + ' to view');
+    }
+    
+    controls.push(this.theme.formatMuted('Esc') + ' to return');
+    controls.push(this.theme.formatMuted('/') + ' new search');
+    controls.push(this.theme.formatMuted('h') + ' help');
+    controls.push(this.theme.formatMuted('q') + ' exit');
+    
+    console.log(controls.join(' · '));
+  }
+
+  /**
    * Get visible range for virtual scrolling
    */
   getVisibleRange(totalItems, selectedIndex) {
@@ -1912,7 +1931,9 @@ class ViewRenderer {
             lines.push('');
             
             // Create Task tool header
-            let toolHeader = `⏺ ${item.name}`;
+            const displayToolName = (item.name === 'MultiEdit' || item.name === 'Edit') ? 'Update' : 
+                                    (item.name === 'Grep') ? 'Search' : item.name;
+            let toolHeader = `⏺ ${displayToolName}`;
             if (item.input) {
               const keyParams = this.getKeyParams(item.name, item.input);
               if (keyParams) {
@@ -1920,8 +1941,8 @@ class ViewRenderer {
               }
             }
             
-            // Add timestamp if available
-            if (item.timestamp || conversation.timestamp) {
+            // Add timestamp if available (skip for Read and Grep tools)
+            if ((item.timestamp || conversation.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
               const timestampToUse = item.timestamp || conversation.timestamp;
               const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
               toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
@@ -1999,7 +2020,9 @@ class ViewRenderer {
           lines.push('');
           
           // Create tool header with parameters and timestamp
-          let toolHeader = `⏺ ${item.name}`;
+          const displayToolName = (item.name === 'MultiEdit' || item.name === 'Edit') ? 'Update' : 
+                                  (item.name === 'Grep') ? 'Search' : item.name;
+          let toolHeader = `⏺ ${displayToolName}`;
           if (item.input) {
             // Add key parameters to header
             const keyParams = this.getKeyParams(item.name, item.input);
@@ -2008,8 +2031,8 @@ class ViewRenderer {
             }
           }
           
-          // Add timestamp if available
-          if (item.timestamp || conversation.timestamp) {
+          // Add timestamp if available (skip for Read and Grep tools)
+          if ((item.timestamp || conversation.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
             const timestampToUse = item.timestamp || conversation.timestamp;
             const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
@@ -2135,14 +2158,18 @@ class ViewRenderer {
           lines.push('');
           
           // Format timestamp
-          let toolHeader = `⏺ ${tool.toolName}`;
+          // Show "Update" for both Edit and MultiEdit, "Search" for Grep to match Claude Code style
+          const displayToolName = (tool.toolName === 'MultiEdit' || tool.toolName === 'Edit') ? 'Update' : 
+                                  (tool.toolName === 'Grep') ? 'Search' : tool.toolName;
+          let toolHeader = `⏺ ${displayToolName}`;
           if (tool.input) {
             const keyParams = this.getKeyParams(tool.toolName, tool.input);
             if (keyParams) {
               toolHeader += `(${keyParams})`;
             }
           }
-          if (tool.timestamp) {
+          // Skip timestamp for Read and Grep tools to match requested format
+          if (tool.timestamp && tool.toolName !== 'Read' && tool.toolName !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(tool.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
@@ -2195,19 +2222,114 @@ class ViewRenderer {
     
     switch (toolName) {
       case 'Edit':
-      case 'Read':
       case 'Write':
-        return input.file_path ? path.basename(input.file_path) : '';
+        // For Edit, show relative path from project markers
+        if (!input.file_path) return '';
+        const editPath = input.file_path;
+        
+        // Look for common project markers to determine relative path
+        const editMarkers = ['frontend/', 'backend/', 'src/', 'lib/', 'app/', 'packages/', 'views/'];
+        let earliestIndex = editPath.length;
+        let relativePath = '';
+        
+        for (const marker of editMarkers) {
+          const markerIndex = editPath.indexOf(marker);
+          if (markerIndex !== -1 && markerIndex < earliestIndex) {
+            earliestIndex = markerIndex;
+            relativePath = editPath.substring(markerIndex);
+          }
+        }
+        
+        if (relativePath) {
+          return relativePath;
+        }
+        
+        // Fallback to basename
+        return path.basename(editPath);
+      case 'Read':
+        // For Read, show relative path from project markers
+        if (!input.file_path) return '';
+        const readPath = input.file_path;
+        
+        // Look for common project markers to determine relative path
+        const readMarkers = ['frontend/', 'backend/', 'src/', 'lib/', 'app/', 'packages/', 'views/'];
+        let readEarliestIndex = readPath.length;
+        let readRelativePath = '';
+        
+        for (const marker of readMarkers) {
+          const markerIndex = readPath.indexOf(marker);
+          if (markerIndex !== -1 && markerIndex < readEarliestIndex) {
+            readEarliestIndex = markerIndex;
+            readRelativePath = readPath.substring(markerIndex);
+          }
+        }
+        
+        if (readRelativePath) {
+          return readRelativePath;
+        }
+        
+        // Fallback to basename
+        return path.basename(readPath);
       case 'Bash':
         return input.command ? textTruncator.smartTruncate(input.command, 30) : '';
       case 'Task':
         return input.description || '';
       case 'Grep':
-        return input.pattern || '';
+        // For Grep/Search, build full parameter display
+        const grepParams = [];
+        if (input.pattern) grepParams.push(`pattern: "${input.pattern}"`);
+        if (input.path) {
+          // Show relative path for Grep like we do for Read
+          const grepPath = input.path;
+          const baseDirs = ['/Users/', '/home/', '/var/', '/opt/', '/usr/'];
+          let relativePath = grepPath;
+          for (const base of baseDirs) {
+            if (grepPath.startsWith(base)) {
+              const parts = grepPath.substring(base.length).split('/');
+              if (parts.length >= 3) {
+                relativePath = parts.slice(2).join('/');
+                break;
+              }
+            }
+          }
+          // Fallback to last 3 components if needed
+          if (relativePath === grepPath) {
+            const pathParts = grepPath.split('/');
+            if (pathParts.length > 3) {
+              relativePath = pathParts.slice(-3).join('/');
+            }
+          }
+          grepParams.push(`path: "${relativePath}"`);
+        }
+        if (input.glob) grepParams.push(`glob: "${input.glob}"`);
+        if (input.output_mode) grepParams.push(`output_mode: "${input.output_mode}"`);
+        return grepParams.join(', ');
       case 'Glob':
         return input.pattern || '';
       case 'MultiEdit':
-        return input.file_path ? path.basename(input.file_path) : '';
+        // For MultiEdit, show relative path from project markers
+        if (!input.file_path) return '';
+        const multiEditPath = input.file_path;
+        
+        // Look for common project markers to determine relative path
+        const multiEditMarkers = ['frontend/', 'backend/', 'src/', 'lib/', 'app/', 'packages/', 'views/'];
+        let multiEditEarliestIndex = multiEditPath.length;
+        let multiEditRelativePath = '';
+        
+        for (const marker of multiEditMarkers) {
+          const markerIndex = multiEditPath.indexOf(marker);
+          if (markerIndex !== -1 && markerIndex < multiEditEarliestIndex) {
+            multiEditEarliestIndex = markerIndex;
+            multiEditRelativePath = multiEditPath.substring(markerIndex);
+          }
+        }
+        
+        if (multiEditRelativePath) {
+          return multiEditRelativePath;
+        }
+        
+        // Fallback to basename
+        return path.basename(multiEditPath);
       case 'TodoWrite':
         return input.todos ? `${input.todos.length} todos` : '';
       default:
@@ -2280,16 +2402,10 @@ class ViewRenderer {
         
         resultText = resultText.toString();
         
-        // Special formatting for Read tool - show with line numbers
-        if (tool.toolName === 'Read' && resultText.includes('\n')) {
-          const fileLines = resultText.split('\n').slice(0, 15);
-          fileLines.forEach((line, idx) => {
-            const lineNum = this.theme.formatDim(`${String(idx + 1).padStart(4)}│`);
-            lines.push(`    ${lineNum} ${line.substring(0, 100)}`);
-          });
-          if (resultText.split('\n').length > 15) {
-            lines.push(this.theme.formatMuted(`    ... ${resultText.split('\n').length - 15} more lines`));
-          }
+        // Special formatting for Read tool
+        if (tool.toolName === 'Read') {
+          // Don't show the result content here - it's handled in formatToolInput with expansion
+          // Just skip to avoid duplicate display
         } else {
           // Regular result
           const maxResultLength = 500;
@@ -2428,77 +2544,240 @@ class ViewRenderer {
         lines.push(`  ${this.theme.formatMuted('purpose:')} ${tool.input.description}`);
       }
     } else if ((tool.toolName === 'Read' || tool.toolName === 'Write' || tool.toolName === 'Edit' || tool.toolName === 'MultiEdit') && tool.input.file_path) {
-      lines.push(`  ${this.theme.formatMuted('file:')} ${this.theme.formatInfo(tool.input.file_path)}`);
-      
-      if (tool.toolName === 'Edit' && tool.input.old_string) {
-        // Show git-style diff
-        lines.push('');
-        const diffLines = this.createUnifiedDiff(tool.input.old_string, tool.input.new_string);
+      // Show Read summary in Claude Code format
+      if (tool.toolName === 'Read') {
+        // Try to get line count from tool result if available
+        let lineCount = null;
+        if (tool.result) {
+          const resultText = typeof tool.result === 'string' ? tool.result : tool.result.toString();
+          lineCount = resultText.split('\n').length;
+        }
         
-        if (diffLines.length === 0) {
-          lines.push(`    ${this.theme.formatMuted('(No visible changes)')}`);
+        // Show line count if available, otherwise show limit
+        if (lineCount !== null) {
+          lines.push(`  ${this.theme.formatSuccess(`Read ${lineCount} lines`)} ${this.theme.formatDim('(ctrl+r to expand)')}`);
         } else {
-          // Show unified diff with proper formatting
-          let shownLines = 0;
-          const maxLines = 15;
-          
-          for (const diffLine of diffLines) {
-            if (shownLines >= maxLines) {
-              lines.push(`    ${this.theme.formatMuted(`... ${diffLines.length - shownLines} more lines`)}`);
-              break;
-            }
-            
-            let lineNumStr = '';
-            if (diffLine.lineNum !== '...') {
-              lineNumStr = String(diffLine.lineNum).padStart(4) + '│';
-            } else {
-              lineNumStr = '    │';
-            }
-            
-            if (diffLine.type === 'removed') {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatError('- ' + diffLine.content)}`);
-            } else if (diffLine.type === 'added') {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
-            } else {
-              // Context line
-              lines.push(`       ${this.theme.formatDim(lineNumStr)}   ${diffLine.content}`);
-            }
-            shownLines++;
+          const limit = tool.input.limit || 'all';
+          const limitText = limit === 'all' ? '' : ` (up to ${limit})`;
+          lines.push(`  ${this.theme.formatSuccess(`Read file${limitText}`)} ${this.theme.formatDim('(ctrl+r to expand)')}`);
+        }
+        
+        // Handle expansion for Read tool
+        const toolId = tool.toolId || `read-${Date.now()}`;
+        const isExpanded = this.state && this.state.isToolExpanded ? this.state.isToolExpanded(toolId) : false;
+        
+        // Register tool ID if state manager is available
+        if (this.state && this.state.registerToolId) {
+          this.state.registerToolId(toolId);
+        }
+        
+        // Show content if expanded and result is available
+        if (isExpanded && tool.result) {
+          const resultText = typeof tool.result === 'string' ? tool.result : tool.result.toString();
+          const contentLines = resultText.split('\n');
+          contentLines.forEach((line, idx) => {
+            const lineNum = this.theme.formatDim(`${String(idx + 1).padStart(4)}│`);
+            lines.push(`    ${lineNum} ${line}`);
+          });
+        }
+      }
+      
+      if ((tool.toolName === 'Edit' || tool.toolName === 'MultiEdit') && (tool.input.old_string || tool.input.edits)) {
+        // Enhanced diff display matching Claude Code format
+        const fileName = tool.input.file_path.split('/').pop();
+        
+        // Convert single Edit to MultiEdit format for unified handling
+        const edits = tool.toolName === 'Edit' 
+          ? [{ old_string: tool.input.old_string, new_string: tool.input.new_string }]
+          : tool.input.edits;
+        
+        // Get relative path for display
+        const filePath = tool.input.file_path;
+        
+        // Try to determine the project base path from the file path
+        // Look for common project indicators (prioritize frontend/backend over src)
+        const projectMarkers = ['frontend/', 'backend/', 'src/', 'lib/', 'app/', 'packages/', 'views/'];
+        let earliestMarkerIndex = filePath.length;
+        let relativePath = fileName;
+        
+        for (const marker of projectMarkers) {
+          const markerIndex = filePath.indexOf(marker);
+          if (markerIndex !== -1 && markerIndex < earliestMarkerIndex) {
+            earliestMarkerIndex = markerIndex;
+            relativePath = filePath.substring(markerIndex);
           }
         }
-      } else if (tool.toolName === 'MultiEdit' && tool.input.edits) {
-        // Handle MultiEdit specially
-        lines.push(`  ${this.theme.formatMuted('edits:')} ${tool.input.edits.length} changes`);
         
-        // Show each edit as a mini-diff
-        tool.input.edits.forEach((edit, editIndex) => {
-          if (editIndex > 0) {
-            lines.push('');
+        // If no marker found, just use the filename
+        if (relativePath === fileName) {
+          relativePath = fileName;
+        }
+        
+        // Calculate actual changes more accurately
+        let totalAdded = 0;
+        let totalRemoved = 0;
+        
+        // Process edits to count real changes
+        const processedEdits = [];
+        edits.forEach((edit, editIndex) => {
+          let oldLinesRaw = edit.old_string ? edit.old_string.split('\n') : [];
+          const newLines = edit.new_string ? edit.new_string.split('\n') : [];
+          
+          // Extract line numbers if available from the content
+          let lineNumber = null;
+          let oldLines = oldLinesRaw;
+          
+          // Try to extract line numbers from JSONL data if available
+          if (tool.lineNumbers && tool.lineNumbers[editIndex]) {
+            lineNumber = tool.lineNumbers[editIndex];
+          } else {
+            // Try to parse from old_string if it contains line numbers (from Read output)
+            // Match various line number formats: "  123→", "  123│", "  123\t", etc.
+            const lineMatches = [...edit.old_string.matchAll(/^\s*(\d+)[→\t│]/gm)];
+            if (lineMatches.length > 0) {
+              lineNumber = parseInt(lineMatches[0][1]);
+              console.log(`Debug: Extracted line number ${lineNumber} from old_string`);
+              // Strip line numbers from old content if they exist
+              oldLines = oldLinesRaw.map(line => {
+                // Remove line number prefix if present
+                return line.replace(/^\s*\d+[→\t│]\s*/, '');
+              });
+            } else {
+              // Try to find line number by searching file content
+              lineNumber = this.findLineNumberInFile(tool.input.file_path, edit.old_string);
+              if (lineNumber) {
+                console.log(`Debug: Found line number ${lineNumber} by searching file content`);
+              } else {
+                console.log(`Debug: No line numbers found in old_string for edit ${editIndex}`);
+              }
+            }
           }
           
-          const diffLines = this.createUnifiedDiff(edit.old_string, edit.new_string);
-          const maxLines = 10;
+          // Count actual differences
+          const changedLines = this.countChangedLines(oldLines, newLines);
+          totalAdded += changedLines.added;
+          totalRemoved += changedLines.removed;
           
-          diffLines.slice(0, maxLines).forEach(diffLine => {
-            let lineNumStr = '';
-            if (diffLine.lineNum !== '...') {
-              lineNumStr = String(diffLine.lineNum).padStart(4) + '│';
-            } else {
-              lineNumStr = '    │';
-            }
-            
-            if (diffLine.type === 'removed') {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatError('- ' + diffLine.content)}`);
-            } else if (diffLine.type === 'added') {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)} ${this.theme.formatSuccess('+ ' + diffLine.content)}`);
-            } else {
-              lines.push(`       ${this.theme.formatDim(lineNumStr)}   ${diffLine.content}`);
-            }
+          processedEdits.push({
+            oldLines,
+            newLines,
+            lineNumber,
+            ...changedLines
           });
-          
-          if (diffLines.length > maxLines) {
-            lines.push(`       ${this.theme.formatMuted(`... ${diffLines.length - maxLines} more lines`)}`);
+        });
+        
+        // Create summary message in Claude Code format
+        let summaryText;
+        if (totalAdded > 0 && totalRemoved > 0) {
+          const addText = `${totalAdded} addition${totalAdded > 1 ? 's' : ''}`;
+          const remText = `${totalRemoved} removal${totalRemoved > 1 ? 's' : ''}`;
+          summaryText = `${addText} and ${remText}`;
+        } else if (totalAdded > 0) {
+          summaryText = `${totalAdded} addition${totalAdded > 1 ? 's' : ''}`;
+        } else if (totalRemoved > 0) {
+          summaryText = `${totalRemoved} removal${totalRemoved > 1 ? 's' : ''}`;
+        } else {
+          summaryText = 'no changes';
+        }
+        lines.push(`  ${this.theme.formatSuccess(`Updated ${relativePath} with ${summaryText}`)}`);
+        
+        // Display edits with context and proper formatting
+        let lastLineNumber = 0;
+        processedEdits.forEach((edit, editIndex) => {
+          // Determine starting line number
+          let currentLine = edit.lineNumber;
+          if (!currentLine) {
+            console.log(`Debug: No line number found for edit ${editIndex}, using fallback`);
+            // If no line number extracted from content, try to infer from previous edits
+            if (editIndex === 0) {
+              // First edit with no line number - warn user about potential inaccuracy
+              console.log('Warning: Could not determine exact line numbers for Edit/MultiEdit. Using estimated positions.');
+              // Use more reasonable estimate based on file size
+              try {
+                const fs = require('fs');
+                const stats = fs.statSync(tool.input.file_path);
+                const fileSizeKB = stats.size / 1024;
+                // Rough estimate: 50 lines per KB for typical code files
+                currentLine = Math.max(1, Math.floor(fileSizeKB * 25));
+              } catch (error) {
+                currentLine = 100; // Fallback if file stats unavailable
+              }
+            } else {
+              // Subsequent edits - estimate based on previous edit
+              const prevEdit = processedEdits[editIndex - 1];
+              const estimatedGap = Math.max(prevEdit.oldLines.length, prevEdit.newLines.length) + 20;
+              currentLine = lastLineNumber + estimatedGap;
+              console.log(`Debug: Estimated line ${currentLine} for edit ${editIndex} (gap: ${estimatedGap})`);
+            }
+          } else {
+            console.log(`Debug: Using found line number ${currentLine} for edit ${editIndex}`);
           }
+          
+          // Add context separator between edit groups
+          if (editIndex > 0) {
+            lines.push(`    ${this.theme.formatDim(' ...')}`);
+          }
+          
+          
+          // Display the diff with proper line-by-line comparison
+          const oldLines = edit.oldLines;
+          const newLines = edit.newLines;
+          
+          // Simple LCS-based diff to properly identify changed vs unchanged lines
+          const diff = this.computeSimpleDiff(oldLines, newLines);
+          
+          // Track actual file line numbers for old and new content
+          let oldLineNum = currentLine;
+          let newLineNum = currentLine;
+          
+          console.log(`Debug: Starting diff display with currentLine=${currentLine}`);
+          
+          // Show the diff with proper line numbers
+          for (let idx = 0; idx < diff.length; idx++) {
+            const entry = diff[idx];
+            
+            if (entry.type === 'unchanged') {
+              // Show unchanged line - both old and new line numbers are the same
+              lines.push(`    ${this.theme.formatDim(String(oldLineNum).padStart(4))}    ${entry.line}`);
+              oldLineNum++;
+              newLineNum++;
+            } else if (entry.type === 'removed') {
+              // Count consecutive removals
+              let removeCount = 1;
+              let removeEnd = idx + 1;
+              while (removeEnd < diff.length && diff[removeEnd].type === 'removed') {
+                removeCount++;
+                removeEnd++;
+              }
+              
+              // Show all removed lines with old file line numbers
+              for (let r = 0; r < removeCount; r++) {
+                lines.push(`    ${this.theme.formatDim(String(oldLineNum + r).padStart(4))} ${this.theme.formatError('-  ' + diff[idx + r].line)}`);
+              }
+              
+              // Check if followed by additions (replacements)
+              let addCount = 0;
+              let addStart = removeEnd;
+              while (addStart < diff.length && diff[addStart].type === 'added') {
+                // For additions after removals, use the new file line number
+                lines.push(`    ${this.theme.formatDim(String(newLineNum + addCount).padStart(4))} ${this.theme.formatSuccess('+  ' + diff[addStart].line)}`);
+                addCount++;
+                addStart++;
+              }
+              
+              // Update line numbers
+              oldLineNum += removeCount;
+              newLineNum += addCount;
+              idx = addStart - 1;
+            } else if (entry.type === 'added') {
+              // Pure addition (not a replacement) - use new file line number
+              lines.push(`    ${this.theme.formatDim(String(newLineNum).padStart(4))} ${this.theme.formatSuccess('+  ' + entry.line)}`);
+              newLineNum++;
+            }
+          }
+          
+          // Update last line number based on the actual end position
+          lastLineNumber = Math.max(oldLineNum, newLineNum);
         });
       }
       
@@ -2507,21 +2786,64 @@ class ViewRenderer {
       }
       
       if (tool.toolName === 'Write' && tool.input.content) {
-        lines.push(`  ${this.theme.formatMuted('writing:')} ${tool.input.content.split('\n').length} lines`);
-        // Show all content (no truncation)
+        // Show Write summary in Claude Code format (2-line format with content)
+        const fileName = tool.input.file_path.split('/').pop();
+        const lineCount = tool.input.content.split('\n').length;
+        lines.push(`  ${this.theme.formatSuccess(`Wrote ${lineCount} lines to ${fileName}`)}`);
+        
+        // Show file content with collapsible display
         const contentLines = tool.input.content.split('\n');
-        contentLines.forEach((line, idx) => {
-          const lineNum = this.theme.formatDim(`${String(idx + 1).padStart(4)}│`);
-          lines.push(`       ${lineNum} ${line}`);
+        const maxDisplayLines = 10;
+        
+        if (contentLines.length <= maxDisplayLines) {
+          // Show all content if short enough
+          contentLines.forEach(line => {
+            lines.push(`     ${line}`);
+          });
+        } else {
+          // Show first few lines and collapse indicator
+          for (let i = 0; i < maxDisplayLines; i++) {
+            lines.push(`     ${contentLines[i]}`);
+          }
+          const remainingLines = contentLines.length - maxDisplayLines;
+          lines.push(`     ${this.theme.formatMuted(`… +${remainingLines} lines (ctrl+r to expand)`)}`);
+        }
+      }
+    } else if (tool.toolName === 'Grep') {
+      // Show Grep/Search summary in Claude Code format
+      let resultCount = null;
+      if (tool.result) {
+        const resultText = typeof tool.result === 'string' ? tool.result : tool.result.toString();
+        // Count lines in result
+        resultCount = resultText.split('\n').filter(line => line.trim()).length;
+      }
+      
+      // Show result count if available
+      if (resultCount !== null) {
+        const lineText = resultCount === 1 ? 'line' : 'lines';
+        lines.push(`  ${this.theme.formatSuccess(`Found ${resultCount} ${lineText}`)} ${this.theme.formatDim('(ctrl+r to expand)')}`);
+      } else {
+        lines.push(`  ${this.theme.formatSuccess('Searching...')} ${this.theme.formatDim('(ctrl+r to expand)')}`);
+      }
+      
+      // Handle expansion for Grep tool
+      const toolId = tool.toolId || `grep-${Date.now()}`;
+      const isExpanded = this.state && this.state.isToolExpanded ? this.state.isToolExpanded(toolId) : false;
+      
+      // Register tool ID if state manager is available
+      if (this.state && this.state.registerToolId) {
+        this.state.registerToolId(toolId);
+      }
+      
+      // Show content if expanded and result is available
+      if (isExpanded && tool.result) {
+        const resultText = typeof tool.result === 'string' ? tool.result : tool.result.toString();
+        const contentLines = resultText.split('\n');
+        contentLines.forEach(line => {
+          if (line.trim()) {
+            lines.push(`    ${line}`);
+          }
         });
-      }
-    } else if (tool.toolName === 'Grep' && tool.input.pattern) {
-      lines.push(`  ${this.theme.formatMuted('pattern:')} ${this.theme.formatInfo(tool.input.pattern)}`);
-      if (tool.input.path) {
-        lines.push(`  ${this.theme.formatMuted('path:')} ${tool.input.path}`);
-      }
-      if (tool.input.glob) {
-        lines.push(`  ${this.theme.formatMuted('glob:')} ${tool.input.glob}`);
       }
     } else if (tool.toolName === 'Task' && tool.input.prompt) {
       lines.push(`  ${this.theme.formatMuted('task:')} ${tool.input.description || 'Agent task'}`);
@@ -2564,6 +2886,217 @@ class ViewRenderer {
     }
     
     return lines;
+  }
+
+  /**
+   * Compute a simple diff between two arrays of lines
+   */
+  computeSimpleDiff(oldLines, newLines) {
+    const diff = [];
+    let i = 0, j = 0;
+    
+    // Use a simple algorithm to match lines
+    while (i < oldLines.length || j < newLines.length) {
+      // If we're at the end of one array, the rest are additions/deletions
+      if (i >= oldLines.length) {
+        // Rest are additions
+        while (j < newLines.length) {
+          diff.push({ type: 'added', line: newLines[j++] });
+        }
+        break;
+      }
+      if (j >= newLines.length) {
+        // Rest are deletions
+        while (i < oldLines.length) {
+          diff.push({ type: 'removed', line: oldLines[i++] });
+        }
+        break;
+      }
+      
+      // Check if current lines match
+      if (oldLines[i] === newLines[j]) {
+        // Unchanged line
+        diff.push({ type: 'unchanged', line: oldLines[i] });
+        i++;
+        j++;
+      } else {
+        // Look ahead to find matches
+        let foundMatch = false;
+        
+        // Check if the current new line matches any upcoming old line (within a small window)
+        for (let k = 1; k < 5 && i + k < oldLines.length; k++) {
+          if (oldLines[i + k] === newLines[j]) {
+            // Found match - lines at i to i+k-1 are removed
+            for (let r = 0; r < k; r++) {
+              diff.push({ type: 'removed', line: oldLines[i + r] });
+            }
+            i += k;
+            foundMatch = true;
+            break;
+          }
+        }
+        
+        if (!foundMatch) {
+          // Check if the current old line matches any upcoming new line
+          for (let k = 1; k < 5 && j + k < newLines.length; k++) {
+            if (oldLines[i] === newLines[j + k]) {
+              // Found match - lines at j to j+k-1 are added
+              for (let a = 0; a < k; a++) {
+                diff.push({ type: 'added', line: newLines[j + a] });
+              }
+              j += k;
+              foundMatch = true;
+              break;
+            }
+          }
+        }
+        
+        if (!foundMatch) {
+          // No match found - collect consecutive changes
+          const changeStart = { old: i, new: j };
+          
+          // Collect all consecutive changes
+          while (i < oldLines.length && j < newLines.length && oldLines[i] !== newLines[j]) {
+            i++;
+            j++;
+          }
+          
+          // Add all removals first
+          for (let r = changeStart.old; r < i; r++) {
+            diff.push({ type: 'removed', line: oldLines[r] });
+          }
+          
+          // Then add all additions
+          for (let a = changeStart.new; a < j; a++) {
+            diff.push({ type: 'added', line: newLines[a] });
+          }
+        }
+      }
+    }
+    
+    return diff;
+  }
+
+  /**
+   * Count actual changed lines between old and new content
+   */
+  countChangedLines(oldLines, newLines) {
+    // Use the same diff algorithm to count changes accurately
+    const diff = this.computeSimpleDiff(oldLines, newLines);
+    
+    let added = 0;
+    let removed = 0;
+    
+    // Count the actual changes from the diff
+    diff.forEach(entry => {
+      if (entry.type === 'added') {
+        added++;
+      } else if (entry.type === 'removed') {
+        removed++;
+      }
+    });
+    
+    return { added, removed };
+  }
+
+  /**
+   * Find line number by searching for old_string content in the file
+   */
+  findLineNumberInFile(filePath, oldString) {
+    try {
+      const fs = require('fs');
+      
+      // Read the file content
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      const fileLines = fileContent.split('\n');
+      const oldLines = oldString.split('\n');
+      
+      // Skip empty lines at the beginning and end for better matching
+      const trimmedOldLines = oldLines.filter(line => line.trim() !== '');
+      if (trimmedOldLines.length === 0) {
+        return null;
+      }
+      
+      // Look for the first non-empty line of old_string in the file
+      const firstOldLine = trimmedOldLines[0].trim();
+      
+      for (let i = 0; i < fileLines.length; i++) {
+        if (fileLines[i].trim() === firstOldLine) {
+          // Found potential match, verify with more lines if available
+          let isMatch = true;
+          
+          // Check up to 3 lines for better accuracy
+          const linesToCheck = Math.min(3, trimmedOldLines.length);
+          for (let j = 1; j < linesToCheck; j++) {
+            const fileLineIndex = i + j;
+            if (fileLineIndex < fileLines.length) {
+              const fileLine = fileLines[fileLineIndex].trim();
+              const oldLine = trimmedOldLines[j].trim();
+              if (fileLine !== oldLine) {
+                isMatch = false;
+                break;
+              }
+            }
+          }
+          
+          if (isMatch) {
+            // Return 1-based line number
+            return i + 1;
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.log(`Debug: Error reading file ${filePath}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Estimate line number based on code content and patterns (deterministic)
+   */
+  estimateLineNumber(codeContent) {
+    if (!codeContent) return 45;
+    
+    const content = codeContent.toLowerCase().trim();
+    
+    // Create a simple hash from content for consistency
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    hash = Math.abs(hash);
+    
+    // Package declarations and imports - very early in file
+    if (content.includes('package ') || content.includes('import ')) {
+      return (hash % 10) + 1; // Lines 1-10
+    }
+    
+    // Class/interface declarations - early in file
+    if (content.includes('class ') || content.includes('interface ') || content.includes('object ')) {
+      return (hash % 15) + 15; // Lines 15-30
+    }
+    
+    // Function/method definitions - middle of file
+    if (content.includes('fun ') || content.includes('function ') || content.includes('def ')) {
+      return (hash % 40) + 30; // Lines 30-70
+    }
+    
+    // Method body content - deeper in file
+    if (content.includes('return ') || content.includes('val ') || content.includes('var ') || content.includes('const ') || content.includes('ref(')) {
+      return (hash % 60) + 40; // Lines 40-100
+    }
+    
+    // Closing braces and end-of-method content - later in file
+    if (content.includes('}') || content.includes('});') || content.includes('}}')) {
+      return (hash % 50) + 70; // Lines 70-120
+    }
+    
+    // Default to middle of a typical file
+    return (hash % 40) + 45; // Lines 45-85
   }
 
   /**
@@ -3400,7 +3933,16 @@ class ViewRenderer {
     console.log(this.theme.formatSeparator(this.terminalWidth));
     
     if (searchResults.length === 0) {
-      console.log(this.theme.formatMuted('No matches found.'));
+      console.log('');
+      console.log(this.theme.formatMuted('🔍 No matches found for your search query.'));
+      console.log('');
+      console.log(this.theme.formatDim('Try:'));
+      console.log(this.theme.formatDim('• Using different keywords'));
+      console.log(this.theme.formatDim('• Checking spelling'));
+      console.log(this.theme.formatDim('• Using broader search terms'));
+      console.log('');
+      console.log(this.theme.formatSeparator(this.terminalWidth));
+      this.renderSearchResultsFooter(0, -1);
       return;
     }
     
@@ -3480,15 +4022,7 @@ class ViewRenderer {
     // Footer
     console.log('');
     console.log(this.theme.formatSeparator(this.terminalWidth));
-    
-    // Search results controls
-    const controls = [
-      this.theme.formatMuted('↑/↓ or k/j') + ' to select result',
-      this.theme.formatMuted('Enter') + ' to view detail',
-      this.theme.formatMuted('Esc') + ' back',
-      this.theme.formatMuted('q') + ' exit'
-    ];
-    console.log(controls.join(' · '));
+    this.renderSearchResultsFooter(searchResults.length, selectedIndex);
   }
 
   /**
@@ -3786,7 +4320,9 @@ class ViewRenderer {
           lines.push('');
           
           // Format tool header
-          let toolHeader = `⏺ ${item.name}`;
+          const displayToolName = (item.name === 'MultiEdit' || item.name === 'Edit') ? 'Update' : 
+                                  (item.name === 'Grep') ? 'Search' : item.name;
+          let toolHeader = `⏺ ${displayToolName}`;
           if (item.input) {
             const keyParams = this.getKeyParams(item.name, item.input);
             if (keyParams) {
@@ -3794,9 +4330,11 @@ class ViewRenderer {
             }
           }
           
-          // Add timestamp
-          const toolTime = this.formatDateTimeWithSeconds(new Date());
-          toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          // Add timestamp (skip for Read and Grep tools)
+          if (item.name !== 'Read' && item.name !== 'Grep') {
+            const toolTime = this.formatDateTimeWithSeconds(new Date());
+            toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
+          }
           
           lines.push(this.theme.formatSuccess(toolHeader));
           
@@ -3907,7 +4445,9 @@ class ViewRenderer {
         } else if (item.type === 'tool_use') {
           // Show tool usage with enhanced formatting
           lines.push('');
-          let toolHeader = `⏺ ${item.name}`;
+          const displayToolName = (item.name === 'MultiEdit' || item.name === 'Edit') ? 'Update' : 
+                                  (item.name === 'Grep') ? 'Search' : item.name;
+          let toolHeader = `⏺ ${displayToolName}`;
           if (item.input) {
             const keyParams = this.getKeyParams(item.name, item.input);
             if (keyParams) {
@@ -3916,8 +4456,8 @@ class ViewRenderer {
           }
           
           // Add timestamp if available (tool execution time)
-          // Use actual timestamp from item or response
-          if (item.timestamp || response.timestamp) {
+          // Use actual timestamp from item or response (skip for Read and Grep tools)
+          if ((item.timestamp || response.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(item.timestamp || response.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }

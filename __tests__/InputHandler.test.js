@@ -515,12 +515,15 @@ describe('InputHandler', () => {
 
     test('handles no search results', () => {
       mockSessionManager.searchConversations = jest.fn(() => []);
-      mockStateManager.setSearchQuery = jest.fn();
+      mockStateManager.setSearchResults = jest.fn();
+      mockStateManager.setView = jest.fn();
       
       inputHandler.inputBuffer = 'no results';
       inputHandler.executeSearch();
       
-      expect(mockStateManager.setSearchQuery).toHaveBeenCalledWith('no results');
+      // Should now navigate to search_results view even with 0 results
+      expect(mockStateManager.setSearchResults).toHaveBeenCalledWith('no results', []);
+      expect(mockStateManager.setView).toHaveBeenCalledWith('search_results');
     });
   });
 

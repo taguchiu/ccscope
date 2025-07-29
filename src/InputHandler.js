@@ -609,6 +609,9 @@ class InputHandler {
     } else if (this.isKey(keyName, this.keyBindings.actions.help)) {
       this.state.setView('help');
       this.render();
+    } else if (this.isKey(keyName, this.keyBindings.actions.search)) {
+      // Start new search from search results view
+      this.enterSearchMode();
     }
   }
 
@@ -690,14 +693,9 @@ class InputHandler {
       this.inputHistory.push(query);
       // Perform full conversation search
       const results = this.sessionManager.searchConversations(query);
-      if (results.length > 0) {
-        // Store search results and navigate to search results view
-        this.state.setSearchResults(query, results);
-        this.state.setView('search_results');
-      } else {
-        // No results found, just filter the session list
-        this.state.setSearchQuery(query);
-      }
+      // Always store search results and navigate to search results view (even if 0 results)
+      this.state.setSearchResults(query, results);
+      this.state.setView('search_results');
     }
     this.exitSearchMode();
   }
