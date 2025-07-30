@@ -1941,8 +1941,8 @@ class ViewRenderer {
               }
             }
             
-            // Add timestamp if available (skip for Read and Grep tools)
-            if ((item.timestamp || conversation.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
+            // Add timestamp if available (skip for Grep tools)
+            if ((item.timestamp || conversation.timestamp) && item.name !== 'Grep') {
               const timestampToUse = item.timestamp || conversation.timestamp;
               const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
               toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
@@ -2031,8 +2031,8 @@ class ViewRenderer {
             }
           }
           
-          // Add timestamp if available (skip for Read and Grep tools)
-          if ((item.timestamp || conversation.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
+          // Add timestamp if available (skip for Grep tools)
+          if ((item.timestamp || conversation.timestamp) && item.name !== 'Grep') {
             const timestampToUse = item.timestamp || conversation.timestamp;
             const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
@@ -2168,8 +2168,8 @@ class ViewRenderer {
               toolHeader += `(${keyParams})`;
             }
           }
-          // Skip timestamp for Read and Grep tools to match requested format
-          if (tool.timestamp && tool.toolName !== 'Read' && tool.toolName !== 'Grep') {
+          // Skip timestamp for Grep tools to match requested format
+          if (tool.timestamp && tool.toolName !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(tool.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
@@ -2444,10 +2444,6 @@ class ViewRenderer {
         outputLines.push(line);
         i++;
         
-        // Debug: Log what we're processing
-        if (config.debug && config.debug.enabled) {
-          console.log(`Found tool block at line ${i}, next line: "${responseLines[i] || 'EOF'}"`);
-        }
         
         // Look for the indented block with ⎿ (allow spaces before it)
         if (i < responseLines.length && responseLines[i].match(/^\s*⎿/)) {
@@ -2631,24 +2627,32 @@ class ViewRenderer {
           if (tool.lineNumbers && tool.lineNumbers[editIndex]) {
             lineNumber = tool.lineNumbers[editIndex];
           } else {
-            // Try to parse from old_string if it contains line numbers (from Read output)
-            // Match various line number formats: "  123→", "  123│", "  123\t", etc.
-            const lineMatches = [...edit.old_string.matchAll(/^\s*(\d+)[→\t│]/gm)];
-            if (lineMatches.length > 0) {
-              lineNumber = parseInt(lineMatches[0][1]);
-              console.log(`Debug: Extracted line number ${lineNumber} from old_string`);
+            // Check if old_string contains line numbers (from Read output)
+            const hasLineNumbers = /^\s*\d+[→\t│]/m.test(edit.old_string);
+            if (hasLineNumbers) {
+              // Extract line number from the first line
+              const firstLineMatch = edit.old_string.match(/^\s*(\d+)[→\t│]/m);
+              if (firstLineMatch) {
+                lineNumber = parseInt(firstLineMatch[1]);
+              }
               // Strip line numbers from old content if they exist
               oldLines = oldLinesRaw.map(line => {
                 // Remove line number prefix if present
                 return line.replace(/^\s*\d+[→\t│]\s*/, '');
               });
-            } else {
-              // Try to find line number by searching file content
-              lineNumber = this.findLineNumberInFile(tool.input.file_path, edit.old_string);
-              if (lineNumber) {
-                console.log(`Debug: Found line number ${lineNumber} by searching file content`);
-              } else {
-                console.log(`Debug: No line numbers found in old_string for edit ${editIndex}`);
+            }
+            
+            // If we didn't get line number from Read output, try finding in file
+            if (!lineNumber) {
+              // Use cleaned content if line numbers were present
+              const searchContent = hasLineNumbers ? oldLines.join('\n') : edit.old_string;
+              
+              // For transcripts, the file might already be edited, so we can't find old_string
+              lineNumber = this.findLineNumberInFile(tool.input.file_path, searchContent);
+              
+              if (!lineNumber && edit.new_string) {
+                // If old_string not found (file already edited), try with new_string
+                lineNumber = this.findLineNumberInFile(tool.input.file_path, edit.new_string);
               }
             }
           }
@@ -2687,11 +2691,9 @@ class ViewRenderer {
           // Determine starting line number
           let currentLine = edit.lineNumber;
           if (!currentLine) {
-            console.log(`Debug: No line number found for edit ${editIndex}, using fallback`);
             // If no line number extracted from content, try to infer from previous edits
             if (editIndex === 0) {
-              // First edit with no line number - warn user about potential inaccuracy
-              console.log('Warning: Could not determine exact line numbers for Edit/MultiEdit. Using estimated positions.');
+              // First edit with no line number - use reasonable estimate
               // Use more reasonable estimate based on file size
               try {
                 const fs = require('fs');
@@ -2707,10 +2709,7 @@ class ViewRenderer {
               const prevEdit = processedEdits[editIndex - 1];
               const estimatedGap = Math.max(prevEdit.oldLines.length, prevEdit.newLines.length) + 20;
               currentLine = lastLineNumber + estimatedGap;
-              console.log(`Debug: Estimated line ${currentLine} for edit ${editIndex} (gap: ${estimatedGap})`);
             }
-          } else {
-            console.log(`Debug: Using found line number ${currentLine} for edit ${editIndex}`);
           }
           
           // Add context separator between edit groups
@@ -2719,7 +2718,7 @@ class ViewRenderer {
           }
           
           
-          // Display the diff with proper line-by-line comparison
+          // Display the diff with context and proper line-by-line comparison
           const oldLines = edit.oldLines;
           const newLines = edit.newLines;
           
@@ -2730,54 +2729,155 @@ class ViewRenderer {
           let oldLineNum = currentLine;
           let newLineNum = currentLine;
           
-          console.log(`Debug: Starting diff display with currentLine=${currentLine}`);
+          // Add context lines (3 lines before and after changes)
+          const contextLines = 3;
+          const diffWithContext = [];
           
-          // Show the diff with proper line numbers
-          for (let idx = 0; idx < diff.length; idx++) {
-            const entry = diff[idx];
-            
-            if (entry.type === 'unchanged') {
-              // Show unchanged line - both old and new line numbers are the same
-              lines.push(`    ${this.theme.formatDim(String(oldLineNum).padStart(4))}    ${entry.line}`);
-              oldLineNum++;
-              newLineNum++;
-            } else if (entry.type === 'removed') {
-              // Count consecutive removals
-              let removeCount = 1;
-              let removeEnd = idx + 1;
-              while (removeEnd < diff.length && diff[removeEnd].type === 'removed') {
-                removeCount++;
-                removeEnd++;
+          // Check if we need to fetch context from the file
+          const needsFileContext = !diff.some(d => d.type === 'unchanged');
+          let fileLines = [];
+          if (needsFileContext && currentLine > 0) {
+            // Read the file to get context lines
+            try {
+              const fs = require('fs');
+              const fileContent = fs.readFileSync(tool.input.file_path, 'utf8');
+              fileLines = fileContent.split('\n');
+            } catch (err) {
+              // Ignore if file can't be read
+            }
+          }
+          
+          // First, identify all change blocks
+          const changeBlocks = [];
+          let currentBlock = null;
+          
+          for (let i = 0; i < diff.length; i++) {
+            if (diff[i].type !== 'unchanged') {
+              if (!currentBlock) {
+                currentBlock = { start: i, end: i };
+              } else {
+                currentBlock.end = i;
+              }
+            } else if (currentBlock) {
+              changeBlocks.push(currentBlock);
+              currentBlock = null;
+            }
+          }
+          if (currentBlock) {
+            changeBlocks.push(currentBlock);
+          }
+          
+          // Now build the diff with context
+          let lastIncludedIndex = -1;
+          
+          for (const block of changeBlocks) {
+            // If we need file context, add lines from the file
+            if (needsFileContext && fileLines.length > 0 && currentLine > 0) {
+              // Add context lines before from file
+              // currentLine is 1-based, but array indices are 0-based
+              const fileLineIndex = currentLine - 1; // Convert to 0-based index
+              const fileStartLine = Math.max(0, fileLineIndex - contextLines);
+              const contextEndLine = fileLineIndex;
+              
+              for (let i = fileStartLine; i < contextEndLine; i++) {
+                if (i < fileLines.length) {
+                  lines.push(`    ${this.theme.formatDim(String(i + 1).padStart(4))}        ${fileLines[i]}`);
+                }
               }
               
-              // Show all removed lines with old file line numbers
-              for (let r = 0; r < removeCount; r++) {
-                lines.push(`    ${this.theme.formatDim(String(oldLineNum + r).padStart(4))} ${this.theme.formatError('-  ' + diff[idx + r].line)}`);
+              // Add the changed lines with correct line numbers
+              let removedLineNum = currentLine;
+              let addedLineNum = currentLine;
+              
+              for (let i = block.start; i <= block.end; i++) {
+                const entry = diff[i];
+                
+                if (entry.type === 'removed') {
+                  lines.push(`    ${this.theme.formatDim(String(removedLineNum).padStart(4))} ${this.theme.formatError('-      ' + entry.line)}`);
+                  removedLineNum++;
+                } else if (entry.type === 'added') {
+                  lines.push(`    ${this.theme.formatDim(String(addedLineNum).padStart(4))} ${this.theme.formatSuccess('+      ' + entry.line)}`);
+                  addedLineNum++;
+                }
               }
               
-              // Check if followed by additions (replacements)
-              let addCount = 0;
-              let addStart = removeEnd;
-              while (addStart < diff.length && diff[addStart].type === 'added') {
-                // For additions after removals, use the new file line number
-                lines.push(`    ${this.theme.formatDim(String(newLineNum + addCount).padStart(4))} ${this.theme.formatSuccess('+  ' + diff[addStart].line)}`);
-                addCount++;
-                addStart++;
+              // Add context lines after from file
+              // The next line in the file after the removed lines
+              const removedCount = removedLineNum - currentLine;
+              const afterFileIndex = currentLine - 1 + removedCount; // 0-based index in file
+              const afterEndIndex = Math.min(fileLines.length, afterFileIndex + contextLines);
+              
+              for (let i = afterFileIndex; i < afterEndIndex; i++) {
+                if (i < fileLines.length) {
+                  lines.push(`    ${this.theme.formatDim(String(i + 1).padStart(4))}        ${fileLines[i]}`);
+                }
+              }
+            } else {
+              // Original logic when we have unchanged lines in diff
+              // Add context before the change block
+              const contextStart = Math.max(lastIncludedIndex + 1, block.start - contextLines);
+              
+              // Add ellipsis if there's a gap
+              if (lastIncludedIndex >= 0 && contextStart > lastIncludedIndex + 1) {
+                lines.push(`    ${this.theme.formatDim(' ...')}`);
               }
               
-              // Update line numbers
-              oldLineNum += removeCount;
-              newLineNum += addCount;
-              idx = addStart - 1;
-            } else if (entry.type === 'added') {
-              // Pure addition (not a replacement) - use new file line number
-              lines.push(`    ${this.theme.formatDim(String(newLineNum).padStart(4))} ${this.theme.formatSuccess('+  ' + entry.line)}`);
-              newLineNum++;
+              // Calculate line numbers for this block
+              let contextOldLineNum = oldLineNum;
+              let contextNewLineNum = newLineNum;
+              
+              // Skip to the line number at contextStart
+              for (let i = 0; i < contextStart; i++) {
+                if (i < diff.length) {
+                  if (diff[i].type === 'removed') {
+                    contextOldLineNum++;
+                  } else if (diff[i].type === 'added') {
+                    contextNewLineNum++;
+                  } else {
+                    contextOldLineNum++;
+                    contextNewLineNum++;
+                  }
+                }
+              }
+              
+              // Add context lines before changes
+              for (let i = contextStart; i < block.start; i++) {
+                if (diff[i].type === 'unchanged') {
+                  lines.push(`    ${this.theme.formatDim(String(contextOldLineNum).padStart(4))}        ${diff[i].line}`);
+                  contextOldLineNum++;
+                  contextNewLineNum++;
+                }
+              }
+              
+              // Add the changed lines
+              for (let i = block.start; i <= block.end; i++) {
+                const entry = diff[i];
+                
+                if (entry.type === 'removed') {
+                  lines.push(`    ${this.theme.formatDim(String(contextOldLineNum).padStart(4))} ${this.theme.formatError('-      ' + entry.line)}`);
+                  contextOldLineNum++;
+                } else if (entry.type === 'added') {
+                  lines.push(`    ${this.theme.formatDim(String(contextNewLineNum).padStart(4))} ${this.theme.formatSuccess('+      ' + entry.line)}`);
+                  contextNewLineNum++;
+                }
+              }
+              
+              // Add context lines after changes
+              const contextEnd = Math.min(diff.length - 1, block.end + contextLines);
+              for (let i = block.end + 1; i <= contextEnd; i++) {
+                if (i < diff.length && diff[i].type === 'unchanged') {
+                  lines.push(`    ${this.theme.formatDim(String(contextOldLineNum).padStart(4))}        ${diff[i].line}`);
+                  contextOldLineNum++;
+                  contextNewLineNum++;
+                }
+              }
+              
+              lastIncludedIndex = contextEnd;
             }
           }
           
           // Update last line number based on the actual end position
-          lastLineNumber = Math.max(oldLineNum, newLineNum);
+          lastLineNumber = currentLine + oldLines.length;
         });
       }
       
@@ -3048,7 +3148,7 @@ class ViewRenderer {
       
       return null;
     } catch (error) {
-      console.log(`Debug: Error reading file ${filePath}: ${error.message}`);
+      // Error reading file - return null
       return null;
     }
   }
@@ -4330,8 +4430,8 @@ class ViewRenderer {
             }
           }
           
-          // Add timestamp (skip for Read and Grep tools)
-          if (item.name !== 'Read' && item.name !== 'Grep') {
+          // Add timestamp (skip for Grep tools)
+          if (item.name !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(new Date());
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
@@ -4456,8 +4556,8 @@ class ViewRenderer {
           }
           
           // Add timestamp if available (tool execution time)
-          // Use actual timestamp from item or response (skip for Read and Grep tools)
-          if ((item.timestamp || response.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
+          // Use actual timestamp from item or response (skip for Grep tools)
+          if ((item.timestamp || response.timestamp) && item.name !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(item.timestamp || response.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
