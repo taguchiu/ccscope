@@ -1941,8 +1941,8 @@ class ViewRenderer {
               }
             }
             
-            // Add timestamp if available (skip for Read and Grep tools)
-            if ((item.timestamp || conversation.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
+            // Add timestamp if available (skip for Grep tools)
+            if ((item.timestamp || conversation.timestamp) && item.name !== 'Grep') {
               const timestampToUse = item.timestamp || conversation.timestamp;
               const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
               toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
@@ -2031,8 +2031,8 @@ class ViewRenderer {
             }
           }
           
-          // Add timestamp if available (skip for Read and Grep tools)
-          if ((item.timestamp || conversation.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
+          // Add timestamp if available (skip for Grep tools)
+          if ((item.timestamp || conversation.timestamp) && item.name !== 'Grep') {
             const timestampToUse = item.timestamp || conversation.timestamp;
             const toolTime = this.formatDateTimeWithSeconds(new Date(timestampToUse));
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
@@ -2168,8 +2168,8 @@ class ViewRenderer {
               toolHeader += `(${keyParams})`;
             }
           }
-          // Skip timestamp for Read and Grep tools to match requested format
-          if (tool.timestamp && tool.toolName !== 'Read' && tool.toolName !== 'Grep') {
+          // Skip timestamp for Grep tools to match requested format
+          if (tool.timestamp && tool.toolName !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(tool.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
@@ -4425,8 +4425,8 @@ class ViewRenderer {
             }
           }
           
-          // Add timestamp (skip for Read and Grep tools)
-          if (item.name !== 'Read' && item.name !== 'Grep') {
+          // Add timestamp (skip for Grep tools)
+          if (item.name !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(new Date());
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
@@ -4551,8 +4551,8 @@ class ViewRenderer {
           }
           
           // Add timestamp if available (tool execution time)
-          // Use actual timestamp from item or response (skip for Read and Grep tools)
-          if ((item.timestamp || response.timestamp) && item.name !== 'Read' && item.name !== 'Grep') {
+          // Use actual timestamp from item or response (skip for Grep tools)
+          if ((item.timestamp || response.timestamp) && item.name !== 'Grep') {
             const toolTime = this.formatDateTimeWithSeconds(item.timestamp || response.timestamp);
             toolHeader += ` ${this.theme.formatDim(`[${toolTime}]`)}`;
           }
