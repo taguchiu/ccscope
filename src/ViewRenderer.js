@@ -2778,8 +2778,10 @@ class ViewRenderer {
             // If we need file context, add lines from the file
             if (needsFileContext && fileLines.length > 0 && currentLine > 0) {
               // Add context lines before from file
-              const fileStartLine = Math.max(0, currentLine - 1 - contextLines);
-              const contextEndLine = currentLine - 1;
+              // currentLine is 1-based, but array indices are 0-based
+              const fileLineIndex = currentLine - 1; // Convert to 0-based index
+              const fileStartLine = Math.max(0, fileLineIndex - contextLines);
+              const contextEndLine = fileLineIndex;
               
               for (let i = fileStartLine; i < contextEndLine; i++) {
                 if (i < fileLines.length) {
@@ -2787,22 +2789,29 @@ class ViewRenderer {
                 }
               }
               
-              // Add the changed lines
+              // Add the changed lines with correct line numbers
+              let removedLineNum = currentLine;
+              let addedLineNum = currentLine;
+              
               for (let i = block.start; i <= block.end; i++) {
                 const entry = diff[i];
                 
                 if (entry.type === 'removed') {
-                  lines.push(`    ${this.theme.formatDim(String(currentLine).padStart(4))} ${this.theme.formatError('-      ' + entry.line)}`);
+                  lines.push(`    ${this.theme.formatDim(String(removedLineNum).padStart(4))} ${this.theme.formatError('-      ' + entry.line)}`);
+                  removedLineNum++;
                 } else if (entry.type === 'added') {
-                  lines.push(`    ${this.theme.formatDim(String(currentLine).padStart(4))} ${this.theme.formatSuccess('+      ' + entry.line)}`);
+                  lines.push(`    ${this.theme.formatDim(String(addedLineNum).padStart(4))} ${this.theme.formatSuccess('+      ' + entry.line)}`);
+                  addedLineNum++;
                 }
               }
               
-              // Add context lines after from file (at the new position)
-              const afterStartLine = currentLine; // After the change
-              const afterEndLine = Math.min(fileLines.length, afterStartLine + contextLines);
+              // Add context lines after from file
+              // The next line in the file after the removed lines
+              const removedCount = removedLineNum - currentLine;
+              const afterFileIndex = currentLine - 1 + removedCount; // 0-based index in file
+              const afterEndIndex = Math.min(fileLines.length, afterFileIndex + contextLines);
               
-              for (let i = afterStartLine; i < afterEndLine; i++) {
+              for (let i = afterFileIndex; i < afterEndIndex; i++) {
                 if (i < fileLines.length) {
                   lines.push(`    ${this.theme.formatDim(String(i + 1).padStart(4))}        ${fileLines[i]}`);
                 }
