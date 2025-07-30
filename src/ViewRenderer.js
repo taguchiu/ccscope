@@ -2444,10 +2444,6 @@ class ViewRenderer {
         outputLines.push(line);
         i++;
         
-        // Debug: Log what we're processing
-        if (config.debug && config.debug.enabled) {
-          console.log(`Found tool block at line ${i}, next line: "${responseLines[i] || 'EOF'}"`);
-        }
         
         // Look for the indented block with ⎿ (allow spaces before it)
         if (i < responseLines.length && responseLines[i].match(/^\s*⎿/)) {
